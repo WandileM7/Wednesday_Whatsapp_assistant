@@ -119,7 +119,10 @@ def send_initial_message():
 def webhook():
     logger.info("----------------------------------------")
     logger.info("Received webhook request - CONVERSATION START")
-    data = request.json
+    if request.method == 'GET':
+        return jsonify({"status": "online", "message": "Webhook is ready!"})
+
+    data = request.get_json()
     logger.debug(f"Webhook payload: {data}")
     
     user_msg = data.get('message', '')
