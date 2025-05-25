@@ -1,0 +1,15 @@
+services:
+  - type: web
+    runtime: python
+    name: whatsapp-assistant
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: GEMINI_API_KEY
+        value: your-gemini-api-key
+      - key: WAHA_URL
+        value: https://your-waha-url.com/api/sendText
+      - key: WAHA_SESSION
+        value: default

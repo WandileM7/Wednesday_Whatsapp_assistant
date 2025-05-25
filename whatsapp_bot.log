@@ -1,0 +1,139 @@
+2025-05-18 16:29:08,280 - WhatsAppBot - INFO - FUNCTION START: send_message to 27729224495@c.us
+2025-05-18 16:29:08,281 - WhatsAppBot - INFO - Sending message: 'This is a test message from the WhatsApp Echo Bot...' to 27729224495@c.us
+2025-05-18 16:29:08,301 - WhatsAppBot - INFO - Message sent successfully. Status code: 201
+2025-05-18 16:29:08,301 - WhatsAppBot - INFO - FUNCTION END: send_message
+2025-05-18 16:29:08,323 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.18.203:5000
+2025-05-18 16:29:08,325 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-05-18 16:35:40,024 - WhatsAppBot - INFO - FUNCTION START: send_message to 27729224495@c.us
+2025-05-18 16:35:40,024 - WhatsAppBot - INFO - Sending message: 'This is a test message from the WhatsApp Echo Bot...' to 27729224495@c.us
+2025-05-18 16:35:40,046 - WhatsAppBot - INFO - Message sent successfully. Status code: 201
+2025-05-18 16:35:40,046 - WhatsAppBot - INFO - FUNCTION END: send_message
+2025-05-18 16:35:40,065 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.18.203:5000
+2025-05-18 16:35:40,067 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-05-18 16:35:49,316 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:35:49] "[33mOPTIONS /api/server/stop HTTP/1.1[0m" 404 -
+2025-05-18 16:35:56,602 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:35:56] "[33mGET /bot/ws?session=*&events=session.status HTTP/1.1[0m" 404 -
+2025-05-18 16:35:56,615 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:35:56] "[33mGET /api/sessions?all=true HTTP/1.1[0m" 404 -
+2025-05-18 16:35:56,622 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:35:56] "[33mGET /api/version HTTP/1.1[0m" 404 -
+2025-05-18 16:35:56,624 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:35:56] "[33mGET /api/server/status HTTP/1.1[0m" 404 -
+2025-05-18 16:35:56,652 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:35:56] "[33mGET /status/ws?session=*&events=session.status HTTP/1.1[0m" 404 -
+2025-05-18 16:35:56,663 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:35:56] "[33mGET /api/sessions?all=true HTTP/1.1[0m" 404 -
+2025-05-18 16:35:56,667 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:35:56] "[33mGET /api/version HTTP/1.1[0m" 404 -
+2025-05-18 16:35:56,669 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:35:56] "[33mGET /api/server/status HTTP/1.1[0m" 404 -
+2025-05-18 16:36:17,094 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:36:17] "[33mOPTIONS /api/server/stop HTTP/1.1[0m" 404 -
+2025-05-18 16:36:24,935 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:36:24] "[33mOPTIONS /api/server/stop HTTP/1.1[0m" 404 -
+2025-05-18 16:38:34,354 - WhatsAppBot - INFO - FUNCTION START: send_message to 27729224495@c.us
+2025-05-18 16:38:34,355 - WhatsAppBot - INFO - Sending message: 'This is a test message from the WhatsApp Echo Bot...' to 27729224495@c.us
+2025-05-18 16:38:34,373 - WhatsAppBot - INFO - Message sent successfully. Status code: 201
+2025-05-18 16:38:34,373 - WhatsAppBot - INFO - FUNCTION END: send_message
+2025-05-18 16:38:34,389 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.18.203:5000
+2025-05-18 16:38:34,390 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-05-18 16:38:46,871 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:38:46] "[33mGET /bot/ws?session=*&events=session.status HTTP/1.1[0m" 404 -
+2025-05-18 16:38:46,873 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:38:46] "[33mGET /status/ws?session=*&events=session.status HTTP/1.1[0m" 404 -
+2025-05-18 16:38:46,890 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:38:46] "[33mGET /api/version HTTP/1.1[0m" 404 -
+2025-05-18 16:38:46,896 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:38:46] "[33mGET /api/sessions?all=true HTTP/1.1[0m" 404 -
+2025-05-18 16:38:46,899 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:38:46] "[33mGET /api/server/status HTTP/1.1[0m" 404 -
+2025-05-18 16:38:46,902 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:38:46] "[33mGET /api/server/status HTTP/1.1[0m" 404 -
+2025-05-18 16:38:46,903 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:38:46] "[33mGET /api/sessions?all=true HTTP/1.1[0m" 404 -
+2025-05-18 16:38:46,906 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:38:46] "[33mGET /api/version HTTP/1.1[0m" 404 -
+2025-05-18 16:38:57,154 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:38:57] "[33mOPTIONS /api/server/stop HTTP/1.1[0m" 404 -
+2025-05-18 16:39:04,962 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:39:04] "[33mGET /bot/ws?session=*&events=session.status HTTP/1.1[0m" 404 -
+2025-05-18 16:39:04,973 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:39:04] "[33mGET /status/ws?session=*&events=session.status HTTP/1.1[0m" 404 -
+2025-05-18 16:39:04,975 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:39:04] "[33mGET /api/sessions?all=true HTTP/1.1[0m" 404 -
+2025-05-18 16:39:04,977 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:39:04] "[33mGET /api/server/status HTTP/1.1[0m" 404 -
+2025-05-18 16:39:04,979 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:39:04] "[33mGET /api/version HTTP/1.1[0m" 404 -
+2025-05-18 16:39:04,981 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:39:04] "[33mGET /api/sessions?all=true HTTP/1.1[0m" 404 -
+2025-05-18 16:39:04,986 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:39:04] "[33mGET /api/server/status HTTP/1.1[0m" 404 -
+2025-05-18 16:39:04,985 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:39:04] "[33mGET /api/version HTTP/1.1[0m" 404 -
+2025-05-18 16:39:12,400 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:39:12] "[33mGET /bot/ws?session=*&events=session.status HTTP/1.1[0m" 404 -
+2025-05-18 16:39:12,401 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:39:12] "[33mGET /status/ws?session=*&events=session.status HTTP/1.1[0m" 404 -
+2025-05-18 16:39:12,437 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:39:12] "[33mGET /api/sessions?all=true HTTP/1.1[0m" 404 -
+2025-05-18 16:39:12,439 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:39:12] "[33mGET /api/server/status HTTP/1.1[0m" 404 -
+2025-05-18 16:39:12,440 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:39:12] "[33mGET /api/version HTTP/1.1[0m" 404 -
+2025-05-18 16:39:12,470 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:39:12] "[33mGET /api/version HTTP/1.1[0m" 404 -
+2025-05-18 16:39:12,475 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:39:12] "[33mGET /api/server/status HTTP/1.1[0m" 404 -
+2025-05-18 16:39:12,478 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:39:12] "[33mGET /api/sessions?all=true HTTP/1.1[0m" 404 -
+2025-05-18 16:40:00,505 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:40:00] "GET / HTTP/1.1" 200 -
+2025-05-18 16:40:02,531 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:40:02] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2025-05-18 16:40:07,284 - WhatsAppBot - INFO - GET request received at /bot endpoint
+2025-05-18 16:40:07,285 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:40:07] "GET /bot HTTP/1.1" 200 -
+2025-05-18 16:40:23,008 - WhatsAppBot - INFO - GET request received at /bot endpoint
+2025-05-18 16:40:23,009 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:40:23] "GET /bot HTTP/1.1" 200 -
+2025-05-18 16:41:06,024 - WhatsAppBot - INFO - GET request received at /bot endpoint
+2025-05-18 16:41:06,025 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:41:06] "GET /bot HTTP/1.1" 200 -
+2025-05-18 16:41:30,676 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:41:30] "[33mGET /bot/ws?session=*&events=session.status HTTP/1.1[0m" 404 -
+2025-05-18 16:41:30,679 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:41:30] "[33mGET /api/version HTTP/1.1[0m" 404 -
+2025-05-18 16:41:30,681 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:41:30] "[33mGET /api/server/status HTTP/1.1[0m" 404 -
+2025-05-18 16:41:30,684 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:41:30] "[33mGET /api/server/status HTTP/1.1[0m" 404 -
+2025-05-18 16:41:30,685 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:41:30] "[33mGET /api/sessions?all=true HTTP/1.1[0m" 404 -
+2025-05-18 16:41:30,689 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:41:30] "[33mGET /api/sessions?all=true HTTP/1.1[0m" 404 -
+2025-05-18 16:41:30,694 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:41:30] "[33mGET /status/ws?session=*&events=session.status HTTP/1.1[0m" 404 -
+2025-05-18 16:41:30,699 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:41:30] "[33mGET /api/version HTTP/1.1[0m" 404 -
+2025-05-18 16:42:56,809 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:42:56] "[33mOPTIONS /api/server/stop HTTP/1.1[0m" 404 -
+2025-05-18 16:43:10,826 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:43:10] "[33mGET /status/ws?session=*&events=session.status HTTP/1.1[0m" 404 -
+2025-05-18 16:43:10,839 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:43:10] "[33mGET /api/sessions?all=true HTTP/1.1[0m" 404 -
+2025-05-18 16:43:10,842 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:43:10] "[33mGET /api/server/status HTTP/1.1[0m" 404 -
+2025-05-18 16:43:10,845 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 16:43:10] "[33mGET /api/version HTTP/1.1[0m" 404 -
+2025-05-18 16:43:27,647 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:43:27] "[33mGET /bot/ws?session=*&events=session.status HTTP/1.1[0m" 404 -
+2025-05-18 16:43:27,667 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:43:27] "[33mGET /api/version HTTP/1.1[0m" 404 -
+2025-05-18 16:43:27,675 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:43:27] "[33mGET /api/sessions?all=true HTTP/1.1[0m" 404 -
+2025-05-18 16:43:27,680 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:43:27] "[33mGET /api/server/status HTTP/1.1[0m" 404 -
+2025-05-18 16:45:00,504 - WhatsAppBot - INFO - FUNCTION START: send_message to 27729224495@c.us
+2025-05-18 16:45:00,505 - WhatsAppBot - INFO - Sending message: 'This is a test message from the WhatsApp Echo Bot...' to 27729224495@c.us
+2025-05-18 16:45:00,529 - WhatsAppBot - INFO - Message sent successfully. Status code: 201
+2025-05-18 16:45:00,529 - WhatsAppBot - INFO - FUNCTION END: send_message
+2025-05-18 16:45:00,546 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.18.203:5000
+2025-05-18 16:45:00,546 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-05-18 16:45:15,023 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:45:15] "[33mOPTIONS /api/server/stop HTTP/1.1[0m" 404 -
+2025-05-18 16:46:23,305 - WhatsAppBot - INFO - FUNCTION START: send_message to 27729224495@c.us
+2025-05-18 16:46:23,305 - WhatsAppBot - INFO - Sending message: 'This is a test message from the WhatsApp Echo Bot...' to 27729224495@c.us
+2025-05-18 16:46:23,332 - WhatsAppBot - INFO - Message sent successfully. Status code: 201
+2025-05-18 16:46:23,332 - WhatsAppBot - INFO - FUNCTION END: send_message
+2025-05-18 16:46:23,371 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.18.203:5000
+2025-05-18 16:46:23,377 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-05-18 16:46:42,554 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 16:46:42] "OPTIONS /api/server/stop HTTP/1.1" 200 -
+2025-05-18 17:11:37,438 - WhatsAppBot - INFO - FUNCTION START: send_message to 27729224495@c.us
+2025-05-18 17:11:37,438 - WhatsAppBot - INFO - Sending message: 'This is a test message from the WhatsApp Echo Bot...' to 27729224495@c.us
+2025-05-18 17:11:37,459 - WhatsAppBot - INFO - Message sent successfully. Status code: 201
+2025-05-18 17:11:37,459 - WhatsAppBot - INFO - FUNCTION END: send_message
+2025-05-18 17:11:37,477 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.18.203:5000
+2025-05-18 17:11:37,477 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-05-18 17:12:36,020 - WhatsAppBot - INFO - FUNCTION START: send_message to 27729224495@c.us
+2025-05-18 17:12:36,020 - WhatsAppBot - INFO - Sending message: 'This is a test message from the WhatsApp Echo Bot...' to 27729224495@c.us
+2025-05-18 17:12:36,039 - WhatsAppBot - INFO - Message sent successfully. Status code: 201
+2025-05-18 17:12:36,039 - WhatsAppBot - INFO - FUNCTION END: send_message
+2025-05-18 17:12:36,056 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.18.203:5000
+2025-05-18 17:12:36,057 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-05-18 17:14:00,338 - WhatsAppBot - INFO - GET request received at /bot endpoint
+2025-05-18 17:14:00,339 - werkzeug - INFO - 127.0.0.1 - - [18/May/2025 17:14:00] "GET /bot HTTP/1.1" 200 -
+2025-05-18 17:14:08,751 - WhatsAppBot - INFO - GET request received at /bot endpoint
+2025-05-18 17:14:08,752 - werkzeug - INFO - 192.168.18.203 - - [18/May/2025 17:14:08] "GET /bot HTTP/1.1" 200 -
+2025-05-25 20:42:29,266 - WhatsAppBot - INFO - FUNCTION START: send_message to 27729224495@c.us
+2025-05-25 20:42:29,286 - WhatsAppBot - INFO - Sending message: 'This is a test message from the WhatsApp Echo Bot...' to 27729224495@c.us
+2025-05-25 20:42:29,345 - WhatsAppBot - INFO - Message sent successfully. Status code: 201
+2025-05-25 20:42:29,345 - WhatsAppBot - INFO - FUNCTION END: send_message
+2025-05-25 20:42:29,371 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.18.203:5000
+2025-05-25 20:42:29,371 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
