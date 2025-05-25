@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 import os
 import requests
-from google import genai
+import google.generativeai as genai
 import sys
 import logging
 import time
@@ -31,7 +31,10 @@ if not gemini_api_key:
 
 # Initialize Gemini client
 try:
-    client = genai.Client(api_key=gemini_api_key)
+    # Fix the initialization method - use configure instead of Client
+    genai.configure(api_key=gemini_api_key)
+    # Test the connection by creating a model
+    model = genai.GenerativeModel('gemini-2.0-flash')
     logger.info("Successfully initialized Gemini client")
 except Exception as e:
     logger.error(f"ERROR initializing Gemini client: {e}")
@@ -62,10 +65,8 @@ def initiate_conversation(phone):
         initial_prompt = f"{PERSONALITY_PROMPT}\n{INITIAL_MESSAGE_PROMPT}"
         logger.info(f"Calling Gemini for initial message with prompt: {initial_prompt[:100]}...")
         
-        initial_response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=initial_prompt
-        )
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        initial_response = model.generate_content(contents=initial_prompt)
         initial_message = initial_response.text.strip()
         logger.info(f"INITIAL MESSAGE GENERATED: {initial_message}")
         
@@ -142,7 +143,7 @@ def webhook():
             greeting_prompt = f"{PERSONALITY_PROMPT}\n{GREETING_PROMPT}"
             logger.info(f"Calling Gemini for greeting with prompt: {greeting_prompt[:100]}...")
             
-            greeting_response = client.models.generate_content(
+            greeting_response = genai.GenerativeModel('gemini-2.0-flash').generate_content(
                 model="gemini-2.0-flash",
                 contents=greeting_prompt
             )
@@ -181,12 +182,9 @@ def webhook():
         # Show typing indicator for natural feel
         typing_indicator(phone, 3)
         
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=response_prompt
-        )
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        response = model.generate_content(contents=response_prompt)
         reply = response.text.strip()
-        logger.info(f"RESPONSE GENERATED: {reply[:100]}...")
     except Exception as e:
         logger.error(f"Error generating response: {e}")
         reply = "Sorry, I'm having trouble thinking of a sarcastic response right now. Try again later."
