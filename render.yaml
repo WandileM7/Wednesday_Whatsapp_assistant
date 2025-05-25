@@ -10,6 +10,6 @@ services:
       - key: GEMINI_API_KEY
         value: your-gemini-api-key
       - key: WAHA_URL
-        value: https://your-waha-url.com/api/sendText
+        value: http://localhost:3000/api/sendText
       - key: WAHA_SESSION
         value: default
