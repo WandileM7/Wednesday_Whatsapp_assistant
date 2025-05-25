@@ -263,6 +263,11 @@ def send_message(phone, text):
     except Exception as e:
         logger.error(f"Error sending message: {e}")
         return False
+    
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({"status": "online"})
+
 
 @app.route('/status', methods=['GET'])
 def status():
