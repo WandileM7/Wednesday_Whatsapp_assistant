@@ -1,5 +1,6 @@
 import json
 from dotenv import load_dotenv
+from fastapi import params
 from flask import Flask, request, jsonify
 import os
 import requests
@@ -11,7 +12,6 @@ from chromedb import add_to_conversation_history
 from datetime import datetime
 
 from handlers.gemini import chat_with_functions, execute_function, model
-import scheduler  
 
 # Set up logging
 logging.basicConfig(
