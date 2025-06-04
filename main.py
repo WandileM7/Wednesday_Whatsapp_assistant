@@ -99,24 +99,24 @@ def webhook():
         return jsonify({'status': 'ignored'}), 200
 
     try:
-        # Step 1: Get response from Gemini
+        # Step 1: Ask Gemini for its response (which may be a function call)
         call = chat_with_functions(user_msg, phone)
         logger.debug(f"Gemini function response: {call}")
 
-        # Step 2: Execute function if Gemini wants to
+        # Step 2: Decide whether to execute a function or just take its text
         if call.get("name"):
+            # Gemini wants you to call a function
             reply = execute_function(call)
-            logger.debug(f"Function call: {call['name']}({params})")
-
+        else:
+            # Gemini returned a plain-text answer
             reply = call.get("content", "Sorry, no idea what that was.")
 
-        # Step 3: Save to ChromaDB history
+        # Step 3: Save both user→assistant messages into ChromaDB
         try:
             add_to_conversation_history(phone, "user", user_msg)
             add_to_conversation_history(phone, "assistant", reply)
         except Exception as e:
             logger.error(f"ChromaDB save error: {e}")
-
         # Step 5: Send response back to user
         send_message(phone, reply)
         return jsonify({'status': 'ok'})
