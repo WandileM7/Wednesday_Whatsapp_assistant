@@ -5,10 +5,11 @@ WORKDIR /app
 # Update system packages to reduce vulnerabilities
 RUN apt-get update && apt-get upgrade -y && apt-get clean
 
-# Install dependencies
+# Copy and install Python dependencies
 COPY requirements.txt .
 RUN apt-get update && apt-get install -y libprotobuf-dev protobuf-compiler && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
