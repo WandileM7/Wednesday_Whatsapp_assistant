@@ -1,11 +1,13 @@
 services:
+  # Your WhatsApp Assistant (Flask + Gemini)
   - type: web
     name: waha-gemini-assistant
-    env: python
+    runtime: docker
     region: oregon
     plan: free
-    buildCommand: pip install -r requirements.txt
+    dockerfilePath: ./Dockerfile
     startCommand: python main.py
+    autoDeploy: true
     envVars:
       - key: SPOTIFY_CLIENT_ID
         fromSecret: SPOTIFY_CLIENT_ID
@@ -13,27 +15,28 @@ services:
         fromSecret: SPOTIFY_SECRET
       - key: SPOTIFY_REDIRECT_URI
         value: http://localhost:8888/callback
-      - key: WAHA_URL
-        fromSecret: WAHA_URL
-      - key: WAHA_API_KEY
-        fromSecret: WAHA_API_KEY
-      - key: WAHA_SESSION
-        value: default
       - key: GEMINI_API_KEY
         fromSecret: GEMINI_API_KEY
       - key: GOOGLE_APPLICATION_CREDENTIALS
         value: /etc/secrets/credentials.json
-    autoDeploy: true
-
-  - type: web
-    name: waha-service
-    env: docker
-    region: oregon
-    plan: free
-    dockerfilePath: Dockerfile
-    envVars:
-      - key: WAHA_API_KEY
-        fromSecret: WAHA_API_KEY
+      - key: GOOGLE_REDIRECT_URI
+        value: https://your-app-name.onrender.com/oauth2callback
+      - key: WAHA_URL
+        value: http://waha-service:3000/sendText
       - key: WAHA_SESSION
         value: default
+    secrets:
+      - name: credentials.json # Upload this in the Render UI (Google credentials file)
+
+  # WAHA WhatsApp Gateway
+  - type: web
+    name: waha-service
+    runtime: image
+    region: oregon
+    plan: free
+    image:
+      url: devlikeapro/waha:latest
     autoDeploy: true
+    envVars:
+      - key: WAHA_SESSION
+        value: default
