@@ -153,6 +153,16 @@ def direct_chat():
     ])
     return jsonify({'response': response.text})
 
+@app.route("/test-waha")
+def test_waha():
+    url = os.getenv("WAHA_URL", "http://waha-service:3000/sendText")
+    try:
+        r = requests.get(url.replace("/sendText", "/health"))  # WAHA has /health
+        return f"WAHA responded: {r.status_code} - {r.text}"
+    except Exception as e:
+        return f"Failed to reach WAHA: {e}"
+
+
 @app.route("/status", methods=["GET"])
 def status():
     return jsonify({
