@@ -117,23 +117,6 @@ def webhook():
         except Exception as e:
             logger.error(f"ChromaDB save error: {e}")
 
-        # Step 4: Also save to SQLite (fallback / backup)
-        try:
-            from sqlite3 import connect
-            conn = connect('conversations.db')
-            cur = conn.cursor()
-            cur.execute('''
-                CREATE TABLE IF NOT EXISTS conversations (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    phone TEXT, role TEXT, message TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-                )''')
-            cur.executemany('INSERT INTO conversations (phone, role, message) VALUES (?, ?, ?)',
-                            [(phone, 'user', user_msg), (phone, 'assistant', reply)])
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            logger.error(f"Error saving chat to SQLite: {e}")
-
         # Step 5: Send response back to user
         send_message(phone, reply)
         return jsonify({'status': 'ok'})
