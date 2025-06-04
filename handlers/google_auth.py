@@ -41,7 +41,7 @@ def authorize():
     flow = Flow.from_client_secrets_file(
         os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "credentials.json"),
         scopes=SCOPES,
-        redirect_uri=os.getenv("GOOGLE_REDIRECT_URI", "https://waha-service-ypoa.onrender.com/oauth2callback")
+        redirect_uri=os.getenv("GOOGLE_REDIRECT_URI", "https://waha-gemini-assistant.onrender.com/oauth2callback")
         
     )
     auth_url, _ = flow.authorization_url(prompt="consent", include_granted_scopes="true")
@@ -53,7 +53,7 @@ def oauth2callback():
     flow = Flow.from_client_secrets_file(
         os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "credentials.json"),
         scopes=SCOPES,
-        redirect_uri=os.getenv("GOOGLE_REDIRECT_URI", "https://waha-service-ypoa.onrender.com/oauth2callback")
+        redirect_uri=os.getenv("GOOGLE_REDIRECT_URI", "https://waha-gemini-assistant.onrender.com/oauth2callback")
         
     )
     flow.fetch_token(authorization_response=request.url)
