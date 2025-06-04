@@ -156,12 +156,16 @@ def direct_chat():
 @app.route("/test-waha")
 def test_waha():
     url = os.getenv("WAHA_URL", "https://waha-gemini-assistant.onrender.com/api/sendText")
+    payload = {
+        "session": "default",
+        "chatId": "27729224495@c.us",
+        "text": "Hello from Flask!"
+    }
     try:
-        r = requests.get(url.replace("/sendText", "/health"))  # WAHA has /health
-        return f"WAHA responded: {r.status_code} - {r.text}"
+        response = requests.post(waha_url, json=payload)
+        return f"WAHA responded: {response.status_code} - {response.text}"
     except Exception as e:
         return f"Failed to reach WAHA: {e}"
-
 
 @app.route("/status", methods=["GET"])
 def status():
