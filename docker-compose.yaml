@@ -1,0 +1,23 @@
+services:
+  waha:
+    image: devlikeapro/waha:latest
+    container_name: waha
+    ports:
+      - "3000:3000"           # WAHA's API & admin UI
+      - "3001:3001"           # WAHA's WebSocket port (if used)
+    environment:
+      - WHATSAPP_HOOK_URL=http://assistant:5000/webhook
+      - WHATSAPP_HOOK_EVENTS=message
+    volumes:
+      - ./waha-data:/app/data
+
+  assistant:
+    build: .                  # your Flask Dockerfile
+    container_name: assistant
+    ports:
+      - "5000:5000"           # your Flask endpoints
+    env_file: .env
+    environment:
+      - WAHA_URL=http://waha:3000/api/sendText
+    depends_on:
+      - waha

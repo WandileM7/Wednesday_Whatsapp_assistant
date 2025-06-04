@@ -1,4 +1,14 @@
-flask
+Flask
+python-dotenv
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
 requests
 google-generativeai
-python-dotenv
+openai
+scheduler  
+spotipy==2.23.0
+chromadb
+google-api-python-client==2.115.0
+google-auth-oauthlib==1.2.0

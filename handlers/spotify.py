@@ -1,0 +1,55 @@
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
+from config import SPOTIFY_CLIENT_ID, SPOTIFY_SECRET, SPOTIFY_REDIRECT_URI
+
+_sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
+    client_id=SPOTIFY_CLIENT_ID,
+    client_secret=SPOTIFY_SECRET,
+    redirect_uri=SPOTIFY_REDIRECT_URI,
+    scope="user-read-playback-state,user-modify-playback-state"
+))
+
+def play_song(song_name: str) -> str:
+    results = _sp.search(q=song_name, type="track", limit=1)
+    items = results.get("tracks", {}).get("items", [])
+    if not items:
+        return f"Couldn't find '{song_name}' on Spotify."
+    
+    track = items[0]
+    uri = track["uri"]
+
+    # Prevent repeat if song is already playing
+    current = _sp.current_playback()
+    if current and current.get("is_playing") and current.get("item", {}).get("uri") == uri:
+        return f"{track['name']} by {track['artists'][0]['name']} is already playing."
+
+    _sp.start_playback(uris=[uri])
+    return f"Now playing: {track['name']} by {track['artists'][0]['name']}."
+
+
+def get_current_song() -> str:
+    playback = _sp.current_playback()
+    if not playback or not playback.get("item"):
+        return "Nothing is playing right now."
+    item = playback["item"]
+    return f"Currently: {item['name']} by {item['artists'][0]['name']}."
+
+def play_playlist(name: str) -> str:
+    playlists = _sp.current_user_playlists()["items"]
+    for playlist in playlists:
+        if name.lower() in playlist["name"].lower():
+            _sp.start_playback(context_uri=playlist["uri"])
+            return f"Now playing playlist: {playlist['name']}"
+    return f"Couldn't find playlist named '{name}'."
+
+def play_album(name: str) -> str:
+    results = _sp.search(q=name, type="album", limit=1)
+    items = results.get("albums", {}).get("items", [])
+    if not items:
+        return f"Couldn't find album '{name}'"
+    _sp.start_playback(context_uri=items[0]["uri"])
+    return f"Now playing album: {items[0]['name']} by {items[0]['artists'][0]['name']}"
+
+def pause_playback() -> str:
+    _sp.pause_playback()
+    return "Playback paused."
