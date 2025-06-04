@@ -23,11 +23,6 @@ services:
         fromSecret: GEMINI_API_KEY
       - key: GOOGLE_APPLICATION_CREDENTIALS
         value: /etc/secrets/credentials.json
-    secrets:
-      - name: SPOTIFY_CLIENT_ID
-      - name: SPOTIFY_SECRET
-      - name: WAHA_API_KEY
-      - name: GEMINI_API_KEY
     autoDeploy: true
 
   - type: web
