@@ -13,8 +13,6 @@ services:
         fromSecret: SPOTIFY_SECRET
       - key: SPOTIFY_REDIRECT_URI
         value: http://localhost:8888/callback
-      - key: UBER_SERVER_TOKEN
-        fromSecret: UBER_SERVER_TOKEN
       - key: WAHA_URL
         fromSecret: WAHA_URL
       - key: WAHA_API_KEY
@@ -23,18 +21,24 @@ services:
         value: default
       - key: GEMINI_API_KEY
         fromSecret: GEMINI_API_KEY
-      - key: PERSONALITY_PROMPT
-        value: "You are a helpful and friendly assistant."
-      - key: CONTACTS_FILE
-        value: contacts.json
-      - key: DAILY_EMAIL_TO
-        value: you@example.com
       - key: GOOGLE_APPLICATION_CREDENTIALS
         value: /etc/secrets/credentials.json
     secrets:
       - name: SPOTIFY_CLIENT_ID
       - name: SPOTIFY_SECRET
-      - name: UBER_SERVER_TOKEN
       - name: WAHA_API_KEY
       - name: GEMINI_API_KEY
+    autoDeploy: true
+
+  - type: web
+    name: waha-service
+    env: docker
+    region: oregon
+    plan: free
+    dockerfilePath: Dockerfile
+    envVars:
+      - key: WAHA_API_KEY
+        fromSecret: WAHA_API_KEY
+      - key: WAHA_SESSION
+        value: default
     autoDeploy: true
