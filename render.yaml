@@ -7,20 +7,6 @@ services:
     plan: free
     dockerfilePath: ./Dockerfile
     autoDeploy: true
-    envVars:
-      - fromSecret: SPOTIFY_CLIENT_ID
-      - fromSecret: SPOTIFY_SECRET
-      - key: SPOTIFY_REDIRECT_URI
-        value: http://localhost:8888/callback
-      - fromSecret: GEMINI_API_KEY
-      - key: GOOGLE_APPLICATION_CREDENTIALS
-        value: /etc/secrets/credentials.json
-      - key: GOOGLE_REDIRECT_URI
-        value: https://your-app-name.onrender.com/oauth2callback
-      - key: WAHA_URL
-        value: http://waha-service:3000/sendText
-      - key: WAHA_SESSION
-        value: default
 
   # WAHA WhatsApp Gateway
   - type: web
