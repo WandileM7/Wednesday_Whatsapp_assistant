@@ -6,7 +6,6 @@ services:
     region: oregon
     plan: free
     dockerfilePath: ./Dockerfile
-    startCommand: python main.py
     autoDeploy: true
     envVars:
       - key: SPOTIFY_CLIENT_ID
