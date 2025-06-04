@@ -155,7 +155,7 @@ def direct_chat():
 
 @app.route("/test-waha")
 def test_waha():
-    url = os.getenv("WAHA_URL", "http://waha-service:3000/sendText")
+    url = os.getenv("WAHA_URL", "https://waha-gemini-assistant.onrender.com/api/sendText")
     try:
         r = requests.get(url.replace("/sendText", "/health"))  # WAHA has /health
         return f"WAHA responded: {r.status_code} - {r.text}"
