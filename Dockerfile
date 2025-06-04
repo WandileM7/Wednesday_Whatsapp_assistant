@@ -7,7 +7,8 @@ RUN apt-get update && apt-get upgrade -y && apt-get clean
 
 # Install dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN apt-get update && apt-get install -y libprotobuf-dev protobuf-compiler && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy application code
 COPY . .
