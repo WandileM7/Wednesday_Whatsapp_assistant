@@ -8,14 +8,11 @@ services:
     dockerfilePath: ./Dockerfile
     autoDeploy: true
     envVars:
-      - key: SPOTIFY_CLIENT_ID
-        fromSecret: SPOTIFY_CLIENT_ID
-      - key: SPOTIFY_SECRET
-        fromSecret: SPOTIFY_SECRET
+      - fromSecret: SPOTIFY_CLIENT_ID
+      - fromSecret: SPOTIFY_SECRET
       - key: SPOTIFY_REDIRECT_URI
         value: http://localhost:8888/callback
-      - key: GEMINI_API_KEY
-        fromSecret: GEMINI_API_KEY
+      - fromSecret: GEMINI_API_KEY
       - key: GOOGLE_APPLICATION_CREDENTIALS
         value: /etc/secrets/credentials.json
       - key: GOOGLE_REDIRECT_URI
