@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from fastapi import params
 from flask import Flask, request, jsonify
 import os
+from handlers.google_auth import auth_bp
 import requests
 import google.generativeai as genai
 import sys
@@ -27,6 +28,7 @@ logger = logging.getLogger("WhatsAppAssistant")
 load_dotenv()
 app = Flask(__name__)
 
+app.register_blueprint(auth_bp)       # <--- makes /authorize and /oauth2callback active
 # Validate environment
 gemini_api_key = os.getenv("GEMINI_API_KEY")
 if not gemini_api_key:
