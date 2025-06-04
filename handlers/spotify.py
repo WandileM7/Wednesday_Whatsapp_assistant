@@ -2,26 +2,19 @@ import os
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 
-# Spotify OAuth2 setup (using refresh token from ENV)
 _sp_oauth = SpotifyOAuth(
     client_id=os.getenv("SPOTIFY_CLIENT_ID"),
     client_secret=os.getenv("SPOTIFY_SECRET"),
     redirect_uri=os.getenv("SPOTIFY_REDIRECT_URI"),
-    scope="user-read-playback-state,user-modify-playback-state",
-    cache_path=None  # we’ll handle refresh manually
+    scope="user-read-playback-state user-modify-playback-state",
+    cache_path=None  # No local file caching
 )
 
-
-
-# Immediately refresh the access token using your saved refresh token
-initial_token_info = {
-    "refresh_token": os.getenv("SPOTIFY_REFRESH_TOKEN"),
-    "scope": "user-read-playback-state,user-modify-playback-state"
-}
-token_info = _sp_oauth.refresh_access_token(initial_token_info["refresh_token"])
-
-# Assign the returned token_info so Spotipy can manage expiration/refresh
+# Manually refresh using saved token
+token_info = _sp_oauth.refresh_access_token(os.getenv("SPOTIFY_REFRESH_TOKEN"))
 _sp_oauth.cache_handler.save_token_info(token_info)
+
+# Initialize Spotipy with refreshed token
 _sp = spotipy.Spotify(auth_manager=_sp_oauth)
 
 
