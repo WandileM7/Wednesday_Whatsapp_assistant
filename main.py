@@ -11,6 +11,7 @@ import logging
 import time
 from chromedb import add_to_conversation_history
 from datetime import datetime
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from handlers.gemini import chat_with_functions, execute_function, model
 
@@ -27,6 +28,7 @@ logger = logging.getLogger("WhatsAppAssistant")
 
 load_dotenv()
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 app.register_blueprint(auth_bp)       # <--- makes /authorize and /oauth2callback active
 # Validate environment
