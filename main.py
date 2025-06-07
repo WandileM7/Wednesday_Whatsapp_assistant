@@ -50,12 +50,13 @@ except ImportError as e:
 load_dotenv()
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
-app.config["SESSION_TYPE"] = "null"  # In-memory sessions
+app.config["SESSION_TYPE"] = "filesystem"  # Change from "null" to "filesystem"
+app.config["SESSION_PERMANENT"] = False
+app.config["SESSION_USE_SIGNER"] = True
 app.secret_key = os.getenv("FLASK_SECRET_KEY", os.urandom(24))
 
 # Only initialize Session if needed
-if os.getenv("ENABLE_SESSIONS", "false").lower() == "true":
-    Session(app)
+Session(app)
 
 
 app.register_blueprint(auth_bp)       # <--- makes /authorize and /oauth2callback active
