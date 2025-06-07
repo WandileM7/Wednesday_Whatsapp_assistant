@@ -16,3 +16,4 @@ onnxruntime>=1.15.0
 fastapi
 flask-session
 werkzeug
+psutil

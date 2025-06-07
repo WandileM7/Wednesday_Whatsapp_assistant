@@ -19,6 +19,8 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from spotipy.oauth2 import SpotifyOAuth  # Add this import
 import spotipy  # Add this import
 
+
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -30,15 +32,38 @@ logging.basicConfig(
 )
 logger = logging.getLogger("WhatsAppAssistant")
 
+
+try:
+    from chromedb import add_to_conversation_history, query_conversation_history
+    CHROMADB_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"ChromaDB not available: {e}")
+    CHROMADB_AVAILABLE = False
+    
+    # Fallback functions
+    def add_to_conversation_history(phone, role, message):
+        return True
+    
+    def query_conversation_history(phone, query, limit=5):
+        return []
+    
 load_dotenv()
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
-app.config["SESSION_TYPE"] = "filesystem"
+app.config["SESSION_TYPE"] = "null"  # In-memory sessions
 app.secret_key = os.getenv("FLASK_SECRET_KEY", os.urandom(24))
-Session(app)
+
+# Only initialize Session if needed
+if os.getenv("ENABLE_SESSIONS", "false").lower() == "true":
+    Session(app)
+
 
 app.register_blueprint(auth_bp)       # <--- makes /authorize and /oauth2callback active
 # Validate environment
+
+user_conversations = {}
+MAX_CONVERSATIONS = 50  # Limit stored conversations
+MAX_MESSAGES_PER_USER = 15
 gemini_api_key = os.getenv("GEMINI_API_KEY")
 if not gemini_api_key:
     logger.error("GEMINI_API_KEY is not set. Quitting.")
@@ -104,7 +129,20 @@ def get_token_info():
             session.pop("token_info", None)
             return None
     return token_info
-
+def cleanup_conversations():
+    """Clean up old conversations to manage memory"""
+    if len(user_conversations) > MAX_CONVERSATIONS:
+        # Remove oldest conversations
+        sorted_convos = sorted(
+            user_conversations.items(),
+            key=lambda x: x[1].get('last_activity', 0)
+        )
+        
+        # Keep only the most recent conversations
+        for phone, _ in sorted_convos[:-MAX_CONVERSATIONS//2]:
+            del user_conversations[phone]
+        
+        logger.info(f"Cleaned up conversations, now have {len(user_conversations)}")
 def get_spotify_client():
     token_info = get_token_info()
     if not token_info:
@@ -184,21 +222,44 @@ def send_initial_message():
 # --- FUNCTION: WhatsApp webhook handler ---
 @app.route('/webhook', methods=['POST', 'GET'])
 def webhook():
-    logger.info("Webhook received.")
-
     if request.method == 'GET':
-        return jsonify({"status": "online"})
-
-    data = request.get_json() or {}
-    payload = data.get('payload', data)
-    user_msg = payload.get('body') or payload.get('text') or payload.get('message')
-    phone = payload.get('chatId') or payload.get('from')
-
-    if not user_msg or not phone:
-        return jsonify({'status': 'ignored'}), 200
+        return jsonify({"status": "online", "memory_optimized": True})
 
     try:
-        # Step 1: Ask Gemini for its response (which may be a function call)
+        data = request.get_json() or {}
+        payload = data.get('payload', data)
+        user_msg = payload.get('body') or payload.get('text') or payload.get('message')
+        phone = payload.get('chatId') or payload.get('from')
+
+        if not user_msg or not phone:
+            return jsonify({'status': 'ignored'}), 200
+
+        # Skip messages from self
+        if payload.get('fromMe'):
+            return jsonify({'status': 'ignored'}), 200
+
+        logger.info(f"Processing message from {phone}: {user_msg[:30]}...")
+        if phone not in user_conversations:
+            user_conversations[phone] = {
+                'messages': [],
+                'last_activity': time.time()
+            }
+        
+        # Limit messages per conversation
+        conversation = user_conversations[phone]
+        conversation['messages'].append({
+            'role': 'user',
+            'content': user_msg,
+            'timestamp': time.time()
+        })
+        
+        # Keep only recent messages
+        conversation['messages'] = conversation['messages'][-MAX_MESSAGES_PER_USER:]
+        conversation['last_activity'] = time.time()
+
+        # Clean up conversations periodically
+        if len(user_conversations) % 10 == 0:
+            cleanup_conversations()
         call = chat_with_functions(user_msg, phone)
         logger.debug(f"Gemini function response: {call}")
 
@@ -210,19 +271,31 @@ def webhook():
             # Gemini returned a plain-text answer
             reply = call.get("content", "Sorry, no idea what that was.")
 
-        # Step 3: Save both user→assistant messages into ChromaDB
-        try:
-            add_to_conversation_history(phone, "user", user_msg)
-            add_to_conversation_history(phone, "assistant", reply)
-        except Exception as e:
-            logger.error(f"ChromaDB save error: {e}")
-        # Step 5: Send response back to user
+        # Step 3: Save to ChromaDB only if available and enabled
+        if CHROMADB_AVAILABLE and os.getenv("ENABLE_CHROMADB", "false").lower() == "true":
+            try:
+                add_to_conversation_history(phone, "user", user_msg)
+                add_to_conversation_history(phone, "assistant", reply)
+            except Exception as e:
+                logger.warning(f"ChromaDB save error: {e}")
+        conversation['messages'].append({
+            'role': 'assistant',
+            'content': reply,
+            'timestamp': time.time()
+        })
+        conversation['messages'] = conversation['messages'][-MAX_MESSAGES_PER_USER:]
+
+        # Step 4: Send response back to user
         send_message(phone, reply)
-        return jsonify({'status': 'ok'})
+        return jsonify({'status': 'ok', 'memory_optimized': True})
 
     except Exception as e:
-        logger.error(f"Error during chat_with_functions: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 50
+        logger.error(f"Error during chat processing: {e}")
+        return jsonify({'status': 'error', 'message': 'Processing failed'}), 500
+
+
+
+
 
 
 @app.route('/chat', methods=['POST'])
@@ -235,58 +308,6 @@ def direct_chat():
     ])
     return jsonify({'response': response.text})
 
-@app.route("/test-waha")
-def test_waha():
-    url = os.getenv("WAHA_URL", "https://waha-gemini-assistant.onrender.com/api/sendText")
-    payload = {
-        "session": "default",
-        "chatId": "27729224495@c.us",
-        "text": "Hello from Flask!"
-    }
-    try:
-        response = requests.post(waha_url, json=payload)
-        return f"WAHA responded: {response.status_code} - {response.text}"
-    except Exception as e:
-        return f"Failed to reach WAHA: {e}"
-
-@app.route("/test-waha-debug")
-def test_waha_debug():
-    """Debug WAHA connection with detailed logging"""
-    waha_url = os.getenv("WAHA_URL")
-    session_name = os.getenv("WAHA_SESSION", "default")
-    
-    # First, check if WAHA is running
-    try:
-        base_url = waha_url.replace("/api/sendText", "")
-        status_response = requests.get(f"{base_url}/api/sessions", timeout=10)
-        logger.info(f"WAHA status check: {status_response.status_code}")
-        logger.info(f"WAHA sessions: {status_response.text}")
-    except Exception as e:
-        logger.error(f"Failed to check WAHA status: {e}")
-        return f"WAHA status check failed: {e}"
-    
-    # Test sending a message
-    test_payload = {
-        "session": session_name,
-        "chatId": "27729224495@c.us",  # Your test number
-        "text": "Test message from debug endpoint"
-    }
-    
-    try:
-        logger.info(f"Testing WAHA with payload: {test_payload}")
-        response = requests.post(waha_url, json=test_payload, timeout=10)
-        
-        return f"""
-        <h2>WAHA Debug Results</h2>
-        <p><strong>URL:</strong> {waha_url}</p>
-        <p><strong>Session:</strong> {session_name}</p>
-        <p><strong>Status Code:</strong> {response.status_code}</p>
-        <p><strong>Response Headers:</strong> {dict(response.headers)}</p>
-        <p><strong>Response Body:</strong> {response.text}</p>
-        <p><strong>Payload Sent:</strong> {test_payload}</p>
-        """
-    except Exception as e:
-        return f"WAHA test failed: {e}"
 
 @app.route("/status", methods=["GET"])
 def status():
@@ -295,7 +316,44 @@ def status():
         "active_conversations": len(user_conversations),
         "timestamp": datetime.now().isoformat()
     })
-
+    
+@app.route("/health")
+def health():
+    """Health check with memory information"""
+    import psutil
+    import gc
+    
+    # Force garbage collection
+    gc.collect()
+    
+    # Get memory usage
+    process = psutil.Process()
+    memory_info = process.memory_info()
+    
+    return jsonify({
+        "status": "healthy",
+        "memory_mb": round(memory_info.rss / 1024 / 1024, 2),
+        "active_conversations": len(user_conversations),
+        "chromadb_enabled": CHROMADB_AVAILABLE and os.getenv("ENABLE_CHROMADB", "false").lower() == "true",
+        "timestamp": datetime.now().isoformat()
+    })
+    
+@app.route("/memory-cleanup")
+def memory_cleanup():
+    """Manual memory cleanup endpoint"""
+    import gc
+    
+    # Clear old conversations
+    cleanup_conversations()
+    
+    # Force garbage collection
+    collected = gc.collect()
+    
+    return jsonify({
+        "status": "cleanup_completed",
+        "objects_collected": collected,
+        "active_conversations": len(user_conversations)
+    })
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"status": "online"})
@@ -364,33 +422,7 @@ def send_message_original(phone, text):
     except:
         return False
 
-@app.route("/spotify-status")
-def spotify_status():
-    """Check Spotify authentication status"""
-    token_info = get_token_info()
-    if token_info:
-        try:
-            sp = spotipy.Spotify(auth=token_info["access_token"])
-            user = sp.current_user()
-            return {
-                "authenticated": True,
-                "user": user["display_name"],
-                "user_id": user["id"],
-                "token_expires": token_info.get("expires_at"),
-                "scopes": token_info.get("scope", "").split()
-            }
-        except Exception as e:
-            return {
-                "authenticated": False,
-                "error": str(e),
-                "login_url": "/login"
-            }
-    else:
-        return {
-            "authenticated": False,
-            "message": "No valid token found",
-            "login_url": "/login"
-        }
+
 
 @app.route("/clear-spotify-tokens")
 def clear_spotify_tokens():
@@ -435,28 +467,7 @@ def test_spotify():
         }, e.http_status
     except Exception as e:
         return {"error": str(e)}, 500
-
-@app.route("/spotify-quick-check")
-def spotify_quick_check():
-    """Quick check of Spotify functionality"""
-    from handlers.spotify_client import is_authenticated
-    from handlers.spotify import get_current_song
     
-    if not is_authenticated():
-        return {
-            "authenticated": False,
-            "login_url": "/login"
-        }
-    
-    # Test a simple function
-    current_song = get_current_song()
-    
-    return {
-        "authenticated": True,
-        "current_song_result": current_song,
-        "spotify_working": not current_song.startswith("❌")
-    }
-
 if __name__ == '__main__':
     logger.info("Launching WhatsApp Assistant...")
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5000, threaded=True, debug=True)
