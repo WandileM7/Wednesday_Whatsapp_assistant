@@ -2,24 +2,22 @@ import json
 from dotenv import load_dotenv
 from fastapi import params
 from flask import Flask, redirect, request, jsonify, session
-import os
+from handlers.gemini import chat_with_functions, execute_function
 from handlers.google_auth import auth_bp
-import requests
 import google.generativeai as genai
 import sys
-from flask_session import Session
-
-import logging
+import os  # Add this missing import
+import requests  # Add this missing import
+import logging  # Move this import up
 import time
+from flask_session import Session
+from handlers.spotify_client import make_spotify_oauth
+
 from chromedb import add_to_conversation_history
 from datetime import datetime
 from werkzeug.middleware.proxy_fix import ProxyFix
-
-
-# Import Spotify client functions
-from handlers.spotify_client import make_spotify_oauth
-
-from handlers.gemini import chat_with_functions, execute_function, model
+from spotipy.oauth2 import SpotifyOAuth  # Add this import
+import spotipy  # Add this import
 
 # Set up logging
 logging.basicConfig(
