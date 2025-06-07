@@ -557,7 +557,7 @@ def test_email_send():
         
         # Send a test email to yourself
         result = send_email(
-            to="your-email@example.com",  # Replace with your email
+            to="wandilemawela4@gmail.com.com",  # Replace with your email
             subject="Test Email from WhatsApp Assistant",
             body="This is a test email to verify Gmail integration is working."
         )
