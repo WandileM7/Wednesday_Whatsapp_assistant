@@ -8,6 +8,9 @@ import requests
 import google.generativeai as genai
 import sys
 import logging
+import os  # Add this line
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
 import time
 from chromedb import add_to_conversation_history
 from datetime import datetime
@@ -165,6 +168,42 @@ def status():
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"status": "online"})
+
+# Add this new route after your existing routes
+@app.route('/callback')
+def spotify_callback():
+    """Handle Spotify OAuth callback"""
+    code = request.args.get('code')
+    error = request.args.get('error')
+    
+    if error:
+        return f"""
+        <h2>❌ Authorization Error</h2>
+        <p>Error: {error}</p>
+        <p>Description: {request.args.get('error_description', 'No description provided')}</p>
+        """, 400
+    
+    if not code:
+        return """
+        <h2>❌ No Authorization Code</h2>
+        <p>No authorization code received from Spotify.</p>
+        """, 400
+    
+    return f"""
+    <h2>✅ Authorization Successful!</h2>
+    <p><strong>Authorization Code:</strong></p>
+    <textarea style="width: 100%; height: 100px; font-family: monospace; margin: 10px 0;">{code}</textarea>
+    
+    <p><strong>Next Steps:</strong></p>
+    <ol>
+        <li>Copy the authorization code above</li>
+        <li>Go to your local token generator: <code>http://localhost:8888/callback?code=PASTE_CODE_HERE</code></li>
+        <li>Get your refresh token from there</li>
+        <li>Set it as <code>SPOTIFY_REFRESH_TOKEN</code> in your environment variables</li>
+    </ol>
+    
+    <p><em>This page is just showing you the authorization code. You still need to exchange it for tokens using your local script.</em></p>
+    """
 
 # --- UTILITIES ---
 def typing_indicator(phone, seconds=2):
