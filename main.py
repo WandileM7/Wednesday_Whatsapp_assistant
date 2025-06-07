@@ -15,12 +15,9 @@ from chromedb import add_to_conversation_history
 from datetime import datetime
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-# Add missing Spotify imports
-import spotipy
-from spotipy.oauth2 import SpotifyOAuth
 
 # Import Spotify client functions
-from handlers.spotify_client import make_spotify_oauth, get_spotify_client
+from handlers.spotify_client import make_spotify_oauth
 
 from handlers.gemini import chat_with_functions, execute_function, model
 
