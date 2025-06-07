@@ -991,6 +991,345 @@ def send_message(phone, text):
         logger.error(f"Error sending message: {e}")
         return False
 
+# Add this route after your existing Google routes (around line 580)
+
+@app.route("/save-current-google-tokens")
+def save_current_google_tokens():
+    """Save current Google session tokens for automation"""
+    try:
+        if 'google_credentials' not in session:
+            return {"error": "No Google credentials in session. Please authenticate first."}, 400
+        
+        from google.oauth2.credentials import Credentials
+        from handlers.google_auth import SCOPES
+        
+        creds = Credentials.from_authorized_user_info(session['google_credentials'], SCOPES)
+        
+        if not creds.refresh_token:
+            return {"error": "No refresh token available. Please re-authenticate with prompt=consent."}, 400
+        
+        # Save tokens for automation
+        save_google_tokens_to_env(creds)
+        
+        return {
+            "success": True,
+            "message": "Google tokens saved for automation",
+            "has_refresh_token": bool(creds.refresh_token),
+            "scopes": list(creds.scopes) if hasattr(creds, 'scopes') else [],
+            "next_steps": [
+                "Check your logs for environment variables",
+                "Add GOOGLE_REFRESH_TOKEN to your deployment environment",
+                "Restart your app to enable auto-authentication"
+            ]
+        }
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+@app.route("/google-debug")
+def google_debug():
+    """Debug Google authentication status"""
+    try:
+        from handlers.google_auth import load_credentials, get_credentials_path
+        
+        debug_info = {
+            "session_has_google_creds": bool(session.get('google_credentials')),
+            "google_refresh_token_env": bool(os.getenv("GOOGLE_REFRESH_TOKEN")),
+            "google_client_id_env": bool(os.getenv("GOOGLE_CLIENT_ID")),
+            "google_client_secret_env": bool(os.getenv("GOOGLE_CLIENT_SECRET")),
+            "credentials_file_path": get_credentials_path(),
+            "credentials_file_exists": bool(get_credentials_path() and os.path.exists(get_credentials_path()))
+        }
+        
+        # Try to load credentials
+        try:
+            creds = load_credentials()
+            debug_info.update({
+                "can_load_credentials": True,
+                "credentials_valid": creds.valid if creds else False,
+                "credential_type": "service_account" if (creds and hasattr(creds, 'service_account_email')) else "oauth"
+            })
+        except Exception as e:
+            debug_info.update({
+                "can_load_credentials": False,
+                "load_error": str(e)
+            })
+        
+        # Session details
+        if session.get('google_credentials'):
+            session_creds = session['google_credentials']
+            debug_info.update({
+                "session_has_refresh_token": bool(session_creds.get('refresh_token')),
+                "session_token_scopes": session_creds.get('scopes', [])
+            })
+        
+        return debug_info
+        
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+@app.route("/setup-all-auto-auth")
+def setup_all_auto_auth():
+    """Setup automatic authentication for all services"""
+    results = {
+        "timestamp": datetime.now().isoformat(),
+        "services": {}
+    }
+    
+    # Setup Spotify auto-auth
+    try:
+        token_info = get_token_info()
+        if token_info and token_info.get('refresh_token'):
+            spotify_refresh = token_info['refresh_token']
+            results["services"]["spotify"] = {
+                "success": True,
+                "message": "Spotify refresh token available",
+                "refresh_token": spotify_refresh[:20] + "...",
+                "env_var": f"SPOTIFY_REFRESH_TOKEN={spotify_refresh}"
+            }
+        else:
+            results["services"]["spotify"] = {
+                "success": False,
+                "message": "No Spotify refresh token available",
+                "action": "Visit /login to authenticate Spotify"
+            }
+    except Exception as e:
+        results["services"]["spotify"] = {
+            "success": False,
+            "error": str(e)
+        }
+    
+    # Setup Google auto-auth
+    try:
+        if 'google_credentials' in session:
+            from google.oauth2.credentials import Credentials
+            from handlers.google_auth import SCOPES
+            
+            creds = Credentials.from_authorized_user_info(session['google_credentials'], SCOPES)
+            
+            if creds.refresh_token:
+                save_google_tokens_to_env(creds)
+                results["services"]["google"] = {
+                    "success": True,
+                    "message": "Google tokens saved for automation",
+                    "refresh_token": creds.refresh_token[:20] + "...",
+                    "env_vars": {
+                        "GOOGLE_REFRESH_TOKEN": creds.refresh_token,
+                        "GOOGLE_CLIENT_ID": creds.client_id,
+                        "GOOGLE_CLIENT_SECRET": creds.client_secret
+                    }
+                }
+            else:
+                results["services"]["google"] = {
+                    "success": False,
+                    "message": "No Google refresh token available",
+                    "action": "Re-authenticate at /google-login with prompt=consent"
+                }
+        else:
+            results["services"]["google"] = {
+                "success": False,
+                "message": "No Google credentials in session",
+                "action": "Visit /google-login to authenticate"
+            }
+    except Exception as e:
+        results["services"]["google"] = {
+            "success": False,
+            "error": str(e)
+        }
+    
+    # Summary
+    successful_services = sum(1 for service in results["services"].values() if service.get("success", False))
+    total_services = len(results["services"])
+    
+    results["summary"] = {
+        "successful": successful_services,
+        "total": total_services,
+        "all_configured": successful_services == total_services,
+        "next_steps": [
+            "Copy the environment variables from the logs",
+            "Add them to your deployment platform",
+            "Restart your application",
+            "Verify with /services endpoint"
+        ]
+    }
+    
+    return results
+
+@app.route("/test-webhook-auth")
+def test_webhook_auth():
+    """Test authentication as it would work in webhook context (no session)"""
+    # Clear any session data to simulate webhook environment
+    original_session = dict(session)
+    session.clear()
+    
+    try:
+        results = {
+            "timestamp": datetime.now().isoformat(),
+            "webhook_simulation": True,
+            "tests": {}
+        }
+        
+        # Test Spotify authentication without session
+        try:
+            token_info = get_token_info()  # This should work with environment refresh token
+            if token_info:
+                sp = spotipy.Spotify(auth=token_info["access_token"])
+                user = sp.current_user()
+                results["tests"]["spotify"] = {
+                    "success": True,
+                    "message": f"Spotify authenticated as {user['display_name']}",
+                    "user_id": user["id"]
+                }
+            else:
+                results["tests"]["spotify"] = {
+                    "success": False,
+                    "message": "No Spotify token available in webhook context"
+                }
+        except Exception as e:
+            results["tests"]["spotify"] = {
+                "success": False,
+                "error": str(e)
+            }
+        
+        # Test Google authentication without session
+        try:
+            from handlers.google_auth import load_credentials
+            creds = load_credentials()
+            if creds and creds.valid:
+                results["tests"]["google"] = {
+                    "success": True,
+                    "message": "Google authenticated successfully",
+                    "credential_type": "service_account" if hasattr(creds, 'service_account_email') else "oauth"
+                }
+            else:
+                results["tests"]["google"] = {
+                    "success": False,
+                    "message": "No valid Google credentials in webhook context"
+                }
+        except Exception as e:
+            results["tests"]["google"] = {
+                "success": False,
+                "error": str(e)
+            }
+        
+        # Test email sending in webhook context
+        try:
+            from handlers.gmail import send_email
+            result = send_email(
+                to="wandilemawela4@gmail.com",
+                subject="Webhook Auth Test",
+                body="Testing email functionality in webhook context (no session)."
+            )
+            results["tests"]["email_send"] = {
+                "success": not result.startswith("❌"),
+                "result": result
+            }
+        except Exception as e:
+            results["tests"]["email_send"] = {
+                "success": False,
+                "error": str(e)
+            }
+        
+        # Summary
+        successful_tests = sum(1 for test in results["tests"].values() if test.get("success", False))
+        total_tests = len(results["tests"])
+        
+        results["summary"] = {
+            "webhook_ready": successful_tests == total_tests,
+            "successful": successful_tests,
+            "total": total_tests,
+            "message": "Webhook authentication ready" if successful_tests == total_tests else "Webhook authentication needs setup"
+        }
+        
+        return results
+        
+    finally:
+        # Restore original session
+        session.clear()
+        session.update(original_session)
+
+@app.route("/quick-setup")
+def quick_setup():
+    """Quick setup page with all necessary links"""
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>WhatsApp Assistant - Quick Setup</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 40px; }}
+            .card {{ border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 20px 0; }}
+            .success {{ border-color: #28a745; background-color: #d4edda; }}
+            .warning {{ border-color: #ffc107; background-color: #fff3cd; }}
+            .error {{ border-color: #dc3545; background-color: #f8d7da; }}
+            .button {{ display: inline-block; padding: 10px 20px; margin: 5px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }}
+            .button:hover {{ background: #0056b3; }}
+            .step {{ margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; }}
+        </style>
+    </head>
+    <body>
+        <h1>WhatsApp Assistant - Quick Setup</h1>
+        
+        <div class="card warning">
+            <h3>🚀 Authentication Setup</h3>
+            <p>Set up automatic authentication for all services:</p>
+            
+            <div class="step">
+                <strong>Step 1:</strong> Authenticate Services
+                <br>
+                <a href="/google-login" class="button">Authenticate Google</a>
+                <a href="/login" class="button">Authenticate Spotify</a>
+            </div>
+            
+            <div class="step">
+                <strong>Step 2:</strong> Save Tokens for Auto-Auth
+                <br>
+                <a href="/setup-all-auto-auth" class="button">Setup All Auto-Auth</a>
+                <a href="/save-current-google-tokens" class="button">Save Google Tokens</a>
+            </div>
+            
+            <div class="step">
+                <strong>Step 3:</strong> Test Everything
+                <br>
+                <a href="/test-webhook-auth" class="button">Test Webhook Auth</a>
+                <a href="/services" class="button">Check Status</a>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h3>🧪 Testing & Debugging</h3>
+            <a href="/test-current-email" class="button">Test Email</a>
+            <a href="/test-spotify" class="button">Test Spotify</a>
+            <a href="/google-debug" class="button">Debug Google</a>
+            <a href="/health" class="button">Health Check</a>
+        </div>
+        
+        <div class="card">
+            <h3>📊 Dashboards</h3>
+            <a href="/google-services-dashboard" class="button">Google Dashboard</a>
+            <a href="/services" class="button">Services Overview</a>
+        </div>
+        
+        <div class="card">
+            <h3>⚡ Quick Actions</h3>
+            <a href="/clear-spotify-tokens" class="button">Clear Spotify</a>
+            <a href="/auth/clear-auth" class="button">Clear Google</a>
+            <a href="/refresh-google-token" class="button">Refresh Google</a>
+        </div>
+        
+        <div class="card">
+            <h3>📝 Environment Variables Needed</h3>
+            <p>After authentication, add these to your deployment:</p>
+            <code>
+                SPOTIFY_REFRESH_TOKEN=your_token_here<br>
+                GOOGLE_REFRESH_TOKEN=your_token_here<br>
+                GOOGLE_CLIENT_ID=your_client_id<br>
+                GOOGLE_CLIENT_SECRET=your_secret
+            </code>
+        </div>
+    </body>
+    </html>
+    """
+
 if __name__ == '__main__':
     logger.info("Launching Memory-Optimized WhatsApp Assistant...")
     debug_mode = os.getenv("FLASK_DEBUG", "false").lower() == "true"
