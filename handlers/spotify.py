@@ -3,16 +3,58 @@ import logging
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from flask import session
+import json
+import time
 
 logger = logging.getLogger(__name__)
 
-def get_spotify_client():
-    """Get authenticated Spotify client using session token"""
+# Global token storage as fallback
+_global_token_info = None
+
+def save_token_globally(token_info):
+    """Save token info globally for webhook access"""
+    global _global_token_info
+    _global_token_info = token_info
+    
+    # Also try to save to a file for persistence
     try:
-        # Get token from session (same as main.py)
-        token_info = session.get("token_info")
+        with open('/tmp/spotify_token.json', 'w') as f:
+            json.dump(token_info, f)
+        logger.info("Token saved to file")
+    except Exception as e:
+        logger.warning(f"Could not save token to file: {e}")
+
+def load_token_globally():
+    """Load token info from global storage or file"""
+    global _global_token_info
+    
+    # First try global memory
+    if _global_token_info:
+        return _global_token_info
+    
+    # Then try file storage
+    try:
+        with open('/tmp/spotify_token.json', 'r') as f:
+            _global_token_info = json.load(f)
+            logger.info("Token loaded from file")
+            return _global_token_info
+    except Exception as e:
+        logger.debug(f"Could not load token from file: {e}")
+        return None
+
+def get_spotify_client():
+    """Get authenticated Spotify client using session token or global storage"""
+    try:
+        # First try session (for web requests)
+        token_info = session.get("token_info") if session else None
+        
+        # If no session token, try global storage (for webhook requests)
         if not token_info:
-            logger.warning("No Spotify token found in session")
+            logger.info("No session token, trying global storage...")
+            token_info = load_token_globally()
+        
+        if not token_info:
+            logger.warning("No Spotify token found in session or global storage")
             return None
         
         # Check if token is expired
@@ -20,7 +62,7 @@ def get_spotify_client():
             client_id=os.getenv("SPOTIFY_CLIENT_ID"),
             client_secret=os.getenv("SPOTIFY_SECRET"),
             redirect_uri=os.getenv("SPOTIFY_REDIRECT_URI"),
-            scope="user-read-playback-state user-modify-playback-state",
+            scope="user-read-playbook-state user-modify-playback-state",
             cache_path=None
         )
         
@@ -28,11 +70,19 @@ def get_spotify_client():
             logger.info("Token expired, attempting refresh...")
             try:
                 token_info = sp_oauth.refresh_access_token(token_info["refresh_token"])
-                session["token_info"] = token_info
+                
+                # Save to both session and global storage
+                if session:
+                    session["token_info"] = token_info
+                save_token_globally(token_info)
+                
                 logger.info("Token refreshed successfully")
             except Exception as e:
                 logger.error(f"Failed to refresh token: {e}")
-                session.pop("token_info", None)
+                if session:
+                    session.pop("token_info", None)
+                global _global_token_info
+                _global_token_info = None
                 return None
         
         return spotipy.Spotify(auth=token_info["access_token"])
@@ -72,12 +122,12 @@ def get_current_song() -> str:
     if not sp:
         return "❌ Spotify not authenticated. Please visit /login to authenticate with Spotify."
     try:
-        playback = sp.current_playback()
-        if not playback or not playback.get("item"):
+        playbook = sp.current_playback()
+        if not playbook or not playbook.get("item"):
             return "🔇 Nothing is playing right now."
-        item = playback["item"]
+        item = playbook["item"]
         artist = item['artists'][0]['name'] if item.get('artists') else 'Unknown Artist'
-        is_playing = playback.get('is_playing', False)
+        is_playing = playbook.get('is_playing', False)
         status = "🎵 Playing" if is_playing else "⏸️ Paused"
         return f"{status}: {item['name']} by {artist}"
     except spotipy.exceptions.SpotifyException as e:
@@ -98,7 +148,7 @@ def play_playlist(name: str) -> str:
         playlists = sp.current_user_playlists()["items"]
         for pl in playlists:
             if name.lower() in pl["name"].lower():
-                sp.start_playbook(context_uri=pl["uri"])
+                sp.start_playback(context_uri=pl["uri"])  # Fixed typo: was start_playbook
                 return f"🎵 Now playing playlist: {pl['name']}"
         
         # If not found in user playlists, search public playlists
@@ -123,31 +173,6 @@ def play_playlist(name: str) -> str:
     except Exception as e:
         logger.error(f"Error playing playlist: {e}")
         return f"❌ Error playing playlist: {e}"
-
-def play_album(name: str) -> str:
-    sp = get_spotify_client()
-    if not sp:
-        return "❌ Spotify not authenticated. Please visit /login to authenticate with Spotify."
-    try:
-        items = sp.search(q=name, type="album", limit=1)["albums"]["items"]
-        if not items:
-            return f"❌ Couldn't find album '{name}'. Try a different search term."
-        sp.start_playback(context_uri=items[0]["uri"])
-        artist = items[0]['artists'][0]['name'] if items[0].get('artists') else 'Unknown Artist'
-        return f"🎵 Now playing album: {items[0]['name']} by {artist}"
-    except spotipy.exceptions.SpotifyException as e:
-        if e.http_status == 401:
-            return "❌ Spotify authentication expired. Please visit /login to re-authenticate."
-        elif e.http_status == 403:
-            return "❌ Spotify Premium required for playback control."
-        elif e.http_status == 404:
-            return "❌ No active Spotify device found. Please open Spotify on a device first."
-        else:
-            logger.error(f"Spotify API error: {e}")
-            return f"❌ Spotify error: {e}"
-    except Exception as e:
-        logger.error(f"Error playing album: {e}")
-        return f"❌ Error playing album: {e}"
 
 def pause_playback() -> str:
     sp = get_spotify_client()

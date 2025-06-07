@@ -178,9 +178,13 @@ def spotify_callback():
     
     try:
         sp_oauth = make_spotify_oauth()
-        # Remove as_dict parameter - not supported in all versions
         token_info = sp_oauth.get_access_token(code)
         session["token_info"] = token_info
+        
+        # Also save globally for webhook access
+        from handlers.spotify import save_token_globally
+        save_token_globally(token_info)
+        
         logger.info("Spotify authorization successful")
         return "✅ Spotify authorization successful. You can now use playback endpoints."
     except Exception as e:
