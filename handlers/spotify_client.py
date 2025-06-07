@@ -28,14 +28,13 @@ def get_token_info():
             logger.info("No session token, trying environment refresh token...")
             try:
                 sp_oauth = make_spotify_oauth()
-                # Fix deprecation warning by using as_dict=True
-                token_info = sp_oauth.refresh_access_token(refresh_token, as_dict=True)
+                # Remove as_dict parameter - not supported in all versions
+                token_info = sp_oauth.refresh_access_token(refresh_token)
                 session["token_info"] = token_info
                 logger.info("Successfully refreshed token from environment")
                 return token_info
             except Exception as e:
                 logger.error(f"Error refreshing token from environment: {e}")
-                # Clear invalid refresh token from environment (in production, you'd want to handle this differently)
                 return None
         return None
     
@@ -44,8 +43,8 @@ def get_token_info():
     if sp_oauth.is_token_expired(token_info):
         logger.info("Session token expired, attempting refresh...")
         try:
-            # Fix deprecation warning by using as_dict=True
-            token_info = sp_oauth.refresh_access_token(token_info["refresh_token"], as_dict=True)
+            # Remove as_dict parameter - not supported in all versions
+            token_info = sp_oauth.refresh_access_token(token_info["refresh_token"])
             session["token_info"] = token_info
             logger.info("Successfully refreshed session token")
         except Exception as e:
