@@ -1,5 +1,6 @@
 import json
 from dotenv import load_dotenv
+
 from flask import Flask, redirect, request, jsonify, session
 from handlers.gemini import chat_with_functions, execute_function
 from handlers.google_auth import auth_bp
@@ -317,7 +318,273 @@ def test_gmail():
     except Exception as e:
         return {"error": str(e)}, 500
 
-# Spotify endpoints
+# Add the new Google service routes here:
+@app.route("/google-login")
+def google_login():
+    """Start Google OAuth flow"""
+    try:
+        from handlers.google_auth import load_credentials
+        
+        # Check if already authenticated
+        creds = load_credentials()
+        if creds and creds.valid:
+            return """
+            <h2>✅ Already Authenticated</h2>
+            <p>Google services are already authenticated and ready to use.</p>
+            <p><a href="/test-gmail">Test Gmail</a> | <a href="/google-status">Check Status</a></p>
+            """
+        
+        # Redirect to authorization flow
+        return redirect(url_for('auth.authorize'))
+        
+    except Exception as e:
+        logger.error(f"Error in Google login: {e}")
+        return f"""
+        <h2>❌ Google Login Error</h2>
+        <p>Error: {str(e)}</p>
+        <p><a href="/google-status">Check Google Status</a></p>
+        """, 500
+
+@app.route("/google-auth-status")
+def google_auth_status():
+    """Detailed Google authentication status with helpful links"""
+    from handlers.google_auth import load_credentials, get_credentials_path, validate_credentials_file
+    
+    try:
+        creds_path = get_credentials_path()
+        status = {
+            "credentials_path": creds_path,
+            "file_exists": bool(creds_path and os.path.exists(creds_path)),
+            "env_var_set": bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+        }
+        
+        if creds_path:
+            is_valid, result = validate_credentials_file(creds_path)
+            status.update({
+                "file_valid": is_valid,
+                "validation_result": result
+            })
+            
+            if is_valid:
+                try:
+                    creds = load_credentials()
+                    status.update({
+                        "credentials_loaded": True,
+                        "has_credentials": creds is not None,
+                        "credentials_valid": creds.valid if creds else False,
+                        "credential_type": "service_account" if (creds and hasattr(creds, 'service_account_email')) else "oauth",
+                        "needs_auth": not (creds and creds.valid)
+                    })
+                    
+                    # Check if credentials are expired
+                    if creds and hasattr(creds, 'expired'):
+                        status["credentials_expired"] = creds.expired
+                        
+                except Exception as e:
+                    status.update({
+                        "credentials_loaded": False,
+                        "load_error": str(e)
+                    })
+        
+        # Add helpful actions based on status
+        actions = []
+        if not status.get("file_exists"):
+            actions.append("Add credentials.json file")
+        elif not status.get("file_valid"):
+            actions.append("Fix credentials.json format")
+        elif status.get("needs_auth", True):
+            actions.append("Complete OAuth flow")
+            status["auth_url"] = url_for('google_login', _external=True)
+        else:
+            actions.append("Ready to use Google services")
+            
+        status["recommended_actions"] = actions
+        return status
+        
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+@app.route("/test-google-services")
+def test_google_services():
+    """Test all Google services"""
+    from handlers.gmail import summarize_emails
+    
+    results = {
+        "timestamp": datetime.now().isoformat(),
+        "tests": {}
+    }
+    
+    # Test Gmail read access
+    try:
+        gmail_result = summarize_emails(2)
+        results["tests"]["gmail_read"] = {
+            "success": not gmail_result.startswith("❌"),
+            "result": gmail_result[:100] + "..." if len(gmail_result) > 100 else gmail_result
+        }
+    except Exception as e:
+        results["tests"]["gmail_read"] = {
+            "success": False,
+            "error": str(e)
+        }
+    
+    # Test Gmail send access (dry run)
+    try:
+        from handlers.google_auth import load_credentials
+        from googleapiclient.discovery import build
+        
+        creds = load_credentials()
+        if creds:
+            service = build('gmail', 'v1', credentials=creds)
+            service.users().getProfile(userId='me').execute()
+            results["tests"]["gmail_send"] = {
+                "success": True,
+                "result": "Gmail send service accessible"
+            }
+        else:
+            results["tests"]["gmail_send"] = {
+                "success": False,
+                "result": "No credentials available"
+            }
+    except Exception as e:
+        results["tests"]["gmail_send"] = {
+            "success": False,
+            "error": str(e)
+        }
+    
+    # Test Calendar access
+    try:
+        from handlers.google_auth import load_credentials
+        from googleapiclient.discovery import build
+        
+        creds = load_credentials()
+        if creds:
+            service = build('calendar', 'v3', credentials=creds)
+            calendar_list = service.calendarList().list(maxResults=1).execute()
+            results["tests"]["calendar"] = {
+                "success": True,
+                "result": f"Calendar service accessible, found {len(calendar_list.get('items', []))} calendars"
+            }
+        else:
+            results["tests"]["calendar"] = {
+                "success": False,
+                "result": "No credentials available"
+            }
+    except Exception as e:
+        results["tests"]["calendar"] = {
+            "success": False,
+            "error": str(e)
+        }
+    
+    # Overall status
+    all_tests = results["tests"]
+    successful_tests = sum(1 for test in all_tests.values() if test.get("success", False))
+    total_tests = len(all_tests)
+    
+    results["summary"] = {
+        "successful": successful_tests,
+        "total": total_tests,
+        "all_passed": successful_tests == total_tests
+    }
+    
+    return results
+
+@app.route("/google-services-dashboard")
+def google_services_dashboard():
+    """HTML dashboard for Google services"""
+    from handlers.google_auth import load_credentials
+    
+    try:
+        creds = load_credentials()
+        is_authenticated = creds and creds.valid
+        
+        html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Google Services Dashboard</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 40px; }}
+                .status {{ padding: 10px; margin: 10px 0; border-radius: 5px; }}
+                .success {{ background-color: #d4edda; color: #155724; }}
+                .warning {{ background-color: #fff3cd; color: #856404; }}
+                .error {{ background-color: #f8d7da; color: #721c24; }}
+                .button {{ padding: 10px 20px; margin: 5px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }}
+                .button:hover {{ background: #0056b3; }}
+            </style>
+        </head>
+        <body>
+            <h1>Google Services Dashboard</h1>
+            
+            <div class="status {'success' if is_authenticated else 'error'}">
+                <h3>Authentication Status</h3>
+                <p>{'✅ Authenticated and ready' if is_authenticated else '❌ Not authenticated'}</p>
+            </div>
+            
+            <h3>Quick Actions</h3>
+            {'<a href="/test-gmail" class="button">Test Gmail</a>' if is_authenticated else '<a href="/google-login" class="button">Authenticate Google</a>'}
+            <a href="/google-auth-status" class="button">Check Status</a>
+            <a href="/test-google-services" class="button">Test All Services</a>
+            
+            <h3>Available Services</h3>
+            <ul>
+                <li>📧 Gmail (Read & Send)</li>
+                <li>📅 Google Calendar</li>
+            </ul>
+            
+            <h3>Debug Information</h3>
+            <p><strong>Credentials Path:</strong> {os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "Not set")}</p>
+            <p><strong>Environment:</strong> {'Production' if not os.getenv("FLASK_DEBUG") else 'Development'}</p>
+            
+        </body>
+        </html>
+        """
+        return html
+        
+    except Exception as e:
+        return f"""
+        <h1>Google Services Dashboard</h1>
+        <div class="status error">
+            <h3>Error</h3>
+            <p>Failed to load dashboard: {str(e)}</p>
+        </div>
+        <a href="/google-status" class="button">Check Raw Status</a>
+        """, 500
+
+@app.route("/services")
+def services_overview():
+    """Overview of all available services"""
+    return {
+        "services": {
+            "whatsapp": {
+                "status": "active",
+                "webhook_url": request.host_url + "webhook",
+                "test_endpoint": "/health"
+            },
+            "spotify": {
+                "status": "configured" if os.getenv("SPOTIFY_CLIENT_ID") else "not_configured",
+                "auth_url": "/login",
+                "test_endpoint": "/test-spotify"
+            },
+            "google": {
+                "status": "configured" if os.getenv("GOOGLE_APPLICATION_CREDENTIALS") else "not_configured",
+                "auth_url": "/google-login",
+                "test_endpoint": "/test-gmail",
+                "dashboard": "/google-services-dashboard"
+            },
+            "gemini": {
+                "status": "active" if os.getenv("GEMINI_API_KEY") else "not_configured",
+                "model": "gemini-2.0-flash"
+            }
+        },
+        "quick_links": {
+            "authenticate_google": "/google-login",
+            "authenticate_spotify": "/login",
+            "test_all": "/health",
+            "webhook": "/webhook"
+        }
+    }
+
+# Spotify endpoints (continue with existing Spotify routes...)
 @app.route("/test-spotify")
 def test_spotify():
     """Test Spotify functionality"""
