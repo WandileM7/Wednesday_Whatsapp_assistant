@@ -17,3 +17,4 @@ fastapi
 flask-session
 werkzeug
 psutil
+pytz

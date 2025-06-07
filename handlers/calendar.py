@@ -1,7 +1,6 @@
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from datetime import datetime, timedelta
-import pytz
+from datetime import datetime, timedelta, timezone
 from handlers.google_auth import load_credentials
 import logging
 
@@ -145,9 +144,13 @@ def create_event(summary, start_time, end_time, description="", location="", att
         return f"❌ Error creating event: {str(e)}"
 
 def parse_datetime(dt_input):
-    """Parse various datetime input formats"""
+    """Parse various datetime input formats using built-in modules"""
     if isinstance(dt_input, datetime):
-        return dt_input.replace(tzinfo=pytz.UTC) if dt_input.tzinfo is None else dt_input.astimezone(pytz.UTC)
+        # If already a datetime, ensure it has UTC timezone
+        if dt_input.tzinfo is None:
+            return dt_input.replace(tzinfo=timezone.utc)
+        else:
+            return dt_input.astimezone(timezone.utc)
     
     if isinstance(dt_input, str):
         # Common formats to try
@@ -165,14 +168,14 @@ def parse_datetime(dt_input):
         for fmt in formats:
             try:
                 dt = datetime.strptime(dt_input, fmt)
-                return dt.replace(tzinfo=pytz.UTC)
+                return dt.replace(tzinfo=timezone.utc)
             except ValueError:
                 continue
         
         # Try parsing ISO format with timezone
         try:
             dt = datetime.fromisoformat(dt_input.replace('Z', '+00:00'))
-            return dt.astimezone(pytz.UTC)
+            return dt.astimezone(timezone.utc)
         except ValueError:
             pass
     
@@ -181,7 +184,7 @@ def parse_datetime(dt_input):
 def create_quick_event(summary, duration_hours=1, start_offset_hours=0):
     """Create a quick event starting now or with an offset"""
     try:
-        now = datetime.utcnow().replace(tzinfo=pytz.UTC)
+        now = datetime.utcnow().replace(tzinfo=timezone.utc)
         start_time = now + timedelta(hours=start_offset_hours)
         end_time = start_time + timedelta(hours=duration_hours)
         
