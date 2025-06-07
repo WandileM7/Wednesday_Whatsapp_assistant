@@ -13,9 +13,13 @@ _sp_oauth = SpotifyOAuth(
 
 # Manually exchange the saved refresh token for an access token
 try:
-    token_info = _sp_oauth.refresh_access_token(os.getenv("SPOTIFY_REFRESH_TOKEN"))
-    _sp_oauth.cache_handler.save_token_info(token_info)
-    _sp = spotipy.Spotify(auth_manager=_sp_oauth)
+    refresh_token = os.getenv("SPOTIFY_REFRESH_TOKEN")
+    if not refresh_token:
+        raise RuntimeError("SPOTIFY_REFRESH_TOKEN environment variable not set")
+    
+    token_info = _sp_oauth.refresh_access_token(refresh_token)
+    # Don't try to save to cache when cache_path=None
+    _sp = spotipy.Spotify(auth=token_info['access_token'])
 except Exception as e:
     # Log the exact error so you can catch invalid_grant early
     raise RuntimeError(f"Spotify token refresh failed: {e}")
