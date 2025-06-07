@@ -23,6 +23,66 @@ SCOPES = [
     'openid'
 ]
 
+# Global variable to store credentials for automation
+_cached_credentials = None
+
+def initialize_google_auto_auth():
+    """Initialize automatic Google authentication on startup"""
+    global _cached_credentials
+    
+    try:
+        # Try to load from environment variables first
+        creds = load_tokens_from_env()
+        if creds and creds.valid:
+            _cached_credentials = creds
+            logger.info("✅ Google authentication ready (auto-loaded from environment)")
+            return True
+        
+        logger.info("❌ Google auto-authentication not available - manual setup required")
+        return False
+        
+    except Exception as e:
+        logger.error(f"Google auto-auth initialization failed: {e}")
+        return False
+
+def load_tokens_from_env():
+    """Load Google tokens from environment variables"""
+    try:
+        refresh_token = os.getenv('GOOGLE_REFRESH_TOKEN')
+        if not refresh_token:
+            logger.debug("No GOOGLE_REFRESH_TOKEN found in environment")
+            return None
+            
+        creds_info = {
+            'refresh_token': refresh_token,
+            'token': os.getenv('GOOGLE_ACCESS_TOKEN'),
+            'client_id': os.getenv('GOOGLE_CLIENT_ID'),
+            'client_secret': os.getenv('GOOGLE_CLIENT_SECRET'),
+            'token_uri': 'https://oauth2.googleapis.com/token',
+            'scopes': SCOPES
+        }
+        
+        # Validate that we have the minimum required info
+        if not all([creds_info['client_id'], creds_info['client_secret']]):
+            logger.warning("Missing client_id or client_secret in environment variables")
+            return None
+        
+        creds = Credentials.from_authorized_user_info(creds_info, SCOPES)
+        
+        # Refresh if needed
+        if creds.expired and creds.refresh_token:
+            logger.info("Refreshing Google credentials from environment...")
+            creds.refresh(Request())
+            # Update environment with new token
+            os.environ['GOOGLE_ACCESS_TOKEN'] = creds.token
+            logger.info("Google credentials refreshed successfully")
+            
+        return creds
+        
+    except Exception as e:
+        logger.error(f"Failed to load Google tokens from environment: {e}")
+        return None
+
 def get_credentials_path():
     """Get the path to credentials file, checking multiple locations"""
     # First check GOOGLE_APPLICATION_CREDENTIALS environment variable
@@ -107,10 +167,34 @@ def validate_credentials_file(path):
         return False, error_msg
 
 def load_credentials():
-    """Load and return valid Google credentials"""
+    """Enhanced load_credentials with auto-auth support and proper OAuth handling"""
+    global _cached_credentials
+    
     logger.info("Loading Google credentials...")
     
-    # First try to load from session
+    # First try cached credentials from auto-auth
+    if _cached_credentials and _cached_credentials.valid:
+        logger.info("Using cached auto-auth credentials")
+        return _cached_credentials
+    
+    # Try to refresh cached credentials if expired
+    if _cached_credentials and _cached_credentials.expired and _cached_credentials.refresh_token:
+        try:
+            logger.info("Refreshing cached credentials...")
+            _cached_credentials.refresh(Request())
+            logger.info("Cached credentials refreshed successfully")
+            return _cached_credentials
+        except RefreshError as e:
+            logger.warning(f"Failed to refresh cached credentials: {e}")
+            _cached_credentials = None
+    
+    # Try to load from environment variables
+    env_creds = load_tokens_from_env()
+    if env_creds and env_creds.valid:
+        _cached_credentials = env_creds
+        return env_creds
+    
+    # Fall back to session-based OAuth
     if 'google_credentials' in session:
         logger.info("Found credentials in session, validating...")
         try:
@@ -139,19 +223,17 @@ def load_credentials():
             logger.error(f"Error loading session credentials: {e}")
             session.pop('google_credentials', None)
     
-    # Try to load from file
+    # Try to load from file (service account only)
     logger.info("Loading credentials from file...")
     creds_path = get_credentials_path()
     if not creds_path:
-        error_msg = "No Google credentials file found. Please set GOOGLE_APPLICATION_CREDENTIALS or add credentials.json"
-        logger.error(error_msg)
-        raise Exception(error_msg)
+        logger.error("No Google credentials file found. Please set GOOGLE_APPLICATION_CREDENTIALS or add credentials.json")
+        return None
     
     is_valid, result = validate_credentials_file(creds_path)
     if not is_valid:
-        error_msg = f"Invalid credentials file at {creds_path}: {result}"
-        logger.error(error_msg)
-        raise Exception(error_msg)
+        logger.error(f"Invalid credentials file at {creds_path}: {result}")
+        return None
     
     if result == "service_account":
         logger.info("Loading service account credentials...")
@@ -159,12 +241,12 @@ def load_credentials():
             from google.oauth2 import service_account
             creds = service_account.Credentials.from_service_account_file(
                 creds_path, scopes=SCOPES)
+            _cached_credentials = creds  # Cache for future use
             logger.info("Service account credentials loaded successfully")
             return creds
         except Exception as e:
-            error_msg = f"Failed to load service account credentials: {e}"
-            logger.error(error_msg)
-            raise Exception(error_msg)
+            logger.error(f"Failed to load service account credentials: {e}")
+            return None
     else:
         # Handle OAuth client credentials - need to go through auth flow
         logger.info("OAuth client credentials found, auth flow required")
@@ -217,7 +299,7 @@ def authorize():
 
 @auth_bp.route('/oauth2callback')
 def oauth2callback():
-    """Handle the OAuth callback with improved error handling"""
+    """Handle the OAuth callback with token saving for automation"""
     logger.info("Handling OAuth callback...")
     
     # Check for errors in the callback
@@ -266,6 +348,10 @@ def oauth2callback():
             'scopes': credentials.scopes
         }
         
+        # Cache credentials globally
+        global _cached_credentials
+        _cached_credentials = credentials
+        
         # Clean up session
         session.pop('state', None)
         session.pop('oauth_scopes', None)
@@ -273,12 +359,12 @@ def oauth2callback():
         logger.info("OAuth flow completed successfully")
         return """
         <h2>✅ Google Authorization Successful!</h2>
-        <p>You can now use Gmail and Calendar features.</p>
-        <h3>Quick Tests</h3>
+        <p>Google services are now authenticated and ready to use.</p>
+        <h3>Next Steps</h3>
         <ul>
+            <li><a href="/save-current-google-tokens">Save Tokens for Auto-Auth</a></li>
             <li><a href="/test-gmail">Test Gmail</a></li>
             <li><a href="/test-google-services">Test All Google Services</a></li>
-            <li><a href="/google-services-dashboard">Google Services Dashboard</a></li>
         </ul>
         """
     except Exception as e:
@@ -297,23 +383,43 @@ def oauth2callback():
 
 @auth_bp.route('/auth-status')
 def auth_status():
-    """Check authentication status"""
+    """Check authentication status with auto-auth info"""
     try:
         creds = load_credentials()
+        refresh_token_env = os.getenv("GOOGLE_REFRESH_TOKEN")
+        
+        status = {
+            "authenticated": bool(creds and creds.valid),
+            "has_refresh_token_env": bool(refresh_token_env),
+            "auto_auth_available": bool(refresh_token_env),
+            "credentials_path": get_credentials_path(),
+            "required_scopes": SCOPES
+        }
+        
         if creds:
-            return {
-                "authenticated": True,
+            status.update({
                 "scopes": list(creds.scopes) if hasattr(creds, 'scopes') else SCOPES,
-                "credentials_path": get_credentials_path(),
-                "credential_type": "service_account" if hasattr(creds, 'service_account_email') else "oauth"
-            }
+                "credential_type": "service_account" if hasattr(creds, 'service_account_email') else "oauth",
+                "credentials_valid": creds.valid,
+                "credentials_expired": getattr(creds, 'expired', False)
+            })
         else:
-            return {
-                "authenticated": False,
-                "auth_url": url_for('auth.authorize', _external=True),
-                "credentials_path": get_credentials_path(),
-                "required_scopes": SCOPES
-            }
+            status.update({
+                "auth_url": url_for('auth.authorize', _external=True)
+            })
+        
+        # Add recommendations
+        actions = []
+        if not status["authenticated"]:
+            if not status["has_refresh_token_env"]:
+                actions.append("Complete OAuth flow to get refresh token")
+            else:
+                actions.append("Check refresh token validity")
+        else:
+            actions.append("Google services ready to use")
+            
+        status["recommended_actions"] = actions
+        return status
     except Exception as e:
         logger.error(f"Error checking auth status: {e}")
         return {
@@ -326,6 +432,8 @@ def auth_status():
 @auth_bp.route('/clear-auth')
 def clear_auth():
     """Clear stored authentication data"""
+    global _cached_credentials
+    _cached_credentials = None
     session.pop('google_credentials', None)
     session.pop('state', None)
     session.pop('oauth_scopes', None)

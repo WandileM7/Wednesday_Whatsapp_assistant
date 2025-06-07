@@ -555,9 +555,9 @@ def test_email_send():
     try:
         from handlers.gmail import send_email
         
-        # Send a test email to yourself
+        # Send a test email to yourself (fix the email address)
         result = send_email(
-            to="wandilemawela4@gmail.com.com",  # Replace with your email
+            to="wandilemawela4@gmail.com",  # Fixed - removed the extra .com
             subject="Test Email from WhatsApp Assistant",
             body="This is a test email to verify Gmail integration is working."
         )
@@ -571,32 +571,29 @@ def test_email_send():
     except Exception as e:
         return {"error": str(e)}, 500
 
-@app.route("/save-current-google-tokens")
-def save_current_google_tokens():
-    """Save current Google session tokens for automation"""
+# Add the test current email route
+@app.route("/test-current-email")
+def test_current_email():
+    """Test email with current session authentication"""
     try:
-        if 'google_credentials' not in session:
-            return {"error": "No Google credentials in session. Please authenticate first."}, 400
+        from handlers.gmail import send_email
         
-        from google.oauth2.credentials import Credentials
-        from handlers.google_auth import SCOPES
+        # Test with current session
+        result = send_email(
+            to="wandilemawela4@gmail.com",  # Your email
+            subject="Test from Current Session",
+            body="Testing email functionality with current authentication session."
+        )
         
-        creds = Credentials.from_authorized_user_info(session['google_credentials'], SCOPES)
-        
-        if not creds.refresh_token:
-            return {"error": "No refresh token available. Please re-authenticate with prompt=consent."}, 400
-        
-        # Save tokens for automation
-        save_google_tokens_to_env(creds)
         return {
-                "success": True,
-                "message": "Google tokens saved for automation",
-                "has_refresh_token": bool(creds.refresh_token),
-                "scopes": list(creds.scopes) if hasattr(creds, 'scopes') else []
-            }
+            "result": result,
+            "success": not result.startswith("❌"),
+            "session_has_google_creds": bool(session.get('google_credentials')),
+            "timestamp": datetime.now().isoformat()
+        }
     except Exception as e:
-        return {"error": str(e)}, 500
-        
+        return {"error": str(e), "traceback": str(e)}, 500
+    
 @app.route("/google-auth-status")
 def google_auth_status():
     """Detailed Google authentication status with helpful links"""
