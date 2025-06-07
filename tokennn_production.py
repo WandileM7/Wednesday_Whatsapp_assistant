@@ -7,8 +7,8 @@ app = Flask(__name__)
 # SET THESE with your actual credentials
 SPOTIFY_CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID", "your-client-id")
 SPOTIFY_SECRET = os.environ.get("SPOTIFY_SECRET", "your-client-secret")
-# Use your PRODUCTION redirect URI
-SPOTIFY_REDIRECT_URI = "https://waha-service-ypoa.onrender.com/callback"
+# Use your ACTUAL production redirect URI
+SPOTIFY_REDIRECT_URI = "https://waha-gemini-assistant.onrender.com/callback"
 
 SCOPE = "user-read-playback-state user-modify-playback-state"
 
@@ -30,9 +30,9 @@ def login():
     <p><strong>After authorization:</strong></p>
     <ol>
         <li>You'll be redirected to: <code>{SPOTIFY_REDIRECT_URI}?code=...</code></li>
-        <li>Copy the entire URL</li>
-        <li>Replace the domain with localhost: <code>http://localhost:8888/callback?code=...</code></li>
-        <li>Visit that URL to get your refresh token</li>
+        <li>Copy the authorization code from the URL</li>
+        <li>Visit: <code>http://localhost:8888/callback?code=PASTE_CODE_HERE</code></li>
+        <li>Get your refresh token</li>
     </ol>
     '''
 

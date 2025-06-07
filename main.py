@@ -1,12 +1,14 @@
 import json
 from dotenv import load_dotenv
 from fastapi import params
-from flask import Flask, request, jsonify
+from flask import Flask, redirect, request, jsonify
 import os
 from handlers.google_auth import auth_bp
 import requests
 import google.generativeai as genai
 import sys
+from flask_session import Session
+
 import logging
 import os  # Add this line
 import spotipy
@@ -32,6 +34,9 @@ logger = logging.getLogger("WhatsAppAssistant")
 load_dotenv()
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+app.config["SESSION_TYPE"] = "filesystem"
+app.secret_key = os.getenv("FLASK_SECRET_KEY", os.urandom(24))
+Session(app)
 
 app.register_blueprint(auth_bp)       # <--- makes /authorize and /oauth2callback active
 # Validate environment
@@ -57,6 +62,54 @@ if not waha_url:
     logger.warning("WAHA_URL not set!")
 
 user_conversations = {}
+
+# ─── SPOTIFY OAUTH SETUP ────────────────────────────────────────
+SPOTIFY_SCOPE = "user-read-playback-state user-modify-playback-state"
+def make_spotify_oauth():
+    return SpotifyOAuth(
+        client_id=os.getenv("SPOTIFY_CLIENT_ID"),
+        client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
+        redirect_uri=os.getenv("SPOTIFY_REDIRECT_URI"),
+        scope=SPOTIFY_SCOPE,
+        cache_path=None
+    )
+
+def get_token_info():
+    token_info = session.get("token_info", {})
+    if not token_info:
+        return None
+    sp_oauth = make_spotify_oauth()
+    if sp_oauth.is_token_expired(token_info):
+        token_info = sp_oauth.refresh_access_token(token_info["refresh_token"])
+        session["token_info"] = token_info
+    return token_info
+
+def get_spotify_client():
+    token_info = get_token_info()
+    if not token_info:
+        return None
+    return Spotify(auth=token_info["access_token"])
+
+# ─── SPOTIFY AUTH ROUTES ────────────────────────────────────────
+@app.route("/login")
+def spotify_login():
+    sp_oauth = make_spotify_oauth()
+    return redirect(sp_oauth.get_authorize_url())
+
+@app.route("/callback")
+def spotify_callback():
+    sp_oauth = make_spotify_oauth()
+    code = request.args.get("code")
+    if not code:
+        error = request.args.get("error", "unknown_error")
+        desc = request.args.get("error_description", "")
+        return f"Auth failed: {error} - {desc}", 400
+
+    token_info = sp_oauth.get_access_token(code)
+    session["token_info"] = token_info
+    return "✅ Spotify authorization successful. You can now use playback endpoints."
+
+
 
 # --- FUNCTION: Initial conversation starter ---
 def initiate_conversation(phone):
@@ -169,41 +222,6 @@ def status():
 def home():
     return jsonify({"status": "online"})
 
-# Add this new route after your existing routes
-@app.route('/callback')
-def spotify_callback():
-    """Handle Spotify OAuth callback"""
-    code = request.args.get('code')
-    error = request.args.get('error')
-    
-    if error:
-        return f"""
-        <h2>❌ Authorization Error</h2>
-        <p>Error: {error}</p>
-        <p>Description: {request.args.get('error_description', 'No description provided')}</p>
-        """, 400
-    
-    if not code:
-        return """
-        <h2>❌ No Authorization Code</h2>
-        <p>No authorization code received from Spotify.</p>
-        """, 400
-    
-    return f"""
-    <h2>✅ Authorization Successful!</h2>
-    <p><strong>Authorization Code:</strong></p>
-    <textarea style="width: 100%; height: 100px; font-family: monospace; margin: 10px 0;">{code}</textarea>
-    
-    <p><strong>Next Steps:</strong></p>
-    <ol>
-        <li>Copy the authorization code above</li>
-        <li>Go to your local token generator: <code>http://localhost:8888/callback?code=PASTE_CODE_HERE</code></li>
-        <li>Get your refresh token from there</li>
-        <li>Set it as <code>SPOTIFY_REFRESH_TOKEN</code> in your environment variables</li>
-    </ol>
-    
-    <p><em>This page is just showing you the authorization code. You still need to exchange it for tokens using your local script.</em></p>
-    """
 
 # --- UTILITIES ---
 def typing_indicator(phone, seconds=2):

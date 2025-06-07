@@ -14,4 +14,5 @@ google-api-python-client==2.115.0
 google-auth-oauthlib==1.2.0
 onnxruntime>=1.15.0
 fastapi
+flask-session
 werkzeug
