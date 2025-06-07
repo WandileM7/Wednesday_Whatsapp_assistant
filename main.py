@@ -75,6 +75,7 @@ def make_spotify_oauth():
     )
 
 def get_token_info():
+    """Get token info from session and refresh if needed"""
     token_info = session.get("token_info", {})
     if not token_info:
         # Try to use refresh token from environment
@@ -82,21 +83,25 @@ def get_token_info():
         if refresh_token:
             try:
                 sp_oauth = make_spotify_oauth()
-                token_info = sp_oauth.refresh_access_token(refresh_token)
+                # Fix deprecation warning
+                token_info = sp_oauth.refresh_access_token(refresh_token, as_dict=True)
                 session["token_info"] = token_info
                 return token_info
             except Exception as e:
-                logger.error(f"Error refreshing token: {e}")
+                logger.error(f"Error refreshing token from environment: {e}")
                 return None
         return None
     
     sp_oauth = make_spotify_oauth()
     if sp_oauth.is_token_expired(token_info):
         try:
-            token_info = sp_oauth.refresh_access_token(token_info["refresh_token"])
+            # Fix deprecation warning
+            token_info = sp_oauth.refresh_access_token(token_info["refresh_token"], as_dict=True)
             session["token_info"] = token_info
         except Exception as e:
-            logger.error(f"Error refreshing token: {e}")
+            logger.error(f"Error refreshing session token: {e}")
+            # Clear invalid token
+            session.pop("token_info", None)
             return None
     return token_info
 
@@ -119,6 +124,7 @@ def spotify_callback():
     error = request.args.get('error')
     
     if error:
+        logger.error(f"Spotify OAuth error: {error}")
         return f"""
         <h2>❌ Authorization Error</h2>
         <p>Error: {error}</p>
@@ -133,10 +139,13 @@ def spotify_callback():
     
     try:
         sp_oauth = make_spotify_oauth()
-        token_info = sp_oauth.get_access_token(code)
+        # Fix deprecation warning by using as_dict=True explicitly
+        token_info = sp_oauth.get_access_token(code, as_dict=True)
         session["token_info"] = token_info
+        logger.info("Spotify authorization successful")
         return "✅ Spotify authorization successful. You can now use playback endpoints."
     except Exception as e:
+        logger.error(f"Error getting Spotify token: {e}")
         return f"<h2>❌ Error getting token:</h2><p>{str(e)}</p>", 500
 
 
@@ -354,6 +363,40 @@ def send_message_original(phone, text):
         return True
     except:
         return False
+
+@app.route("/spotify-status")
+def spotify_status():
+    """Check Spotify authentication status"""
+    token_info = get_token_info()
+    if token_info:
+        try:
+            sp = spotipy.Spotify(auth=token_info["access_token"])
+            user = sp.current_user()
+            return {
+                "authenticated": True,
+                "user": user["display_name"],
+                "user_id": user["id"],
+                "token_expires": token_info.get("expires_at"),
+                "scopes": token_info.get("scope", "").split()
+            }
+        except Exception as e:
+            return {
+                "authenticated": False,
+                "error": str(e),
+                "login_url": "/login"
+            }
+    else:
+        return {
+            "authenticated": False,
+            "message": "No valid token found",
+            "login_url": "/login"
+        }
+
+@app.route("/clear-spotify-tokens")
+def clear_spotify_tokens():
+    """Clear all Spotify tokens (for debugging)"""
+    session.pop("token_info", None)
+    return "✅ Spotify tokens cleared. Please visit /login to re-authenticate."
 
 if __name__ == '__main__':
     logger.info("Launching WhatsApp Assistant...")
