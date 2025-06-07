@@ -240,6 +240,45 @@ def test_waha():
     except Exception as e:
         return f"Failed to reach WAHA: {e}"
 
+@app.route("/test-waha-debug")
+def test_waha_debug():
+    """Debug WAHA connection with detailed logging"""
+    waha_url = os.getenv("WAHA_URL")
+    session_name = os.getenv("WAHA_SESSION", "default")
+    
+    # First, check if WAHA is running
+    try:
+        base_url = waha_url.replace("/api/sendText", "")
+        status_response = requests.get(f"{base_url}/api/sessions", timeout=10)
+        logger.info(f"WAHA status check: {status_response.status_code}")
+        logger.info(f"WAHA sessions: {status_response.text}")
+    except Exception as e:
+        logger.error(f"Failed to check WAHA status: {e}")
+        return f"WAHA status check failed: {e}"
+    
+    # Test sending a message
+    test_payload = {
+        "session": session_name,
+        "chatId": "27729224495@c.us",  # Your test number
+        "text": "Test message from debug endpoint"
+    }
+    
+    try:
+        logger.info(f"Testing WAHA with payload: {test_payload}")
+        response = requests.post(waha_url, json=test_payload, timeout=10)
+        
+        return f"""
+        <h2>WAHA Debug Results</h2>
+        <p><strong>URL:</strong> {waha_url}</p>
+        <p><strong>Session:</strong> {session_name}</p>
+        <p><strong>Status Code:</strong> {response.status_code}</p>
+        <p><strong>Response Headers:</strong> {dict(response.headers)}</p>
+        <p><strong>Response Body:</strong> {response.text}</p>
+        <p><strong>Payload Sent:</strong> {test_payload}</p>
+        """
+    except Exception as e:
+        return f"WAHA test failed: {e}"
+
 @app.route("/status", methods=["GET"])
 def status():
     return jsonify({
@@ -267,7 +306,40 @@ def typing_indicator(phone, seconds=2):
         logger.error(f"Typing indicator error: {e}")
         return False
 
+def send_message_alternative(phone, text):
+    """Alternative message sending with different payload format"""
+    try:
+        phone = phone if "@c.us" in phone else f"{phone}@c.us"
+        
+        # Try the format that WAHA expects
+        payload = {
+            "session": os.getenv("WAHA_SESSION", "default"),
+            "chatId": phone,
+            "text": text
+        }
+        
+        logger.info(f"Trying alternative format for {phone}")
+        logger.debug(f"Alternative payload: {payload}")
+        
+        r = requests.post(os.getenv("WAHA_URL"), json=payload, timeout=10)
+        logger.debug(f"Alternative response: {r.status_code} - {r.text}")
+        
+        r.raise_for_status()
+        return True
+    except Exception as e:
+        logger.error(f"Alternative send failed: {e}")
+        return False
+
+# Update the main send_message to try both formats
 def send_message(phone, text):
+    # Try the original format first
+    success = send_message_original(phone, text)
+    if not success:
+        logger.info("Trying alternative message format...")
+        success = send_message_alternative(phone, text)
+    return success
+
+def send_message_original(phone, text):
     try:
         phone = phone if "@c.us" in phone else f"{phone}@c.us"
         payload = {
@@ -276,11 +348,11 @@ def send_message(phone, text):
             "session": os.getenv("WAHA_SESSION", "default"),
             "linkPreview": True
         }
-        r = requests.post(os.getenv("WAHA_URL"), json=payload)
+        
+        r = requests.post(os.getenv("WAHA_URL"), json=payload, timeout=10)
         r.raise_for_status()
         return True
-    except Exception as e:
-        logger.error(f"Error sending message: {e}")
+    except:
         return False
 
 if __name__ == '__main__':
