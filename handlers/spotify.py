@@ -62,7 +62,7 @@ def get_spotify_client():
             client_id=os.getenv("SPOTIFY_CLIENT_ID"),
             client_secret=os.getenv("SPOTIFY_SECRET"),
             redirect_uri=os.getenv("SPOTIFY_REDIRECT_URI"),
-            scope="user-read-playbook-state user-modify-playback-state",
+            scope="user-read-playback-state user-modify-playback-state",
             cache_path=None
         )
         
@@ -92,6 +92,7 @@ def get_spotify_client():
         return None
 
 def play_song(song_name: str) -> str:
+    """Play a specific song"""
     sp = get_spotify_client()
     if not sp:
         return "❌ Spotify not authenticated. Please visit /login to authenticate with Spotify."
@@ -118,16 +119,17 @@ def play_song(song_name: str) -> str:
         return f"❌ Error playing song: {e}"
 
 def get_current_song() -> str:
+    """Get currently playing song"""
     sp = get_spotify_client()
     if not sp:
         return "❌ Spotify not authenticated. Please visit /login to authenticate with Spotify."
     try:
-        playbook = sp.current_playback()
-        if not playbook or not playbook.get("item"):
+        playback = sp.current_playback()
+        if not playback or not playback.get("item"):
             return "🔇 Nothing is playing right now."
-        item = playbook["item"]
+        item = playback["item"]
         artist = item['artists'][0]['name'] if item.get('artists') else 'Unknown Artist'
-        is_playing = playbook.get('is_playing', False)
+        is_playing = playback.get('is_playing', False)
         status = "🎵 Playing" if is_playing else "⏸️ Paused"
         return f"{status}: {item['name']} by {artist}"
     except spotipy.exceptions.SpotifyException as e:
@@ -141,6 +143,7 @@ def get_current_song() -> str:
         return f"❌ Error getting current song: {e}"
 
 def play_playlist(name: str) -> str:
+    """Play a playlist by name"""
     sp = get_spotify_client()
     if not sp:
         return "❌ Spotify not authenticated. Please visit /login to authenticate with Spotify."
@@ -148,7 +151,7 @@ def play_playlist(name: str) -> str:
         playlists = sp.current_user_playlists()["items"]
         for pl in playlists:
             if name.lower() in pl["name"].lower():
-                sp.start_playback(context_uri=pl["uri"])  # Fixed typo: was start_playbook
+                sp.start_playback(context_uri=pl["uri"])
                 return f"🎵 Now playing playlist: {pl['name']}"
         
         # If not found in user playlists, search public playlists
@@ -174,7 +177,37 @@ def play_playlist(name: str) -> str:
         logger.error(f"Error playing playlist: {e}")
         return f"❌ Error playing playlist: {e}"
 
+def play_album(name: str) -> str:
+    """Play an album by name"""
+    sp = get_spotify_client()
+    if not sp:
+        return "❌ Spotify not authenticated. Please visit /login to authenticate with Spotify."
+    try:
+        results = sp.search(q=name, type="album", limit=1)
+        items = results["albums"]["items"]
+        if not items:
+            return f"❌ Couldn't find album '{name}'. Try a different search term."
+        
+        album = items[0]
+        sp.start_playback(context_uri=album["uri"])
+        artist = album['artists'][0]['name'] if album.get('artists') else 'Unknown Artist'
+        return f"🎵 Now playing album: {album['name']} by {artist}"
+    except spotipy.exceptions.SpotifyException as e:
+        if e.http_status == 401:
+            return "❌ Spotify authentication expired. Please visit /login to re-authenticate."
+        elif e.http_status == 403:
+            return "❌ Spotify Premium required for playback control."
+        elif e.http_status == 404:
+            return "❌ No active Spotify device found. Please open Spotify on a device first."
+        else:
+            logger.error(f"Spotify API error: {e}")
+            return f"❌ Spotify error: {e}"
+    except Exception as e:
+        logger.error(f"Error playing album: {e}")
+        return f"❌ Error playing album: {e}"
+
 def pause_playback() -> str:
+    """Pause Spotify playback"""
     sp = get_spotify_client()
     if not sp:
         return "❌ Spotify not authenticated. Please visit /login to authenticate with Spotify."
