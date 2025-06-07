@@ -467,7 +467,136 @@ def google_login():
         <p>Error: {str(e)}</p>
         <p><a href="/google-status">Check Google Status</a></p>
         """, 500
+@app.route("/setup-google-auto-auth")
+def setup_google_auto_auth():
+    """One-time setup for automatic Google authentication"""
+    try:
+        from handlers.google_auth import load_credentials
+        
+        creds = load_credentials()
+        if creds and creds.valid:
+            save_google_tokens_to_env(creds)
+            return """
+            <h2>✅ Google Auto-Authentication Setup Complete</h2>
+            <p>Your tokens have been saved for automatic authentication.</p>
+            <p>Check your logs for the environment variables to add to your deployment.</p>
+            <p>The app will now authenticate automatically on startup.</p>
+            <p><a href="/test-google-services">Test Google Services</a></p>
+            """
+        else:
+            return """
+            <h2>❌ Authentication Required First</h2>
+            <p>Please authenticate with Google first before setting up auto-authentication.</p>
+            <p><a href="/google-login">Authenticate Google</a></p>
+            """
+    except Exception as e:
+        return f"<h2>❌ Setup Failed</h2><p>Error: {str(e)}</p>", 500
+    
+@app.route("/refresh-google-token")
+def refresh_google_token():
+    """Manually refresh Google token"""
+    try:
+        refresh_token = os.getenv("GOOGLE_REFRESH_TOKEN")
+        if not refresh_token:
+            return {"error": "No refresh token found in environment. Complete OAuth flow first."}, 400
+        
+        from handlers.google_auth import load_tokens_from_env
+        from google.auth.transport.requests import Request
+        
+        creds = load_tokens_from_env()
+        if not creds:
+            return {"error": "Failed to load credentials from environment"}, 400
+        
+        if creds.expired:
+            creds.refresh(Request())
+            
+        return {
+            "success": True,
+            "message": "Google token refreshed successfully",
+            "valid": creds.valid,
+            "scopes": list(creds.scopes) if hasattr(creds, 'scopes') else []
+        }
+    except Exception as e:
+        return {"error": str(e)}, 500
+    
+@app.route("/force-google-auth")
+def force_google_auth():
+    """Force Google authentication for testing"""
+    try:
+        from handlers.google_auth import load_credentials
+        
+        # Clear any cached credentials to force fresh auth
+        import handlers.google_auth as ga
+        if hasattr(ga, '_cached_credentials'):
+            ga._cached_credentials = None
+        
+        creds = load_credentials()
+        if creds and creds.valid:
+            return {
+                "success": True,
+                "message": "Google authentication successful",
+                "authenticated": True,
+                "credential_type": "service_account" if hasattr(creds, 'service_account_email') else "oauth",
+                "scopes": list(creds.scopes) if hasattr(creds, 'scopes') else []
+            }
+        else:
+                return {
+                    "success": False,
+                    "message": "Google authentication failed - OAuth flow required",
+                    "authenticated": False,
+                    "auth_url": url_for('google_login', _external=True)
+                }
+    except Exception as e:
+        return {"error": str(e)}, 500
+    
+@app.route("/test-email-send")
+def test_email_send():
+    """Test email sending functionality"""
+    try:
+        from handlers.gmail import send_email
+        
+        # Send a test email to yourself
+        result = send_email(
+            to="your-email@example.com",  # Replace with your email
+            subject="Test Email from WhatsApp Assistant",
+            body="This is a test email to verify Gmail integration is working."
+        )
+        
+        return {
+            "test": "email_send",
+            "result": result,
+            "success": not result.startswith("❌"),
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {"error": str(e)}, 500
 
+@app.route("/save-current-google-tokens")
+def save_current_google_tokens():
+    """Save current Google session tokens for automation"""
+    try:
+        if 'google_credentials' not in session:
+            return {"error": "No Google credentials in session. Please authenticate first."}, 400
+        
+        from google.oauth2.credentials import Credentials
+        from handlers.google_auth import SCOPES
+        
+        creds = Credentials.from_authorized_user_info(session['google_credentials'], SCOPES)
+        
+        if not creds.refresh_token:
+            return {"error": "No refresh token available. Please re-authenticate with prompt=consent."}, 400
+        
+        # Save tokens for automation
+        save_google_tokens_to_env(creds)
+        return {
+                "success": True,
+                "message": "Google tokens saved for automation",
+                "has_refresh_token": bool(creds.refresh_token),
+                "scopes": list(creds.scopes) if hasattr(creds, 'scopes') else []
+            }
+    except Exception as e:
+        return {"error": str(e)}, 500
+        
 @app.route("/google-auth-status")
 def google_auth_status():
     """Detailed Google authentication status with helpful links"""
