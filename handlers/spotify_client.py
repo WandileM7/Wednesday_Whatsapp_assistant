@@ -2,7 +2,11 @@ import os
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from flask import session
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
 
+# Import Spotify client functions
+from handlers.spotify_client import make_spotify_oauth, get_spotify_client
 SPOTIFY_SCOPE = "user-read-playback-state user-modify-playback-state"
 
 def make_spotify_oauth():
