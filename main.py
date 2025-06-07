@@ -10,13 +10,13 @@ import sys
 from flask_session import Session
 
 import logging
-import os  # Add this line
-import spotipy
-from spotipy.oauth2 import SpotifyOAuth
 import time
 from chromedb import add_to_conversation_history
 from datetime import datetime
 from werkzeug.middleware.proxy_fix import ProxyFix
+
+# Import Spotify client functions
+from handlers.spotify_client import make_spotify_oauth, get_spotify_client
 
 from handlers.gemini import chat_with_functions, execute_function, model
 
@@ -98,16 +98,30 @@ def spotify_login():
 
 @app.route("/callback")
 def spotify_callback():
-    sp_oauth = make_spotify_oauth()
-    code = request.args.get("code")
+    """Handle Spotify OAuth callback"""
+    code = request.args.get('code')
+    error = request.args.get('error')
+    
+    if error:
+        return f"""
+        <h2>❌ Authorization Error</h2>
+        <p>Error: {error}</p>
+        <p>Description: {request.args.get('error_description', 'No description provided')}</p>
+        """, 400
+    
     if not code:
-        error = request.args.get("error", "unknown_error")
-        desc = request.args.get("error_description", "")
-        return f"Auth failed: {error} - {desc}", 400
-
-    token_info = sp_oauth.get_access_token(code)
-    session["token_info"] = token_info
-    return "✅ Spotify authorization successful. You can now use playback endpoints."
+        return """
+        <h2>❌ No Authorization Code</h2>
+        <p>No authorization code received from Spotify.</p>
+        """, 400
+    
+    try:
+        sp_oauth = make_spotify_oauth()
+        token_info = sp_oauth.get_access_token(code)
+        session["token_info"] = token_info
+        return "✅ Spotify authorization successful. You can now use playback endpoints."
+    except Exception as e:
+        return f"<h2>❌ Error getting token:</h2><p>{str(e)}</p>", 500
 
 
 
