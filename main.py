@@ -184,70 +184,45 @@ def send_initial_message():
 # --- FUNCTION: WhatsApp webhook handler ---
 @app.route('/webhook', methods=['POST', 'GET'])
 def webhook():
-    if request.method == 'GET':
-        return "Webhook is active", 200
-    
     logger.info("Webhook received.")
-    
+
+    if request.method == 'GET':
+        return jsonify({"status": "online"})
+
+    data = request.get_json() or {}
+    payload = data.get('payload', data)
+    user_msg = payload.get('body') or payload.get('text') or payload.get('message')
+    phone = payload.get('chatId') or payload.get('from')
+
+    if not user_msg or not phone:
+        return jsonify({'status': 'ignored'}), 200
+
     try:
-        data = request.get_json()
-        if not data:
-            return "No data received", 400
-        
-        # Only process message events
-        if data.get("event") != "message":
-            return "OK", 200
-        
-        payload = data.get("payload", {})
-        phone = payload.get("from", "")
-        message_text = payload.get("body", "").strip()
-        
-        # Skip empty messages or media-only messages
-        if not message_text or payload.get("hasMedia"):
-            return "OK", 200
-        
-        # Skip messages from ourselves
-        if payload.get("fromMe"):
-            return "OK", 200
-        
-        logger.info(f"Processing message from {phone}: {message_text[:50]}...")
-        
-        # Show typing indicator
-        typing_indicator(phone, 2)
-        
-        # Get conversation context
-        conversation_context = user_conversations.get(phone, [])
-        
-        # Add user message to context
-        conversation_context.append({"role": "user", "content": message_text})
-        user_conversations[phone] = conversation_context[-10:]  # Keep last 10 messages
-        
-        # Add to ChromaDB for long-term memory
-        add_to_conversation_history(phone, message_text, "user")
-        
-        # Generate response using Gemini with function calling
-        response_text = chat_with_functions(message_text, phone)
-        
-        # Add assistant response to context
-        conversation_context.append({"role": "assistant", "content": response_text})
-        user_conversations[phone] = conversation_context[-10:]
-        
-        # Add assistant response to ChromaDB
-        add_to_conversation_history(phone, response_text, "assistant")
-        
-        # Send response
-        success = send_message(phone, response_text)
-        
-        if success:
-            logger.info(f"Response sent successfully to {phone}")
+        # Step 1: Ask Gemini for its response (which may be a function call)
+        call = chat_with_functions(user_msg, phone)
+        logger.debug(f"Gemini function response: {call}")
+
+        # Step 2: Decide whether to execute a function or just take its text
+        if call.get("name"):
+            # Gemini wants you to call a function
+            reply = execute_function(call)
         else:
-            logger.error(f"Failed to send response to {phone}")
-        
-        return "OK", 200
-        
+            # Gemini returned a plain-text answer
+            reply = call.get("content", "Sorry, no idea what that was.")
+
+        # Step 3: Save both user→assistant messages into ChromaDB
+        try:
+            add_to_conversation_history(phone, "user", user_msg)
+            add_to_conversation_history(phone, "assistant", reply)
+        except Exception as e:
+            logger.error(f"ChromaDB save error: {e}")
+        # Step 5: Send response back to user
+        send_message(phone, reply)
+        return jsonify({'status': 'ok'})
+
     except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return "Error processing webhook", 500
+        logger.error(f"Error during chat_with_functions: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 50
 
 
 @app.route('/chat', methods=['POST'])
