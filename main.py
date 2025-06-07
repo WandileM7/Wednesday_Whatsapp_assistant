@@ -138,6 +138,113 @@ def get_spotify_client():
         return None
     return spotipy.Spotify(auth=token_info["access_token"])
 
+# Add these functions after your existing Spotify functions (around line 100)
+
+def initialize_google_auth():
+    """Initialize Google authentication on startup"""
+    logger.info("Initializing Google authentication...")
+    
+    try:
+        from handlers.google_auth import initialize_google_auto_auth
+        
+        # Try automatic authentication
+        if initialize_google_auto_auth():
+            logger.info("✅ Google authentication ready")
+            return True
+        else:
+            logger.warning("❌ Google authentication not available - manual setup required")
+            logger.info("Visit /google-login to authenticate")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Google auth initialization failed: {e}")
+        return False
+
+def save_google_tokens_to_env(credentials):
+    """Save Google tokens to environment variables for automation"""
+    try:
+        if not credentials.refresh_token:
+            logger.warning("No refresh token available - cannot save for automation")
+            return False
+            
+        # Log the tokens so you can add them to your environment
+        logger.info("=== GOOGLE TOKENS FOR ENVIRONMENT SETUP ===")
+        logger.info(f"GOOGLE_REFRESH_TOKEN={credentials.refresh_token}")
+        logger.info(f"GOOGLE_ACCESS_TOKEN={credentials.token}")
+        logger.info(f"GOOGLE_CLIENT_ID={credentials.client_id}")
+        logger.info(f"GOOGLE_CLIENT_SECRET={credentials.client_secret}")
+        logger.info("Add these to your environment variables for automatic authentication")
+        logger.info("=============================================")
+        
+        # Also try to update .env file if it exists
+        try:
+            env_file = ".env"
+            if os.path.exists(env_file):
+                with open(env_file, 'r') as f:
+                    content = f.read()
+                
+                # Update or add tokens
+                tokens = [
+                    ('GOOGLE_REFRESH_TOKEN', credentials.refresh_token),
+                    ('GOOGLE_ACCESS_TOKEN', credentials.token),
+                    ('GOOGLE_CLIENT_ID', credentials.client_id),
+                    ('GOOGLE_CLIENT_SECRET', credentials.client_secret)
+                ]
+                
+                for key, value in tokens:
+                    if f'{key}=' in content:
+                        import re
+                        content = re.sub(f'{key}=.*', f'{key}="{value}"', content)
+                    else:
+                        content += f'\n{key}="{value}"\n'
+                
+                with open(env_file, 'w') as f:
+                    f.write(content)
+                
+                logger.info("Updated .env file with Google tokens")
+        except Exception as e:
+            logger.warning(f"Could not update .env file: {e}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Failed to save Google tokens: {e}")
+        return False
+
+def initialize_services():
+    """Initialize all services on startup"""
+    logger.info("Initializing services...")
+    
+    # Initialize Spotify authentication
+    refresh_token = os.getenv("SPOTIFY_REFRESH_TOKEN")
+    if refresh_token:
+        try:
+            sp_oauth = make_spotify_oauth()
+            token_info = sp_oauth.refresh_access_token(refresh_token)
+            session["token_info"] = token_info
+            
+            # Also save globally for webhook access
+            from handlers.spotify import save_token_globally
+            save_token_globally(token_info)
+            
+            logger.info("✅ Spotify authentication ready (auto-refreshed)")
+        except Exception as e:
+            logger.error(f"Failed to initialize Spotify: {e}")
+    else:
+        logger.warning("❌ No Spotify refresh token - manual setup required")
+    
+    # Initialize Google authentication
+    initialize_google_auth()
+    
+    logger.info("Service initialization complete")
+
+# Add this after your app configuration but before the routes (around line 90):
+# Initialize services on startup
+try:
+    with app.app_context():
+        initialize_services()
+except Exception as e:
+    logger.error(f"Service initialization failed: {e}")
+
 # Routes
 @app.route("/")
 def home():
@@ -150,7 +257,7 @@ def spotify_login():
 
 @app.route("/callback")
 def spotify_callback():
-    """Handle Spotify OAuth callback"""
+    """Handle Spotify OAuth callback with auto-save"""
     code = request.args.get('code')
     error = request.args.get('error')
     
@@ -166,12 +273,28 @@ def spotify_callback():
         token_info = sp_oauth.get_access_token(code)
         session["token_info"] = token_info
         
-        # Also save globally for webhook access
+        # Save globally for webhook access
         from handlers.spotify import save_token_globally
         save_token_globally(token_info)
         
+        # Save tokens for future automation
+        if token_info.get('refresh_token'):
+            logger.info("=== SPOTIFY TOKENS FOR ENVIRONMENT SETUP ===")
+            logger.info(f"SPOTIFY_REFRESH_TOKEN={token_info['refresh_token']}")
+            logger.info(f"SPOTIFY_ACCESS_TOKEN={token_info['access_token']}")
+            logger.info("Add these to your environment variables for automatic authentication")
+            logger.info("=============================================")
+        
         logger.info("Spotify authorization successful")
-        return "✅ Spotify authorization successful. You can now use playback endpoints."
+        return """
+        <h2>✅ Spotify Authorization Successful!</h2>
+        <p>Your tokens have been saved for automatic authentication.</p>
+        <p>Check your logs for environment variables to add to your deployment.</p>
+        <h3>Quick Tests</h3>
+        <ul>
+            <li><a href="/test-spotify">Test Spotify</a></li>
+        </ul>
+        """
     except Exception as e:
         logger.error(f"Error getting Spotify token: {e}")
         return f"❌ Error getting token: {str(e)}", 500
@@ -552,7 +675,35 @@ def google_services_dashboard():
 
 @app.route("/services")
 def services_overview():
-    """Overview of all available services"""
+    """Overview of all available services with detailed status"""
+    # Check Spotify status
+    spotify_status = "not_configured"
+    spotify_refresh_token = os.getenv("SPOTIFY_REFRESH_TOKEN")
+    if os.getenv("SPOTIFY_CLIENT_ID"):
+        if spotify_refresh_token:
+            spotify_status = "auto_configured"
+        elif session.get("token_info"):
+            spotify_status = "session_configured"
+        else:
+            spotify_status = "configured"
+    
+    # Check Google status
+    google_status = "not_configured"
+    google_refresh_token = os.getenv("GOOGLE_REFRESH_TOKEN")
+    if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+        if google_refresh_token:
+            google_status = "auto_configured"
+        else:
+            try:
+                from handlers.google_auth import load_credentials
+                creds = load_credentials()
+                if creds and creds.valid:
+                    google_status = "authenticated"
+                else:
+                    google_status = "configured"
+            except:
+                google_status = "configured"
+    
     return {
         "services": {
             "whatsapp": {
@@ -561,15 +712,19 @@ def services_overview():
                 "test_endpoint": "/health"
             },
             "spotify": {
-                "status": "configured" if os.getenv("SPOTIFY_CLIENT_ID") else "not_configured",
+                "status": spotify_status,
                 "auth_url": "/login",
-                "test_endpoint": "/test-spotify"
+                "test_endpoint": "/test-spotify",
+                "has_refresh_token": bool(spotify_refresh_token),
+                "session_active": bool(session.get("token_info"))
             },
             "google": {
-                "status": "configured" if os.getenv("GOOGLE_APPLICATION_CREDENTIALS") else "not_configured",
+                "status": google_status,
                 "auth_url": "/google-login",
                 "test_endpoint": "/test-gmail",
-                "dashboard": "/google-services-dashboard"
+                "dashboard": "/google-services-dashboard",
+                "has_refresh_token": bool(google_refresh_token),
+                "setup_auto_auth": "/setup-google-auto-auth"
             },
             "gemini": {
                 "status": "active" if os.getenv("GEMINI_API_KEY") else "not_configured",
@@ -579,8 +734,15 @@ def services_overview():
         "quick_links": {
             "authenticate_google": "/google-login",
             "authenticate_spotify": "/login",
+            "setup_google_auto_auth": "/setup-google-auto-auth",
             "test_all": "/health",
-            "webhook": "/webhook"
+            "webhook": "/webhook",
+            "force_google_auth": "/force-google-auth"
+        },
+        "authentication_status": {
+            "spotify_auto": bool(spotify_refresh_token),
+            "google_auto": bool(google_refresh_token),
+            "requires_manual_setup": not (spotify_refresh_token and google_refresh_token)
         }
     }
 
