@@ -1,7 +1,7 @@
 import json
 from dotenv import load_dotenv
 
-from flask import Flask, redirect, request, jsonify, session
+from flask import Flask, redirect, request, jsonify, session, url_for
 from handlers.gemini import chat_with_functions, execute_function
 from handlers.google_auth import auth_bp
 import google.generativeai as genai
