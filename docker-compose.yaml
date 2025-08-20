@@ -11,8 +11,6 @@ services:
 
     volumes:
       - ./waha-data:/app/data
-    depends_on:
-      - redis
 
   assistant:
     build: .
@@ -25,4 +23,3 @@ services:
       - WAHA_KEEPALIVE_INTERVAL=600
     depends_on:
       - waha
-      - redis
