@@ -11,6 +11,7 @@ import os
 import requests
 import logging
 import time
+import threading
 from flask_session import Session
 from handlers.spotify_client import make_spotify_oauth
 
@@ -82,6 +83,81 @@ INITIAL_MESSAGE_PROMPT = os.getenv("INITIAL_MESSAGE_PROMPT", "Send a mysterious 
 waha_url = os.getenv("WAHA_URL")
 if not waha_url:
     logger.warning("WAHA_URL not set!")
+
+# WAHA Keep-Alive Configuration
+WAHA_KEEPALIVE_INTERVAL = int(os.getenv("WAHA_KEEPALIVE_INTERVAL", "600"))  # 10 minutes default
+WAHA_SESSION = os.getenv("WAHA_SESSION", "default")
+waha_keepalive_active = False
+
+def waha_health_check():
+    """Check WAHA health status"""
+    try:
+        if not waha_url:
+            return False
+        
+        # Try to get sessions list or status from WAHA
+        health_url = waha_url.replace("/api/sendText", "/api/sessions")
+        response = requests.get(health_url, timeout=10)
+        
+        if response.status_code == 200:
+            sessions = response.json()
+            # Check if our session exists and is active
+            for session in sessions:
+                if session.get("name") == WAHA_SESSION:
+                    status = session.get("status", "").lower()
+                    logger.info(f"WAHA session {WAHA_SESSION} status: {status}")
+                    return status in ["working", "authenticated", "ready"]
+            
+            logger.warning(f"WAHA session {WAHA_SESSION} not found in active sessions")
+            return False
+        else:
+            logger.warning(f"WAHA health check failed: {response.status_code}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"WAHA health check error: {e}")
+        return False
+
+def waha_keepalive():
+    """Send periodic keep-alive to WAHA to prevent session timeout"""
+    global waha_keepalive_active
+    
+    while waha_keepalive_active:
+        try:
+            if waha_health_check():
+                logger.info("WAHA session is healthy")
+            else:
+                logger.warning("WAHA session check failed - may need reconnection")
+            
+            # Wait for the specified interval
+            time.sleep(WAHA_KEEPALIVE_INTERVAL)
+            
+        except Exception as e:
+            logger.error(f"WAHA keep-alive error: {e}")
+            time.sleep(60)  # Wait 1 minute on error before retrying
+
+def start_waha_keepalive():
+    """Start the WAHA keep-alive background thread"""
+    global waha_keepalive_active
+    
+    if not waha_url:
+        logger.warning("WAHA_URL not set, skipping keep-alive")
+        return
+    
+    if waha_keepalive_active:
+        logger.info("WAHA keep-alive already running")
+        return
+    
+    waha_keepalive_active = True
+    keepalive_thread = threading.Thread(target=waha_keepalive, daemon=True)
+    keepalive_thread.start()
+    logger.info(f"WAHA keep-alive started (interval: {WAHA_KEEPALIVE_INTERVAL}s)")
+
+def stop_waha_keepalive():
+    """Stop the WAHA keep-alive background thread"""
+    global waha_keepalive_active
+    waha_keepalive_active = False
+    logger.info("WAHA keep-alive stopped")
 
 # Spotify OAuth Setup
 SPOTIFY_SCOPE = "user-read-playback-state user-modify-playback-state"
@@ -949,11 +1025,16 @@ def health():
         process = psutil.Process()
         memory_info = process.memory_info()
         
+        # Include WAHA status in health check
+        waha_healthy = waha_health_check() if waha_url else None
+        
         return jsonify({
             "status": "healthy",
             "memory_mb": round(memory_info.rss / 1024 / 1024, 2),
             "active_conversations": len(user_conversations),
             "chromadb_enabled": CHROMADB_AVAILABLE and os.getenv("ENABLE_CHROMADB", "false").lower() == "true",
+            "waha_status": "connected" if waha_healthy else ("disconnected" if waha_healthy is False else "not_configured"),
+            "waha_keepalive": waha_keepalive_active,
             "timestamp": datetime.now().isoformat()
         })
     except ImportError:
@@ -961,6 +1042,7 @@ def health():
             "status": "healthy",
             "memory_mb": "unavailable",
             "active_conversations": len(user_conversations),
+            "waha_status": "connected" if waha_health_check() else "disconnected" if waha_url else "not_configured",
             "timestamp": datetime.now().isoformat()
         })
 
@@ -971,6 +1053,50 @@ def status():
         "active_conversations": len(user_conversations),
         "timestamp": datetime.now().isoformat()
     })
+
+@app.route("/waha-status")
+def waha_status():
+    """Check WAHA connection status and keep-alive status"""
+    global waha_keepalive_active
+    
+    try:
+        waha_healthy = waha_health_check()
+        
+        return jsonify({
+            "waha_url": waha_url,
+            "waha_session": WAHA_SESSION,
+            "waha_healthy": waha_healthy,
+            "keepalive_active": waha_keepalive_active,
+            "keepalive_interval": WAHA_KEEPALIVE_INTERVAL,
+            "status": "connected" if waha_healthy else "disconnected",
+            "timestamp": datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "status": "error",
+            "timestamp": datetime.now().isoformat()
+        }), 500
+
+@app.route("/waha-restart-keepalive", methods=['POST'])
+def restart_waha_keepalive():
+    """Manually restart WAHA keep-alive thread"""
+    try:
+        stop_waha_keepalive()
+        time.sleep(1)  # Brief pause
+        start_waha_keepalive()
+        
+        return jsonify({
+            "message": "WAHA keep-alive restarted successfully",
+            "status": "success",
+            "timestamp": datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "status": "error",
+            "timestamp": datetime.now().isoformat()
+        }), 500
 
 # Utility functions
 def initiate_conversation(phone):
@@ -1453,5 +1579,9 @@ def test_speech():
 
 if __name__ == '__main__':
     logger.info("Launching Memory-Optimized WhatsApp Assistant...")
+    
+    # Start WAHA keep-alive to prevent session timeout
+    start_waha_keepalive()
+    
     debug_mode = os.getenv("FLASK_DEBUG", "false").lower() == "true"
     app.run(host="0.0.0.0", port=5000, debug=debug_mode, threaded=True)

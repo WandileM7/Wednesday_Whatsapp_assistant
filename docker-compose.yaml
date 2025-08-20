@@ -20,5 +20,6 @@ services:
     env_file: .env
     environment:
       - WAHA_URL=http://waha:3000/api/sendText
+      - WAHA_KEEPALIVE_INTERVAL=600  # 10 minutes keep-alive interval
     depends_on:
       - waha
