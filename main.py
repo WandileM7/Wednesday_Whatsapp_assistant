@@ -1154,7 +1154,6 @@ def send_voice_message(phone, text):
                 if resp.status_code in (200, 201):
                     cleanup_temp_file(audio_file)
                     return True
-            except Exception:
             except Exception as e:
                 logger.error(f"Exception while sending voice message via {ep}: {e}")
         logger.warning(f"WAHA voice send failed via {ep1} and {ep2}")
