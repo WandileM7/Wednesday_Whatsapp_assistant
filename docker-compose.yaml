@@ -1,13 +1,4 @@
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: redis
-    ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes
-    volumes:
-      - ./redis-data:/data
-
   waha:
     image: devlikeapro/waha:latest
     container_name: waha
@@ -17,8 +8,6 @@ services:
     environment:
       - WHATSAPP_HOOK_URL=http://assistant:5000/webhook
       - WHATSAPP_HOOK_EVENTS=message
-      - WAHA_APPS_ENABLED=True
-      - REDIS_URL=redis://redis:6379/0
 
     volumes:
       - ./waha-data:/app/data
