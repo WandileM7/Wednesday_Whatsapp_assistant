@@ -33,6 +33,8 @@ tokens/
 
 # Docker
 *.pid
+redis-data/
+waha-data/
 
 # Render/Deployment
 secrets/
