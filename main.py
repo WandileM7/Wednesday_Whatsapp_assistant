@@ -80,7 +80,7 @@ except Exception as e:
 
     def chat_with_functions(user_message: str, phone: str):
         # Simple echo-style fallback
-        return {"content": f"I’m running in fallback mode. You said: {user_message}"}
+        return {"content": f"I'm running in fallback mode. You said: {user_message}"}
 
     def execute_function(call):
         # No function calling in fallback
@@ -123,6 +123,7 @@ def _waha_headers(is_json=True):
 
 if not waha_url:
     logger.warning("WAHA_URL not set. Set WAHA_URL to the WAHA public endpoint (e.g. https://waha-service.onrender.com/api/sendText)")
+
 # Derive WAHA base URL for other API calls
 def _waha_base():
     if not waha_url:
@@ -240,25 +241,21 @@ def get_spotify_client():
         return None
     return spotipy.Spotify(auth=token_info["access_token"])
 
-# Add these functions after your existing Spotify functions (around line 100)
-
-def initialize_google_auth():
-    """Initialize Google authentication on startup"""
-    logger.info("Initializing Google authentication...")
-    
+def save_google_tokens_to_env(credentials):
+    """Save Google tokens to environment file for automation"""
     try:
-        from handlers.google_auth import initialize_google_auto_auth
+        logger.info("=== GOOGLE TOKENS FOR ENVIRONMENT SETUP ===")
+        logger.info(f"GOOGLE_REFRESH_TOKEN={credentials.refresh_token}")
+        logger.info(f"GOOGLE_ACCESS_TOKEN={credentials.token}")
+        logger.info(f"GOOGLE_CLIENT_ID={credentials.client_id}")
+        logger.info(f"GOOGLE_CLIENT_SECRET={credentials.client_secret}")
+        logger.info("Add these to your environment variables for automatic authentication")
+        logger.info("=============================================")
         
-        # Try automatic authentication
-        if initialize_google_auto_auth():
-            logger.info("✅ Google authentication ready")
-            return True
-        else:
-            logger.warning("❌ Google authentication not available - manual setup required")
-            logger.info("Visit /google-login to authenticate")
-            return False
-            
-    except Exception as e:
+        # Try to update .env file if it exists
+        env_file = os.path.join(os.path.dirname(__file__), '.env')
+        if os.path.exists(env_file):
+            try:
                 with open(env_file, 'r') as f:
                     content = f.read()
                 
@@ -281,11 +278,32 @@ def initialize_google_auth():
                     f.write(content)
                 
                 logger.info("Updated .env file with Google tokens")
-        
+            except Exception as e:
+                logger.warning(f"Could not update .env file: {e}")
         
         return True
     except Exception as e:
         logger.error(f"Failed to save Google tokens: {e}")
+        return False
+
+def initialize_google_auth():
+    """Initialize Google authentication on startup"""
+    logger.info("Initializing Google authentication...")
+    
+    try:
+        from handlers.google_auth import initialize_google_auto_auth
+        
+        # Try automatic authentication
+        if initialize_google_auto_auth():
+            logger.info("✅ Google authentication ready")
+            return True
+        else:
+            logger.warning("❌ Google authentication not available - manual setup required")
+            logger.info("Visit /google-login to authenticate")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Failed to initialize Google authentication: {e}")
         return False
 
 def initialize_services():
@@ -303,7 +321,6 @@ def initialize_services():
     start_waha_keepalive()
     logger.info("Service initialization complete")
 
-# Add this after your app configuration but before the routes (around line 90):
 # Initialize services on startup
 try:
     with app.app_context():
@@ -542,7 +559,6 @@ def test_gmail():
     except Exception as e:
         return {"error": str(e)}, 500
 
-# Add the new Google service routes here:
 @app.route("/google-login")
 def google_login():
     """Start Google OAuth flow"""
@@ -568,6 +584,7 @@ def google_login():
         <p>Error: {str(e)}</p>
         <p><a href="/google-status">Check Google Status</a></p>
         """, 500
+
 @app.route("/setup-google-auto-auth")
 def setup_google_auto_auth():
     """One-time setup for automatic Google authentication"""
@@ -592,7 +609,7 @@ def setup_google_auto_auth():
             """
     except Exception as e:
         return f"<h2>❌ Setup Failed</h2><p>Error: {str(e)}</p>", 500
-    
+
 @app.route("/refresh-google-token")
 def refresh_google_token():
     """Manually refresh Google token"""
@@ -619,7 +636,7 @@ def refresh_google_token():
         }
     except Exception as e:
         return {"error": str(e)}, 500
-    
+
 @app.route("/force-google-auth")
 def force_google_auth():
     """Force Google authentication for testing"""
@@ -641,24 +658,24 @@ def force_google_auth():
                 "scopes": list(creds.scopes) if hasattr(creds, 'scopes') else []
             }
         else:
-                return {
-                    "success": False,
-                    "message": "Google authentication failed - OAuth flow required",
-                    "authenticated": False,
-                    "auth_url": url_for('google_login', _external=True)
-                }
+            return {
+                "success": False,
+                "message": "Google authentication failed - OAuth flow required",
+                "authenticated": False,
+                "auth_url": url_for('google_login', _external=True)
+            }
     except Exception as e:
         return {"error": str(e)}, 500
-    
+
 @app.route("/test-email-send")
 def test_email_send():
     """Test email sending functionality"""
     try:
         from handlers.gmail import send_email
         
-        # Send a test email to yourself (fix the email address)
+        # Send a test email to yourself
         result = send_email(
-            to="wandilemawela4@gmail.com",  # Fixed - removed the extra .com
+            to="wandilemawela4@gmail.com",
             subject="Test Email from WhatsApp Assistant",
             message_text="This is a test email to verify Gmail integration is working."
         )
@@ -672,7 +689,6 @@ def test_email_send():
     except Exception as e:
         return {"error": str(e)}, 500
 
-# Add the test current email route
 @app.route("/test-current-email")
 def test_current_email():
     """Test email with current session authentication"""
@@ -681,7 +697,7 @@ def test_current_email():
         
         # Test with current session
         result = send_email(
-            to="wandilemawela4@gmail.com",  # Your email
+            to="wandilemawela4@gmail.com",
             subject="Test from Current Session",
             message_text="Testing email functionality with current authentication session."
         )
@@ -694,7 +710,7 @@ def test_current_email():
         }
     except Exception as e:
         return {"error": str(e), "traceback": str(e)}, 500
-    
+
 @app.route("/google-auth-status")
 def google_auth_status():
     """Detailed Google authentication status with helpful links"""
@@ -979,7 +995,7 @@ def services_overview():
         }
     }
 
-# Spotify endpoints (continue with existing Spotify routes...)
+# Spotify endpoints
 @app.route("/test-spotify")
 def test_spotify():
     """Test Spotify functionality"""
@@ -1163,8 +1179,6 @@ def send_voice_message(phone, text):
         logger.error(f"WAHA voice send error: {e}")
         return False
 
-# Add this route after your existing Google routes (around line 580)
-
 @app.route("/save-current-google-tokens")
 def save_current_google_tokens():
     """Save current Google session tokens for automation"""
@@ -1255,7 +1269,6 @@ def test_webhook_auth():
     return auth_manager.test_webhook_authentication()
 
 # Enhanced Personal Assistant Endpoints
-
 @app.route("/weather")
 def get_weather():
     """Get weather information"""
@@ -1422,7 +1435,6 @@ def assistant_status():
         }
     }
     return status
-
 
 @app.route("/quick-setup")
 def quick_setup():
