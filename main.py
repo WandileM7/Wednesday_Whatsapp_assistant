@@ -19,6 +19,8 @@ import time
 import threading
 from flask_session import Session
 from handlers.spotify_client import make_spotify_oauth
+import os, time, json, threading, logging, requests
+from urllib.parse import urlparse
 
 # ChromaDB imports with fallback
 try:
@@ -87,7 +89,15 @@ INITIAL_MESSAGE_PROMPT = os.getenv("INITIAL_MESSAGE_PROMPT", "Send a mysterious 
 
 waha_url = os.getenv("WAHA_URL")
 if not waha_url:
-    logger.warning("WAHA_URL not set!")
+    logger.warning("WAHA_URL not set. Set WAHA_URL to the WAHA public endpoint (e.g. https://waha-service.onrender.com/api/sendText)")
+# Derive WAHA base URL for other API calls
+def _waha_base():
+    if not waha_url:
+        return None
+    # strip trailing /api/... to base
+    if "/api/" in waha_url:
+        return waha_url.split("/api/")[0]
+    return waha_url.rstrip("/")
 
 # WAHA Keep-Alive Configuration
 WAHA_KEEPALIVE_INTERVAL = int(os.getenv("WAHA_KEEPALIVE_INTERVAL", "600"))  # 10 minutes default
@@ -95,74 +105,53 @@ WAHA_SESSION = os.getenv("WAHA_SESSION", "default")
 waha_keepalive_active = False
 
 def waha_health_check():
-    """Check WAHA health status"""
+    """Ensure WAHA session exists and is started using sessions API (no Apps dependency)."""
     try:
-        if not waha_url:
+        base = _waha_base()
+        if not base:
             return False
-        
-        # Try to get sessions list or status from WAHA
-        health_url = waha_url.replace("/api/sendText", "/api/sessions")
-        response = requests.get(health_url, timeout=10)
-        
-        if response.status_code == 200:
-            sessions = response.json()
-            # Check if our session exists and is active
-            for session in sessions:
-                if session.get("name") == WAHA_SESSION:
-                    status = session.get("status", "").lower()
-                    logger.info(f"WAHA session {WAHA_SESSION} status: {status}")
-                    return status in ["working", "authenticated", "ready"]
-            
-            logger.warning(f"WAHA session {WAHA_SESSION} not found in active sessions")
-            return False
-        else:
-            logger.warning(f"WAHA health check failed: {response.status_code}")
-            return False
-            
+        session_name = WAHA_SESSION or "default"
+        # Check session status
+        r = requests.get(f"{base}/api/sessions/{session_name}", timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            status = (data.get("status") or "").lower()
+            return status in ("working", "active", "connected", "ready")
+        if r.status_code == 404:
+            # Create session if missing
+            rc = requests.post(f"{base}/api/sessions/{session_name}", timeout=15)
+            if rc.status_code not in (200, 201, 409):
+                logger.warning(f"WAHA create session failed: {rc.status_code} {rc.text}")
+        # Try to start the session (safe even if already started)
+        rs = requests.post(f"{base}/api/sessions/{session_name}/start", timeout=20)
+        if rs.status_code in (200, 202):
+            return True
+        if rs.status_code == 422 and "already started" in rs.text.lower():
+            return True
+        logger.warning(f"WAHA start session response: {rs.status_code} {rs.text}")
+        return False
     except Exception as e:
-        logger.error(f"WAHA health check error: {e}")
+        logger.warning(f"WAHA health check error: {e}")
         return False
 
 def waha_keepalive():
-    """Send periodic keep-alive to WAHA to prevent session timeout"""
+    """Background keep-alive loop that maintains the WAHA session."""
     global waha_keepalive_active
-    
     while waha_keepalive_active:
-        try:
-            if waha_health_check():
-                logger.info("WAHA session is healthy")
-            else:
-                logger.warning("WAHA session check failed - may need reconnection")
-            
-            # Wait for the specified interval
-            time.sleep(WAHA_KEEPALIVE_INTERVAL)
-            
-        except Exception as e:
-            logger.error(f"WAHA keep-alive error: {e}")
-            time.sleep(60)  # Wait 1 minute on error before retrying
+        ok = waha_health_check()
+        logger.info(f"WAHA keep-alive: {'OK' if ok else 'NOT READY'}")
+        time.sleep(WAHA_KEEPALIVE_INTERVAL)
 
 def start_waha_keepalive():
-    """Start the WAHA keep-alive background thread"""
     global waha_keepalive_active
-    
-    if not waha_url:
-        logger.warning("WAHA_URL not set, skipping keep-alive")
-        return
-    
     if waha_keepalive_active:
-        logger.info("WAHA keep-alive already running")
         return
-    
     waha_keepalive_active = True
-    keepalive_thread = threading.Thread(target=waha_keepalive, daemon=True)
-    keepalive_thread.start()
-    logger.info(f"WAHA keep-alive started (interval: {WAHA_KEEPALIVE_INTERVAL}s)")
+    threading.Thread(target=waha_keepalive, daemon=True).start()
 
 def stop_waha_keepalive():
-    """Stop the WAHA keep-alive background thread"""
     global waha_keepalive_active
     waha_keepalive_active = False
-    logger.info("WAHA keep-alive stopped")
 
 # Spotify OAuth Setup
 SPOTIFY_SCOPE = "user-read-playback-state user-modify-playback-state"
@@ -295,28 +284,16 @@ def save_google_tokens_to_env(credentials):
 def initialize_services():
     """Initialize all services on startup"""
     logger.info("Initializing services...")
-    
     # Initialize Spotify authentication
     refresh_token = os.getenv("SPOTIFY_REFRESH_TOKEN")
     if refresh_token:
-        try:
-            sp_oauth = make_spotify_oauth()
-            token_info = sp_oauth.refresh_access_token(refresh_token)
-            session["token_info"] = token_info
-            
-            # Also save globally for webhook access
-            from handlers.spotify import save_token_globally
-            save_token_globally(token_info)
-            
-            logger.info("✅ Spotify authentication ready (auto-refreshed)")
-        except Exception as e:
-            logger.error(f"Failed to initialize Spotify: {e}")
+        logger.info("Spotify refresh token present")
     else:
-        logger.warning("❌ No Spotify refresh token - manual setup required")
-    
+        logger.info("Spotify refresh token not set; will use interactive login when needed")
     # Initialize Google authentication
     initialize_google_auth()
-    
+    # Start WAHA keep-alive
+    start_waha_keepalive()
     logger.info("Service initialization complete")
 
 # Add this after your app configuration but before the routes (around line 90):
@@ -1067,27 +1044,8 @@ def status():
 
 @app.route("/waha-status")
 def waha_status():
-    """Check WAHA connection status and keep-alive status"""
-    global waha_keepalive_active
-    
-    try:
-        waha_healthy = waha_health_check()
-        
-        return jsonify({
-            "waha_url": waha_url,
-            "waha_session": WAHA_SESSION,
-            "waha_healthy": waha_healthy,
-            "keepalive_active": waha_keepalive_active,
-            "keepalive_interval": WAHA_KEEPALIVE_INTERVAL,
-            "status": "connected" if waha_healthy else "disconnected",
-            "timestamp": datetime.now().isoformat()
-        })
-    except Exception as e:
-        return jsonify({
-            "error": str(e),
-            "status": "error",
-            "timestamp": datetime.now().isoformat()
-        }), 500
+    ok = waha_health_check()
+    return jsonify({"waha_ok": ok, "session": WAHA_SESSION, "base": _waha_base()})
 
 @app.route("/waha-restart-keepalive", methods=['POST'])
 def restart_waha_keepalive():
@@ -1138,25 +1096,26 @@ def typing_indicator(phone, seconds=2):
 def send_message(phone, text):
     """Memory-efficient message sending"""
     try:
-        phone = phone if "@c.us" in phone else f"{phone}@c.us"
-        
-        payload = {
-            "session": os.getenv("WAHA_SESSION", "default"),
-            "chatId": phone,
-            "text": text
-        }
-        
-        r = requests.post(os.getenv("WAHA_URL"), json=payload, timeout=15)
-        
-        if r.status_code in [200, 201]:
-            logger.info(f"Message sent successfully to {phone}")
-            return True
-        else:
-            logger.error(f"Failed to send message: {r.status_code} - {r.text}")
+        if not waha_health_check():
+            logger.warning("WAHA not ready; message not sent")
             return False
-        
+        headers = {"Content-Type": "application/json"}
+        payload = {"chatId": phone, "text": text}
+        # Primary (legacy) endpoint
+        r = requests.post(waha_url, headers=headers, data=json.dumps(payload), timeout=20)
+        if r.status_code in (200, 201):
+            return True
+        # Fallback to session-scoped messages API
+        base = _waha_base()
+        session_name = WAHA_SESSION or "default"
+        alt = f"{base}/api/sessions/{session_name}/messages/text"
+        r2 = requests.post(alt, headers=headers, data=json.dumps(payload), timeout=20)
+        if r2.status_code in (200, 201):
+            return True
+        logger.error(f"WAHA send_message failed: {r.status_code} {r.text} | alt={r2.status_code} {r2.text}")
+        return False
     except Exception as e:
-        logger.error(f"Error sending message: {e}")
+        logger.error(f"WAHA send_message error: {e}")
         return False
 
 def send_voice_message(phone, text):
@@ -1170,32 +1129,33 @@ def send_voice_message(phone, text):
             logger.error("Failed to generate voice from text")
             return False
         
-        try:
-            # Upload voice file to WAHA
-            voice_url = os.getenv("WAHA_URL").replace("sendText", "sendVoice")
-            
-            with open(audio_file, 'rb') as f:
-                files = {'file': f}
-                data = {
-                    'session': os.getenv("WAHA_SESSION", "default"),
-                    'chatId': phone
-                }
-                
-                r = requests.post(voice_url, files=files, data=data, timeout=30)
-                
-                if r.status_code in [200, 201]:
-                    logger.info(f"Voice message sent successfully to {phone}")
+        if not waha_health_check():
+            return False
+        headers = {}
+        base = _waha_base()
+        session_name = WAHA_SESSION or "default"
+        # Try WAHA file upload endpoint for audio
+        files = {
+            "file": open(audio_file, "rb"),
+            "chatId": (None, phone),
+            "filename": (None, os.path.basename(audio_file)),
+        }
+        # Common endpoints: sendFile or messages/voice
+        ep1 = f"{base}/api/sendFile"
+        ep2 = f"{base}/api/sessions/{session_name}/messages/file"
+        for ep in (ep1, ep2):
+            try:
+                resp = requests.post(ep, files=files, timeout=60)
+                if resp.status_code in (200, 201):
+                    cleanup_temp_file(audio_file)
                     return True
-                else:
-                    logger.error(f"Failed to send voice message: {r.status_code} - {r.text}")
-                    return False
-                    
-        finally:
-            # Clean up temporary file
-            cleanup_temp_file(audio_file)
-        
+            except Exception:
+                pass
+        logger.warning(f"WAHA voice send failed via {ep1} and {ep2}")
+        cleanup_temp_file(audio_file)
+        return False
     except Exception as e:
-        logger.error(f"Error sending voice message: {e}")
+        logger.error(f"WAHA voice send error: {e}")
         return False
 
 # Add this route after your existing Google routes (around line 580)

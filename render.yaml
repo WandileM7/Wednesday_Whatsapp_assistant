@@ -31,6 +31,8 @@ services:
     envVars:
       - key: WAHA_SESSION
         value: default
+      - key: WAHA_APPS_ENABLED
+        value: "True"
       # WAHA -> Assistant (public URL of Flask webhook)
       - key: WHATSAPP_HOOK_URL
         value: https://waha-gemini-assistant.onrender.com/webhook
