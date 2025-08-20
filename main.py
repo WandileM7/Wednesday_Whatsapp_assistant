@@ -103,7 +103,6 @@ WAHA_SESSION = os.getenv("WAHA_SESSION", "default")
 waha_keepalive_active = False
 
 def waha_health_check():
-    """Ensure WAHA session exists and is started using sessions API (no Apps dependency)."""
     """
     Ensure WAHA session exists and is started using sessions API (no Apps dependency).
 
