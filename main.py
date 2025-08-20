@@ -5,6 +5,11 @@ from flask import Flask, redirect, request, jsonify, session, url_for
 from handlers.gemini import chat_with_functions, execute_function
 from handlers.google_auth import auth_bp
 from handlers.speech import speech_to_text, text_to_speech, download_voice_message, should_respond_with_voice, cleanup_temp_file
+from handlers.auth_manager import auth_manager
+from handlers.weather import weather_service
+from handlers.news import news_service
+from handlers.tasks import task_manager
+from handlers.contacts import contact_manager
 import google.generativeai as genai
 import sys
 import os
@@ -909,33 +914,8 @@ def google_services_dashboard():
 @app.route("/services")
 def services_overview():
     """Overview of all available services with detailed status"""
-    # Check Spotify status
-    spotify_status = "not_configured"
-    spotify_refresh_token = os.getenv("SPOTIFY_REFRESH_TOKEN")
-    if os.getenv("SPOTIFY_CLIENT_ID"):
-        if spotify_refresh_token:
-            spotify_status = "auto_configured"
-        elif session.get("token_info"):
-            spotify_status = "session_configured"
-        else:
-            spotify_status = "configured"
-    
-    # Check Google status
-    google_status = "not_configured"
-    google_refresh_token = os.getenv("GOOGLE_REFRESH_TOKEN")
-    if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-        if google_refresh_token:
-            google_status = "auto_configured"
-        else:
-            try:
-                from handlers.google_auth import load_credentials
-                creds = load_credentials()
-                if creds and creds.valid:
-                    google_status = "authenticated"
-                else:
-                    google_status = "configured"
-            except:
-                google_status = "configured"
+    # Get authentication status from auth manager
+    auth_status = auth_manager.get_auth_status()
     
     return {
         "services": {
@@ -944,38 +924,69 @@ def services_overview():
                 "webhook_url": request.host_url + "webhook",
                 "test_endpoint": "/health"
             },
-            "spotify": {
-                "status": spotify_status,
+            "spotify": auth_status['services'].get('spotify', {
+                "status": "not_configured",
                 "auth_url": "/login",
-                "test_endpoint": "/test-spotify",
-                "has_refresh_token": bool(spotify_refresh_token),
-                "session_active": bool(session.get("token_info"))
-            },
-            "google": {
-                "status": google_status,
+                "test_endpoint": "/test-spotify"
+            }),
+            "google": auth_status['services'].get('google', {
+                "status": "not_configured",
                 "auth_url": "/google-login",
                 "test_endpoint": "/test-gmail",
-                "dashboard": "/google-services-dashboard",
-                "has_refresh_token": bool(google_refresh_token),
-                "setup_auto_auth": "/setup-google-auto-auth"
-            },
+                "dashboard": "/google-services-dashboard"
+            }),
             "gemini": {
                 "status": "active" if os.getenv("GEMINI_API_KEY") else "not_configured",
                 "model": "gemini-2.0-flash"
+            },
+            "weather": {
+                "status": "active" if weather_service.is_configured() else "not_configured",
+                "configured": weather_service.is_configured(),
+                "test_endpoint": "/weather?location=New York",
+                "required_env": "OPENWEATHER_API_KEY"
+            },
+            "news": {
+                "status": "active" if news_service.is_configured() else "not_configured",
+                "configured": news_service.is_configured(),
+                "test_endpoint": "/news",
+                "required_env": "NEWS_API_KEY"
+            },
+            "tasks": {
+                "status": "active",
+                "configured": True,
+                "test_endpoint": "/tasks",
+                "task_count": len(task_manager.tasks),
+                "reminder_count": len(task_manager.reminders)
+            },
+            "contacts": {
+                "status": "active",
+                "configured": True,
+                "test_endpoint": "/contacts",
+                "local_count": len(contact_manager.local_contacts)
             }
         },
         "quick_links": {
             "authenticate_google": "/google-login",
             "authenticate_spotify": "/login",
-            "setup_google_auto_auth": "/setup-google-auto-auth",
+            "setup_auto_auth": "/setup-all-auto-auth",
+            "auth_status": "/auth-status",
+            "test_webhook": "/test-webhook-auth",
+            "assistant_status": "/assistant/status",
             "test_all": "/health",
-            "webhook": "/webhook",
-            "force_google_auth": "/force-google-auth"
+            "webhook": "/webhook"
         },
-        "authentication_status": {
-            "spotify_auto": bool(spotify_refresh_token),
-            "google_auto": bool(google_refresh_token),
-            "requires_manual_setup": not (spotify_refresh_token and google_refresh_token)
+        "authentication_status": auth_status['summary'],
+        "enhanced_features": {
+            "weather_lookup": "/weather?location=<city>",
+            "news_headlines": "/news",
+            "news_search": "/news/search?query=<topic>",
+            "daily_briefing": "/news/briefing",
+            "task_management": "/tasks",
+            "reminder_system": "/reminders",
+            "task_summary": "/tasks/summary",
+            "contact_management": "/contacts",
+            "contact_search": "/contacts/search?query=<name>",
+            "google_contacts": "/contacts/google"
         }
     }
 
@@ -1265,183 +1276,188 @@ def google_debug():
 
 @app.route("/setup-all-auto-auth")
 def setup_all_auto_auth():
-    """Setup automatic authentication for all services"""
-    results = {
-        "timestamp": datetime.now().isoformat(),
-        "services": {}
-    }
-    
-    # Setup Spotify auto-auth
-    try:
-        token_info = get_token_info()
-        if token_info and token_info.get('refresh_token'):
-            spotify_refresh = token_info['refresh_token']
-            results["services"]["spotify"] = {
-                "success": True,
-                "message": "Spotify refresh token available",
-                "refresh_token": spotify_refresh[:20] + "...",
-                "env_var": f"SPOTIFY_REFRESH_TOKEN={spotify_refresh}"
-            }
-        else:
-            results["services"]["spotify"] = {
-                "success": False,
-                "message": "No Spotify refresh token available",
-                "action": "Visit /login to authenticate Spotify"
-            }
-    except Exception as e:
-        results["services"]["spotify"] = {
-            "success": False,
-            "error": str(e)
-        }
-    
-    # Setup Google auto-auth
-    try:
-        if 'google_credentials' in session:
-            from google.oauth2.credentials import Credentials
-            from handlers.google_auth import SCOPES
-            
-            creds = Credentials.from_authorized_user_info(session['google_credentials'], SCOPES)
-            
-            if creds.refresh_token:
-                save_google_tokens_to_env(creds)
-                results["services"]["google"] = {
-                    "success": True,
-                    "message": "Google tokens saved for automation",
-                    "refresh_token": creds.refresh_token[:20] + "...",
-                    "env_vars": {
-                        "GOOGLE_REFRESH_TOKEN": creds.refresh_token,
-                        "GOOGLE_CLIENT_ID": creds.client_id,
-                        "GOOGLE_CLIENT_SECRET": creds.client_secret
-                    }
-                }
-            else:
-                results["services"]["google"] = {
-                    "success": False,
-                    "message": "No Google refresh token available",
-                    "action": "Re-authenticate at /google-login with prompt=consent"
-                }
-        else:
-            results["services"]["google"] = {
-                "success": False,
-                "message": "No Google credentials in session",
-                "action": "Visit /google-login to authenticate"
-            }
-    except Exception as e:
-        results["services"]["google"] = {
-            "success": False,
-            "error": str(e)
-        }
-    
-    # Summary
-    successful_services = sum(1 for service in results["services"].values() if service.get("success", False))
-    total_services = len(results["services"])
-    
-    results["summary"] = {
-        "successful": successful_services,
-        "total": total_services,
-        "all_configured": successful_services == total_services,
-        "next_steps": [
-            "Copy the environment variables from the logs",
-            "Add them to your deployment platform",
-            "Restart your application",
-            "Verify with /services endpoint"
-        ]
-    }
-    
-    return results
+    """Setup automatic authentication for all services using unified auth manager"""
+    return auth_manager.setup_automatic_authentication()
+
+@app.route("/auth-status")
+def auth_status():
+    """Get comprehensive authentication status for all services"""
+    return auth_manager.get_auth_status()
 
 @app.route("/test-webhook-auth")
 def test_webhook_auth():
     """Test authentication as it would work in webhook context (no session)"""
-    # Clear any session data to simulate webhook environment
-    original_session = dict(session)
-    session.clear()
+    return auth_manager.test_webhook_authentication()
+
+# Enhanced Personal Assistant Endpoints
+
+@app.route("/weather")
+def get_weather():
+    """Get weather information"""
+    location = request.args.get('location', 'New York')
+    return weather_service.get_current_weather(location)
+
+@app.route("/weather/forecast")
+def get_weather_forecast():
+    """Get weather forecast"""
+    location = request.args.get('location', 'New York')
+    days = int(request.args.get('days', 3))
+    return weather_service.get_weather_forecast(location, days)
+
+@app.route("/news")
+def get_news():
+    """Get top news headlines"""
+    category = request.args.get('category', 'general')
+    limit = int(request.args.get('limit', 5))
     
-    try:
-        results = {
-            "timestamp": datetime.now().isoformat(),
-            "webhook_simulation": True,
-            "tests": {}
+    if category == 'business':
+        return news_service.get_business_news(limit)
+    elif category == 'technology':
+        return news_service.get_technology_news(limit)
+    elif category == 'science':
+        return news_service.get_science_news(limit)
+    else:
+        return news_service.get_top_headlines(limit=limit)
+
+@app.route("/news/search")
+def search_news():
+    """Search for news"""
+    query = request.args.get('query', '')
+    limit = int(request.args.get('limit', 5))
+    
+    if not query:
+        return {"error": "Query parameter is required"}, 400
+    
+    return news_service.search_news(query, limit)
+
+@app.route("/news/briefing")
+def daily_briefing():
+    """Get daily news briefing"""
+    return news_service.get_daily_briefing()
+
+@app.route("/tasks", methods=['GET', 'POST'])
+def handle_tasks():
+    """Handle task operations"""
+    if request.method == 'POST':
+        data = request.get_json() or {}
+        title = data.get('title', '')
+        description = data.get('description', '')
+        due_date = data.get('due_date')
+        priority = data.get('priority', 'medium')
+        
+        if not title:
+            return {"error": "Title is required"}, 400
+            
+        result = task_manager.create_task(title, description, due_date, priority)
+        return {"message": result}
+    else:
+        filter_completed = request.args.get('completed', 'false').lower() == 'true'
+        filter_priority = request.args.get('priority')
+        return task_manager.list_tasks(filter_completed, filter_priority)
+
+@app.route("/tasks/<task_id>/complete", methods=['POST'])
+def complete_task(task_id):
+    """Mark a task as completed"""
+    result = task_manager.complete_task(task_id)
+    return {"message": result}
+
+@app.route("/tasks/<task_id>", methods=['DELETE'])
+def delete_task(task_id):
+    """Delete a task"""
+    result = task_manager.delete_task(task_id)
+    return {"message": result}
+
+@app.route("/reminders", methods=['GET', 'POST'])
+def handle_reminders():
+    """Handle reminder operations"""
+    if request.method == 'POST':
+        data = request.get_json() or {}
+        message = data.get('message', '')
+        remind_at = data.get('remind_at', '')
+        phone = data.get('phone', '')
+        
+        if not message or not remind_at:
+            return {"error": "Message and remind_at are required"}, 400
+            
+        result = task_manager.create_reminder(message, remind_at, phone)
+        return {"message": result}
+    else:
+        return task_manager.list_reminders()
+
+@app.route("/tasks/summary")
+def task_summary():
+    """Get task and reminder summary"""
+    return task_manager.get_task_summary()
+
+@app.route("/contacts", methods=['GET', 'POST'])
+def handle_contacts():
+    """Handle contact operations"""
+    if request.method == 'POST':
+        data = request.get_json() or {}
+        name = data.get('name', '')
+        phone = data.get('phone')
+        email = data.get('email')
+        notes = data.get('notes')
+        
+        if not name:
+            return {"error": "Name is required"}, 400
+            
+        result = contact_manager.add_local_contact(name, phone, email, notes)
+        return {"message": result}
+    else:
+        return contact_manager.list_local_contacts()
+
+@app.route("/contacts/search")
+def search_contacts():
+    """Search contacts"""
+    query = request.args.get('query', '')
+    
+    if not query:
+        return {"error": "Query parameter is required"}, 400
+    
+    return contact_manager.search_all_contacts(query)
+
+@app.route("/contacts/google")
+def get_google_contacts():
+    """Get Google contacts"""
+    max_results = int(request.args.get('max_results', 20))
+    return contact_manager.get_google_contacts(max_results)
+
+@app.route("/contacts/summary")
+def contact_summary():
+    """Get contact summary"""
+    return contact_manager.get_contact_summary()
+
+@app.route("/assistant/status")
+def assistant_status():
+    """Get comprehensive assistant status including all services"""
+    status = {
+        'timestamp': datetime.now().isoformat(),
+        'authentication': auth_manager.get_auth_status(),
+        'services': {
+            'weather': {
+                'configured': weather_service.is_configured(),
+                'status': 'active' if weather_service.is_configured() else 'needs_api_key'
+            },
+            'news': {
+                'configured': news_service.is_configured(),
+                'status': 'active' if news_service.is_configured() else 'needs_api_key'
+            },
+            'tasks': {
+                'configured': True,
+                'status': 'active',
+                'task_count': len(task_manager.tasks),
+                'reminder_count': len(task_manager.reminders)
+            },
+            'contacts': {
+                'configured': True,
+                'status': 'active',
+                'local_count': len(contact_manager.local_contacts)
+            }
         }
-        
-        # Test Spotify authentication without session
-        try:
-            token_info = get_token_info()  # This should work with environment refresh token
-            if token_info:
-                sp = spotipy.Spotify(auth=token_info["access_token"])
-                user = sp.current_user()
-                results["tests"]["spotify"] = {
-                    "success": True,
-                    "message": f"Spotify authenticated as {user['display_name']}",
-                    "user_id": user["id"]
-                }
-            else:
-                results["tests"]["spotify"] = {
-                    "success": False,
-                    "message": "No Spotify token available in webhook context"
-                }
-        except Exception as e:
-            results["tests"]["spotify"] = {
-                "success": False,
-                "error": str(e)
-            }
-        
-        # Test Google authentication without session
-        try:
-            from handlers.google_auth import load_credentials
-            creds = load_credentials()
-            if creds and creds.valid:
-                results["tests"]["google"] = {
-                    "success": True,
-                    "message": "Google authenticated successfully",
-                    "credential_type": "service_account" if hasattr(creds, 'service_account_email') else "oauth"
-                }
-            else:
-                results["tests"]["google"] = {
-                    "success": False,
-                    "message": "No valid Google credentials in webhook context"
-                }
-        except Exception as e:
-            results["tests"]["google"] = {
-                "success": False,
-                "error": str(e)
-            }
-        
-        # Test email sending in webhook context
-        try:
-            from handlers.gmail import send_email
-            result = send_email(
-                to="wandilemawela4@gmail.com",
-                subject="Webhook Auth Test",
-                body="Testing email functionality in webhook context (no session)."
-            )
-            results["tests"]["email_send"] = {
-                "success": not result.startswith("❌"),
-                "result": result
-            }
-        except Exception as e:
-            results["tests"]["email_send"] = {
-                "success": False,
-                "error": str(e)
-            }
-        
-        # Summary
-        successful_tests = sum(1 for test in results["tests"].values() if test.get("success", False))
-        total_tests = len(results["tests"])
-        
-        results["summary"] = {
-            "webhook_ready": successful_tests == total_tests,
-            "successful": successful_tests,
-            "total": total_tests,
-            "message": "Webhook authentication ready" if successful_tests == total_tests else "Webhook authentication needs setup"
-        }
-        
-        return results
-        
-    finally:
-        # Restore original session
-        session.clear()
-        session.update(original_session)
+    }
+    return status
+
 
 @app.route("/quick-setup")
 def quick_setup():
@@ -1497,6 +1513,20 @@ def quick_setup():
             <a href="/test-spotify" class="button">Test Spotify</a>
             <a href="/google-debug" class="button">Debug Google</a>
             <a href="/health" class="button">Health Check</a>
+            <a href="/auth-status" class="button">Auth Status</a>
+            <a href="/assistant/status" class="button">Assistant Status</a>
+        </div>
+        
+        <div class="card">
+            <h3>🌟 Enhanced Personal Assistant Features</h3>
+            <a href="/weather?location=New York" class="button">Test Weather</a>
+            <a href="/news" class="button">Test News</a>
+            <a href="/news/briefing" class="button">Daily Briefing</a>
+            <a href="/tasks" class="button">View Tasks</a>
+            <a href="/reminders" class="button">View Reminders</a>
+            <a href="/tasks/summary" class="button">Task Summary</a>
+            <a href="/contacts" class="button">View Contacts</a>
+            <a href="/contacts/summary" class="button">Contact Summary</a>
         </div>
         
         <div class="card">
@@ -1515,11 +1545,17 @@ def quick_setup():
         <div class="card">
             <h3>📝 Environment Variables Needed</h3>
             <p>After authentication, add these to your deployment:</p>
+            <p><strong>Core Services:</strong></p>
             <code>
                 SPOTIFY_REFRESH_TOKEN=your_token_here<br>
                 GOOGLE_REFRESH_TOKEN=your_token_here<br>
                 GOOGLE_CLIENT_ID=your_client_id<br>
                 GOOGLE_CLIENT_SECRET=your_secret
+            </code>
+            <p><strong>Enhanced Features (Optional):</strong></p>
+            <code>
+                OPENWEATHER_API_KEY=your_openweather_key<br>
+                NEWS_API_KEY=your_newsapi_key
             </code>
         </div>
     </body>
