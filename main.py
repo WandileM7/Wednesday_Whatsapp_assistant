@@ -281,8 +281,7 @@ def initialize_google_auth():
                     f.write(content)
                 
                 logger.info("Updated .env file with Google tokens")
-        except Exception as e:
-            logger.warning(f"Could not update .env file: {e}")
+        
         
         return True
     except Exception as e:
