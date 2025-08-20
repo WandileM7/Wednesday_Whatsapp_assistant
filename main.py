@@ -1,8 +1,19 @@
 import json
+import os
+import sys
+import time
+import threading
+import logging
+import requests
 from dotenv import load_dotenv
+from datetime import datetime
+from urllib.parse import urlparse
 
 from flask import Flask, redirect, request, jsonify, session, url_for
-# from handlers.gemini import chat_with_functions, execute_function
+from flask_session import Session
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+# Import handlers
 from handlers.google_auth import auth_bp
 from handlers.speech import speech_to_text, text_to_speech, download_voice_message, should_respond_with_voice, cleanup_temp_file
 from handlers.auth_manager import auth_manager
@@ -11,39 +22,15 @@ from handlers.news import news_service
 from handlers.tasks import task_manager
 from handlers.contacts import contact_manager
 import google.generativeai as genai
-import sys
-import os
-import requests
-import logging
-import time
-import threading
 from flask_session import Session
 from handlers.spotify_client import make_spotify_oauth
-import os, time, json, threading, logging, requests
-from urllib.parse import urlparse
 
-# ChromaDB imports with fallback
-try:
-    from chromedb import add_to_conversation_history, query_conversation_history
-    CHROMADB_AVAILABLE = True
-except ImportError as e:
-    logger = logging.getLogger("WhatsAppAssistant")
-    logger.warning(f"ChromaDB not available: {e}")
-    CHROMADB_AVAILABLE = False
-    
-    # Fallback functions
-    def add_to_conversation_history(phone, role, message):
-        return True
-    
-    def query_conversation_history(phone, query, limit=5):
-        return []
-
-from datetime import datetime
-from werkzeug.middleware.proxy_fix import ProxyFix
+# Google and Spotify imports
+import google.generativeai as genai
 from spotipy.oauth2 import SpotifyOAuth
 import spotipy
 
-# Set up logging
+# Set up logging first
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -52,6 +39,20 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger("WhatsAppAssistant")
+
+# ChromaDB imports with fallback
+try:
+    from chromedb import add_to_conversation_history, query_conversation_history
+    CHROMADB_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"ChromaDB not available: {e}")
+    CHROMADB_AVAILABLE = False
+    
+    # Fallback functions
+    def add_to_conversation_history(phone, role, message):
+        return True
+    def query_conversation_history(phone, query, limit=5):
+        return []
 
 load_dotenv()
 app = Flask(__name__)
@@ -75,7 +76,6 @@ try:
     GEMINI_HELPERS_AVAILABLE = True
 except Exception as e:
     GEMINI_HELPERS_AVAILABLE = False
-    logger = logging.getLogger("WhatsAppAssistant")
     logger.warning(f"Using fallback Gemini stubs: {e}")
 
     def chat_with_functions(user_message: str, phone: str):
