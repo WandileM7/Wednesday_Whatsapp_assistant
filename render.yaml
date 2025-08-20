@@ -39,8 +39,6 @@ services:
     envVars:
       - key: WAHA_SESSION
         value: default
-      - key: WAHA_APPS_ENABLED
-        value: "true"
       # Uncomment the next line if you enable the Redis service above
       # - key: REDIS_URL
       #   value: redis://waha-redis:6379
