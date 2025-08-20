@@ -4,6 +4,9 @@ services:
     container_name: redis
     ports:
       - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - ./redis-data:/data
 
   waha:
     image: devlikeapro/waha:latest
@@ -16,8 +19,11 @@ services:
       - WHATSAPP_HOOK_EVENTS=message
       - WAHA_APPS_ENABLED=True
       - REDIS_URL=redis://redis:6379/0
+
     volumes:
       - ./waha-data:/app/data
+    depends_on:
+      - redis
 
   assistant:
     build: .
