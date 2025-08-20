@@ -105,7 +105,15 @@ waha_keepalive_active = False
 
 def waha_health_check():
     """Ensure WAHA session exists and is started using sessions API (no Apps dependency)."""
-    try:
+    """
+    Ensure WAHA session exists and is started using sessions API (no Apps dependency).
+
+    Returns:
+        bool: True if the WAHA session is healthy/active, False otherwise.
+
+    Side Effects:
+        May create or start a WAHA session by making POST requests to the WAHA API.
+    """
         base = _waha_base()
         if not base:
             return False
