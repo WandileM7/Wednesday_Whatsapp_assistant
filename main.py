@@ -19,7 +19,6 @@ import time
 import threading
 from flask_session import Session
 from handlers.spotify_client import make_spotify_oauth
-from urllib.parse import urlparse
 
 # ChromaDB imports with fallback
 try:
