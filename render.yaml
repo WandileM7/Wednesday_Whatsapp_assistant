@@ -19,6 +19,14 @@ services:
       - key: SPOTIFY_REDIRECT_URI
         value: https://waha-gemini-assistant.onrender.com/callback
 
+  # Redis service for WAHA session storage (optional - eliminates Redis connection errors)
+  # Note: Uncomment this section if you want to eliminate Redis errors (requires paid plan)
+  # - type: redis
+  #   name: waha-redis
+  #   region: oregon
+  #   plan: starter
+  #   ipAllowList: []
+
   # WAHA WhatsApp Gateway
   - type: web
     name: waha-service
@@ -33,8 +41,12 @@ services:
         value: default
       - key: WAHA_APPS_ENABLED
         value: "true"
+      # Uncomment the next line if you enable the Redis service above
+      # - key: REDIS_URL
+      #   value: redis://waha-redis:6379
       # WAHA -> Assistant (public URL of Flask webhook)
       - key: WHATSAPP_HOOK_URL
         value: https://waha-gemini-assistant.onrender.com/webhook
       - key: WHATSAPP_HOOK_EVENTS
         value: message
+      # Note: WAHA logs Redis connection errors but functions normally without Redis
