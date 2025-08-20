@@ -7,6 +7,17 @@ services:
     plan: free
     dockerfilePath: ./Dockerfile
     autoDeploy: true
+    envVars:
+      # Assistant -> WAHA (public URL of WAHA service)
+      - key: WAHA_URL
+        value: https://waha-service.onrender.com/api/sendText
+      - key: WAHA_SESSION
+        value: default
+      - key: WAHA_KEEPALIVE_INTERVAL
+        value: 600
+      # Spotify redirect must match your Flask callback route
+      - key: SPOTIFY_REDIRECT_URI
+        value: https://waha-gemini-assistant.onrender.com/callback
 
   # WAHA WhatsApp Gateway
   - type: web
@@ -20,3 +31,8 @@ services:
     envVars:
       - key: WAHA_SESSION
         value: default
+      # WAHA -> Assistant (public URL of Flask webhook)
+      - key: WHATSAPP_HOOK_URL
+        value: https://waha-gemini-assistant.onrender.com/webhook
+      - key: WHATSAPP_HOOK_EVENTS
+        value: message
