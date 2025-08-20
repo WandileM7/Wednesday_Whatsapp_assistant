@@ -112,6 +112,7 @@ def waha_health_check():
     Side Effects:
         May create or start a WAHA session by making POST requests to the WAHA API.
     """
+    try:
         base = _waha_base()
         if not base:
             return False
