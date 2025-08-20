@@ -2,7 +2,7 @@ import json
 from dotenv import load_dotenv
 
 from flask import Flask, redirect, request, jsonify, session, url_for
-from handlers.gemini import chat_with_functions, execute_function
+# from handlers.gemini import chat_with_functions, execute_function
 from handlers.google_auth import auth_bp
 from handlers.speech import speech_to_text, text_to_speech, download_voice_message, should_respond_with_voice, cleanup_temp_file
 from handlers.auth_manager import auth_manager
@@ -19,6 +19,8 @@ import time
 import threading
 from flask_session import Session
 from handlers.spotify_client import make_spotify_oauth
+import os, time, json, threading, logging, requests
+from urllib.parse import urlparse
 
 # ChromaDB imports with fallback
 try:
@@ -67,25 +69,58 @@ user_conversations = {}
 MAX_CONVERSATIONS = 50
 MAX_MESSAGES_PER_USER = 15
 
-# Initialize Gemini
-gemini_api_key = os.getenv("GEMINI_API_KEY")
-if not gemini_api_key:
-    logger.error("GEMINI_API_KEY is not set. Quitting.")
-    sys.exit(1)
-
+# Try to import Gemini helpers; fallback to simple stubs if missing
 try:
-    genai.configure(api_key=gemini_api_key)
-    model = genai.GenerativeModel('gemini-2.0-flash')
-    logger.info("Gemini client initialized")
+    from handlers.gemini import chat_with_functions, execute_function
+    GEMINI_HELPERS_AVAILABLE = True
 except Exception as e:
-    logger.error(f"Gemini init failed: {e}")
-    sys.exit(1)
+    GEMINI_HELPERS_AVAILABLE = False
+    logger = logging.getLogger("WhatsAppAssistant")
+    logger.warning(f"Using fallback Gemini stubs: {e}")
+
+    def chat_with_functions(user_message: str, phone: str):
+        # Simple echo-style fallback
+        return {"content": f"I’m running in fallback mode. You said: {user_message}"}
+
+    def execute_function(call):
+        # No function calling in fallback
+        return call.get("content") or "Function calling is disabled in fallback mode."
+
+# Initialize Gemini (non-fatal if missing)
+gemini_api_key = os.getenv("GEMINI_API_KEY")
+class _DummyModel:
+    def generate_content(self, prompt: str):
+        class _R:
+            text = "Hello. Gemini is not configured; using a dummy response."
+        return _R()
+
+if gemini_api_key:
+    try:
+        genai.configure(api_key=gemini_api_key)
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        logger.info("Gemini client initialized")
+    except Exception as e:
+        logger.warning(f"Gemini init failed; using dummy model: {e}")
+        model = _DummyModel()
+else:
+    logger.warning("GEMINI_API_KEY not set. Using dummy model; app will still start.")
+    model = _DummyModel()
 
 PERSONALITY_PROMPT = os.getenv("PERSONALITY_PROMPT", "You are a sarcastic and sassy assistant.")
 GREETING_PROMPT = os.getenv("GREETING_PROMPT", "Give a brief, sarcastic greeting.")
 INITIAL_MESSAGE_PROMPT = os.getenv("INITIAL_MESSAGE_PROMPT", "Send a mysterious message under 50 words.")
 
 waha_url = os.getenv("WAHA_URL")
+WAHA_API_KEY = os.getenv("WAHA_API_KEY")
+
+def _waha_headers(is_json=True):
+    headers = {}
+    if is_json:
+        headers["Content-Type"] = "application/json"
+    if WAHA_API_KEY:
+        headers["X-API-KEY"] = WAHA_API_KEY
+    return headers
+
 if not waha_url:
     logger.warning("WAHA_URL not set. Set WAHA_URL to the WAHA public endpoint (e.g. https://waha-service.onrender.com/api/sendText)")
 # Derive WAHA base URL for other API calls
@@ -103,33 +138,23 @@ WAHA_SESSION = os.getenv("WAHA_SESSION", "default")
 waha_keepalive_active = False
 
 def waha_health_check():
-    """
-    Ensure WAHA session exists and is started using sessions API (no Apps dependency).
-
-    Returns:
-        bool: True if the WAHA session is healthy/active, False otherwise.
-
-    Side Effects:
-        May create or start a WAHA session by making POST requests to the WAHA API.
-    """
+    """Ensure WAHA session exists and is started using sessions API (no Apps dependency)."""
     try:
         base = _waha_base()
         if not base:
             return False
         session_name = WAHA_SESSION or "default"
-        # Check session status
-        r = requests.get(f"{base}/api/sessions/{session_name}", timeout=10)
+        h = _waha_headers()
+        r = requests.get(f"{base}/api/sessions/{session_name}", headers=h, timeout=10)
         if r.status_code == 200:
             data = r.json()
             status = (data.get("status") or "").lower()
             return status in ("working", "active", "connected", "ready")
         if r.status_code == 404:
-            # Create session if missing
-            rc = requests.post(f"{base}/api/sessions/{session_name}", timeout=15)
+            rc = requests.post(f"{base}/api/sessions/{session_name}", headers=h, timeout=15)
             if rc.status_code not in (200, 201, 409):
                 logger.warning(f"WAHA create session failed: {rc.status_code} {rc.text}")
-        # Try to start the session (safe even if already started)
-        rs = requests.post(f"{base}/api/sessions/{session_name}/start", timeout=20)
+        rs = requests.post(f"{base}/api/sessions/{session_name}/start", headers=h, timeout=20)
         if rs.status_code in (200, 202):
             return True
         if rs.status_code == 422 and "already started" in rs.text.lower():
@@ -1018,10 +1043,7 @@ def health():
         gc.collect()
         process = psutil.Process()
         memory_info = process.memory_info()
-        
-        # Include WAHA status in health check
         waha_healthy = waha_health_check() if waha_url else None
-        
         return jsonify({
             "status": "healthy",
             "memory_mb": round(memory_info.rss / 1024 / 1024, 2),
@@ -1029,6 +1051,7 @@ def health():
             "chromadb_enabled": CHROMADB_AVAILABLE and os.getenv("ENABLE_CHROMADB", "false").lower() == "true",
             "waha_status": "connected" if waha_healthy else ("disconnected" if waha_healthy is False else "not_configured"),
             "waha_keepalive": waha_keepalive_active,
+            "gemini_helpers": GEMINI_HELPERS_AVAILABLE,
             "timestamp": datetime.now().isoformat()
         })
     except ImportError:
@@ -1036,7 +1059,8 @@ def health():
             "status": "healthy",
             "memory_mb": "unavailable",
             "active_conversations": len(user_conversations),
-            "waha_status": "connected" if waha_health_check() else "disconnected" if waha_url else "not_configured",
+            "waha_status": "connected" if (waha_url and waha_health_check()) else ("disconnected" if waha_url else "not_configured"),
+            "gemini_helpers": GEMINI_HELPERS_AVAILABLE,
             "timestamp": datetime.now().isoformat()
         })
 
@@ -1088,10 +1112,13 @@ def initiate_conversation(phone):
 
 def typing_indicator(phone, seconds=2):
     try:
+        if not waha_url:
+            logger.warning("WAHA_URL not set; skipping typing indicator")
+            return False
         phone = phone if "@c.us" in phone else f"{phone}@c.us"
         for action in ["startTyping", "stopTyping"]:
-            url = os.getenv("WAHA_URL").replace("sendText", action)
-            requests.post(url, json={"chatId": phone, "session": os.getenv("WAHA_SESSION")})
+            url = waha_url.replace("sendText", action)
+            requests.post(url, headers=_waha_headers(), json={"chatId": phone, "session": os.getenv("WAHA_SESSION")})
             if action == "startTyping":
                 time.sleep(seconds)
         return True
@@ -1102,20 +1129,20 @@ def typing_indicator(phone, seconds=2):
 def send_message(phone, text):
     """Memory-efficient message sending"""
     try:
+        if not waha_url:
+            logger.warning("WAHA_URL not set; cannot send message")
+            return False
         if not waha_health_check():
             logger.warning("WAHA not ready; message not sent")
             return False
-        headers = {"Content-Type": "application/json"}
         payload = {"chatId": phone, "text": text}
-        # Primary (legacy) endpoint
-        r = requests.post(waha_url, headers=headers, data=json.dumps(payload), timeout=20)
+        r = requests.post(waha_url, headers=_waha_headers(), data=json.dumps(payload), timeout=20)
         if r.status_code in (200, 201):
             return True
-        # Fallback to session-scoped messages API
         base = _waha_base()
         session_name = WAHA_SESSION or "default"
         alt = f"{base}/api/sessions/{session_name}/messages/text"
-        r2 = requests.post(alt, headers=headers, data=json.dumps(payload), timeout=20)
+        r2 = requests.post(alt, headers=_waha_headers(), data=json.dumps(payload), timeout=20)
         if r2.status_code in (200, 201):
             return True
         logger.error(f"WAHA send_message failed: {r.status_code} {r.text} | alt={r2.status_code} {r2.text}")
@@ -1128,35 +1155,29 @@ def send_voice_message(phone, text):
     """Send voice message by converting text to speech"""
     try:
         phone = phone if "@c.us" in phone else f"{phone}@c.us"
-        
-        # Convert text to speech
         audio_file = text_to_speech(text)
         if not audio_file:
             logger.error("Failed to generate voice from text")
             return False
-        
         if not waha_health_check():
             return False
-        headers = {}
         base = _waha_base()
         session_name = WAHA_SESSION or "default"
-        # Try WAHA file upload endpoint for audio
         files = {
             "file": open(audio_file, "rb"),
             "chatId": (None, phone),
             "filename": (None, os.path.basename(audio_file)),
         }
-        # Common endpoints: sendFile or messages/voice
         ep1 = f"{base}/api/sendFile"
         ep2 = f"{base}/api/sessions/{session_name}/messages/file"
         for ep in (ep1, ep2):
             try:
-                resp = requests.post(ep, files=files, timeout=60)
+                resp = requests.post(ep, headers=_waha_headers(is_json=False), files=files, timeout=60)
                 if resp.status_code in (200, 201):
                     cleanup_temp_file(audio_file)
                     return True
-            except Exception as e:
-                logger.error(f"Exception while sending voice message via {ep}: {e}")
+            except Exception:
+                pass
         logger.warning(f"WAHA voice send failed via {ep1} and {ep2}")
         cleanup_temp_file(audio_file)
         return False
@@ -1587,3 +1608,4 @@ if __name__ == '__main__':
     
     debug_mode = os.getenv("FLASK_DEBUG", "false").lower() == "true"
     app.run(host="0.0.0.0", port=5000, debug=debug_mode, threaded=True)
+```
