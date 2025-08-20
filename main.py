@@ -1176,7 +1176,8 @@ def send_voice_message(phone, text):
                     cleanup_temp_file(audio_file)
                     return True
             except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Exception while sending voice message to {ep}: {e}")
         logger.warning(f"WAHA voice send failed via {ep1} and {ep2}")
         cleanup_temp_file(audio_file)
         return False
