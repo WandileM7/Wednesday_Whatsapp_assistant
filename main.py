@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from flask import Flask, redirect, request, jsonify, session, url_for
 from handlers.gemini import chat_with_functions, execute_function
 from handlers.google_auth import auth_bp
+from handlers.speech import speech_to_text, text_to_speech, download_voice_message, should_respond_with_voice, cleanup_temp_file
 import google.generativeai as genai
 import sys
 import os
@@ -307,8 +308,29 @@ def webhook():
     try:
         data = request.get_json() or {}
         payload = data.get('payload', data)
+        
+        # Handle both text and voice messages
         user_msg = payload.get('body') or payload.get('text') or payload.get('message')
         phone = payload.get('chatId') or payload.get('from')
+        is_voice_message = False
+        
+        # Check for voice message
+        if not user_msg and payload.get('type') == 'voice':
+            voice_data = payload.get('voice') or payload.get('media')
+            if voice_data:
+                voice_url = voice_data.get('url') or voice_data.get('downloadUrl')
+                if voice_url:
+                    logger.info(f"Processing voice message from {phone}")
+                    # Download and transcribe voice message
+                    audio_file = download_voice_message(voice_url, os.getenv("WAHA_SESSION"))
+                    if audio_file:
+                        user_msg = speech_to_text(audio_file)
+                        is_voice_message = True
+                        if user_msg:
+                            logger.info(f"Voice transcribed: {user_msg[:50]}...")
+                        else:
+                            logger.warning("Could not transcribe voice message")
+                            return jsonify({'status': 'ignored'}), 200
 
         if not user_msg or not phone:
             return jsonify({'status': 'ignored'}), 200
@@ -316,7 +338,7 @@ def webhook():
         if payload.get('fromMe'):
             return jsonify({'status': 'ignored'}), 200
 
-        logger.info(f"Processing message from {phone}: {user_msg[:30]}...")
+        logger.info(f"Processing {'voice' if is_voice_message else 'text'} message from {phone}: {user_msg[:30]}...")
         
         # Memory-efficient conversation management
         if phone not in user_conversations:
@@ -362,7 +384,16 @@ def webhook():
         })
         conversation['messages'] = conversation['messages'][-MAX_MESSAGES_PER_USER:]
 
-        send_message(phone, reply)
+        # Decide whether to send voice or text response
+        if should_respond_with_voice(is_voice_message, len(reply)):
+            success = send_voice_message(phone, reply)
+            if not success:
+                # Fallback to text if voice fails
+                logger.warning("Voice response failed, falling back to text")
+                send_message(phone, reply)
+        else:
+            send_message(phone, reply)
+            
         return jsonify({'status': 'ok', 'memory_optimized': True})
 
     except Exception as e:
@@ -991,6 +1022,45 @@ def send_message(phone, text):
         logger.error(f"Error sending message: {e}")
         return False
 
+def send_voice_message(phone, text):
+    """Send voice message by converting text to speech"""
+    try:
+        phone = phone if "@c.us" in phone else f"{phone}@c.us"
+        
+        # Convert text to speech
+        audio_file = text_to_speech(text)
+        if not audio_file:
+            logger.error("Failed to generate voice from text")
+            return False
+        
+        try:
+            # Upload voice file to WAHA
+            voice_url = os.getenv("WAHA_URL").replace("sendText", "sendVoice")
+            
+            with open(audio_file, 'rb') as f:
+                files = {'file': f}
+                data = {
+                    'session': os.getenv("WAHA_SESSION", "default"),
+                    'chatId': phone
+                }
+                
+                r = requests.post(voice_url, files=files, data=data, timeout=30)
+                
+                if r.status_code in [200, 201]:
+                    logger.info(f"Voice message sent successfully to {phone}")
+                    return True
+                else:
+                    logger.error(f"Failed to send voice message: {r.status_code} - {r.text}")
+                    return False
+                    
+        finally:
+            # Clean up temporary file
+            cleanup_temp_file(audio_file)
+        
+    except Exception as e:
+        logger.error(f"Error sending voice message: {e}")
+        return False
+
 # Add this route after your existing Google routes (around line 580)
 
 @app.route("/save-current-google-tokens")
@@ -1329,6 +1399,57 @@ def quick_setup():
     </body>
     </html>
     """
+
+@app.route("/test-speech")
+def test_speech():
+    """Test speech functionality"""
+    results = {
+        "timestamp": datetime.now().isoformat(),
+        "speech_tests": {}
+    }
+    
+    # Test voice response logic
+    os.environ.setdefault("ENABLE_VOICE_RESPONSES", "true")
+    os.environ.setdefault("MAX_VOICE_RESPONSE_LENGTH", "200")
+    
+    results["speech_tests"]["voice_logic"] = {
+        "user_voice_short": should_respond_with_voice(True, 50),
+        "user_voice_long": should_respond_with_voice(True, 300),
+        "user_text_short": should_respond_with_voice(False, 50),
+        "user_text_long": should_respond_with_voice(False, 300),
+        "settings": {
+            "voice_enabled": os.getenv("ENABLE_VOICE_RESPONSES", "true"),
+            "max_length": os.getenv("MAX_VOICE_RESPONSE_LENGTH", "200")
+        }
+    }
+    
+    # Test TTS client availability
+    try:
+        from handlers.speech import get_tts_client, get_speech_client
+        tts_client = get_tts_client()
+        speech_client = get_speech_client()
+        
+        results["speech_tests"]["clients"] = {
+            "tts_available": tts_client is not None,
+            "stt_available": speech_client is not None
+        }
+    except Exception as e:
+        results["speech_tests"]["clients"] = {
+            "error": str(e)
+        }
+    
+    # Test simple TTS if available
+    try:
+        test_audio = text_to_speech("Hello, this is a test.")
+        if test_audio:
+            cleanup_temp_file(test_audio)
+            results["speech_tests"]["tts_test"] = {"success": True}
+        else:
+            results["speech_tests"]["tts_test"] = {"success": False, "reason": "No audio generated"}
+    except Exception as e:
+        results["speech_tests"]["tts_test"] = {"success": False, "error": str(e)}
+    
+    return jsonify(results)
 
 if __name__ == '__main__':
     logger.info("Launching Memory-Optimized WhatsApp Assistant...")
