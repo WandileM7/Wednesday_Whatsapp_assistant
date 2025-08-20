@@ -19,6 +19,7 @@ import time
 import threading
 from flask_session import Session
 from handlers.spotify_client import make_spotify_oauth
+import os, time, json, threading, logging, requests
 from urllib.parse import urlparse
 
 # ChromaDB imports with fallback
@@ -258,29 +259,6 @@ def initialize_google_auth():
             return False
             
     except Exception as e:
-        logger.error(f"Google auth initialization failed: {e}")
-        return False
-
-def save_google_tokens_to_env(credentials):
-    """Save Google tokens to environment variables for automation"""
-    try:
-        if not credentials.refresh_token:
-            logger.warning("No refresh token available - cannot save for automation")
-            return False
-            
-        # Log the tokens so you can add them to your environment
-        logger.info("=== GOOGLE TOKENS FOR ENVIRONMENT SETUP ===")
-        logger.info(f"GOOGLE_REFRESH_TOKEN={credentials.refresh_token}")
-        logger.info(f"GOOGLE_ACCESS_TOKEN={credentials.token}")
-        logger.info(f"GOOGLE_CLIENT_ID={credentials.client_id}")
-        logger.info(f"GOOGLE_CLIENT_SECRET={credentials.client_secret}")
-        logger.info("Add these to your environment variables for automatic authentication")
-        logger.info("=============================================")
-        
-        # Also try to update .env file if it exists
-        try:
-            env_file = ".env"
-            if os.path.exists(env_file):
                 with open(env_file, 'r') as f:
                     content = f.read()
                 
@@ -387,6 +365,11 @@ def spotify_callback():
     except Exception as e:
         logger.error(f"Error getting Spotify token: {e}")
         return f"❌ Error getting token: {str(e)}", 500
+
+@app.route("/spotify-callback")
+def spotify_callback_alias():
+    # Support SPOTIFY_REDIRECT_URI=http://localhost:5000/spotify-callback
+    return spotify_callback()
 
 @app.route('/webhook', methods=['POST', 'GET'])
 def webhook():
@@ -678,13 +661,13 @@ def test_email_send():
         result = send_email(
             to="wandilemawela4@gmail.com",  # Fixed - removed the extra .com
             subject="Test Email from WhatsApp Assistant",
-            body="This is a test email to verify Gmail integration is working."
+            message_text="This is a test email to verify Gmail integration is working."
         )
         
         return {
             "test": "email_send",
             "result": result,
-            "success": not result.startswith("❌"),
+            "success": not str(result).startswith("❌"),
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
@@ -701,12 +684,12 @@ def test_current_email():
         result = send_email(
             to="wandilemawela4@gmail.com",  # Your email
             subject="Test from Current Session",
-            body="Testing email functionality with current authentication session."
+            message_text="Testing email functionality with current authentication session."
         )
         
         return {
             "result": result,
-            "success": not result.startswith("❌"),
+            "success": not str(result).startswith("❌"),
             "session_has_google_creds": bool(session.get('google_credentials')),
             "timestamp": datetime.now().isoformat()
         }
@@ -1042,7 +1025,10 @@ def health():
         gc.collect()
         process = psutil.Process()
         memory_info = process.memory_info()
+        
+        # Include WAHA status in health check
         waha_healthy = waha_health_check() if waha_url else None
+        
         return jsonify({
             "status": "healthy",
             "memory_mb": round(memory_info.rss / 1024 / 1024, 2),
@@ -1058,7 +1044,7 @@ def health():
             "status": "healthy",
             "memory_mb": "unavailable",
             "active_conversations": len(user_conversations),
-            "waha_status": "connected" if (waha_url and waha_health_check()) else ("disconnected" if waha_url else "not_configured"),
+            "waha_status": "connected" if waha_health_check() else "disconnected" if waha_url else "not_configured",
             "gemini_helpers": GEMINI_HELPERS_AVAILABLE,
             "timestamp": datetime.now().isoformat()
         })
@@ -1111,12 +1097,9 @@ def initiate_conversation(phone):
 
 def typing_indicator(phone, seconds=2):
     try:
-        if not waha_url:
-            logger.warning("WAHA_URL not set; skipping typing indicator")
-            return False
         phone = phone if "@c.us" in phone else f"{phone}@c.us"
         for action in ["startTyping", "stopTyping"]:
-            url = waha_url.replace("sendText", action)
+            url = os.getenv("WAHA_URL").replace("sendText", action)
             requests.post(url, headers=_waha_headers(), json={"chatId": phone, "session": os.getenv("WAHA_SESSION")})
             if action == "startTyping":
                 time.sleep(seconds)
@@ -1128,9 +1111,6 @@ def typing_indicator(phone, seconds=2):
 def send_message(phone, text):
     """Memory-efficient message sending"""
     try:
-        if not waha_url:
-            logger.warning("WAHA_URL not set; cannot send message")
-            return False
         if not waha_health_check():
             logger.warning("WAHA not ready; message not sent")
             return False
@@ -1176,8 +1156,7 @@ def send_voice_message(phone, text):
                     cleanup_temp_file(audio_file)
                     return True
             except Exception:
-            except Exception as e:
-                logger.error(f"Exception while sending voice message to {ep}: {e}")
+                pass
         logger.warning(f"WAHA voice send failed via {ep1} and {ep2}")
         cleanup_temp_file(audio_file)
         return False
@@ -1608,4 +1587,3 @@ if __name__ == '__main__':
     
     debug_mode = os.getenv("FLASK_DEBUG", "false").lower() == "true"
     app.run(host="0.0.0.0", port=5000, debug=debug_mode, threaded=True)
-```
