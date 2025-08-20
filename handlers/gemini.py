@@ -4,6 +4,10 @@ from config import GEMINI_API_KEY, PERSONALITY_PROMPT
 from handlers.spotify import play_album, play_playlist, play_song, get_current_song
 from handlers.gmail import send_email, summarize_emails
 from handlers.calendar import create_event
+from handlers.weather import weather_service
+from handlers.news import news_service
+from handlers.tasks import task_manager
+from handlers.contacts import contact_manager
 import logging
 from chromedb import *
 # Initialize Gemini
@@ -92,7 +96,173 @@ FUNCTIONS = [
         },
         "required": ["summary", "start_time", "end_time"]
     }
-}
+},
+    {
+        "name": "get_weather",
+        "description": "Get current weather for a location",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "City name or location"}
+            },
+            "required": ["location"]
+        }
+    },
+    {
+        "name": "get_weather_forecast",
+        "description": "Get weather forecast for a location",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "City name or location"},
+                "days": {"type": "integer", "description": "Number of days (1-5)", "default": 3}
+            },
+            "required": ["location"]
+        }
+    },
+    {
+        "name": "get_news",
+        "description": "Get top news headlines",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "category": {"type": "string", "description": "News category: general, business, technology, science"},
+                "limit": {"type": "integer", "description": "Number of articles (1-10)", "default": 5}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "search_news",
+        "description": "Search for news about a specific topic",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query"},
+                "limit": {"type": "integer", "description": "Number of articles (1-10)", "default": 5}
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "get_daily_briefing",
+        "description": "Get a daily news briefing with mixed categories",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "create_task",
+        "description": "Create a new task or todo item",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Task title"},
+                "description": {"type": "string", "description": "Task description"},
+                "due_date": {"type": "string", "description": "Due date in YYYY-MM-DD HH:MM format"},
+                "priority": {"type": "string", "description": "Priority: low, medium, high, urgent", "default": "medium"}
+            },
+            "required": ["title"]
+        }
+    },
+    {
+        "name": "list_tasks",
+        "description": "List all tasks",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "filter_completed": {"type": "boolean", "description": "Hide completed tasks", "default": "false"},
+                "filter_priority": {"type": "string", "description": "Filter by priority: low, medium, high, urgent"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "complete_task",
+        "description": "Mark a task as completed",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string", "description": "Task ID"}
+            },
+            "required": ["task_id"]
+        }
+    },
+    {
+        "name": "create_reminder",
+        "description": "Create a reminder",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "message": {"type": "string", "description": "Reminder message"},
+                "remind_at": {"type": "string", "description": "When to remind in YYYY-MM-DD HH:MM format"}
+            },
+            "required": ["message", "remind_at"]
+        }
+    },
+    {
+        "name": "list_reminders",
+        "description": "List all reminders",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "get_task_summary",
+        "description": "Get a summary of tasks and reminders",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "add_contact",
+        "description": "Add a new contact to local storage",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Contact name"},
+                "phone": {"type": "string", "description": "Phone number"},
+                "email": {"type": "string", "description": "Email address"},
+                "notes": {"type": "string", "description": "Additional notes"}
+            },
+            "required": ["name"]
+        }
+    },
+    {
+        "name": "search_contacts",
+        "description": "Search for contacts by name, phone, or email",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query"}
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "list_contacts",
+        "description": "List all contacts",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "get_contact_summary",
+        "description": "Get a summary of contacts",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    }
 
 ]
 def chat_with_functions(user_message: str, phone: str) -> dict:
@@ -172,18 +342,23 @@ def execute_function(call: dict) -> str:
     name = call.get("name")
     params = call.get("parameters", {})
     try:
+        # Spotify functions
         if name == "play_song":
             return play_song(params["song_name"])
         if name == "get_current_song":
             return get_current_song()
-        if name == "send_email":
-            return send_email(params["to"], params["subject"], params["body"])
         if name == "play_playlist":
             return play_playlist(params["playlist_name"])
         if name == "play_album":
             return play_album(params["album_name"])
+        
+        # Gmail functions
+        if name == "send_email":
+            return send_email(params["to"], params["subject"], params["body"])
         if name == "summarize_emails":
             return summarize_emails()
+        
+        # Calendar functions
         if name == "create_event":
             return create_event(
                 params["summary"],
@@ -192,6 +367,82 @@ def execute_function(call: dict) -> str:
                 params["end_time"],
                 params.get("attendees", [])
             )
+        
+        # Weather functions
+        if name == "get_weather":
+            return weather_service.get_current_weather(params["location"])
+        if name == "get_weather_forecast":
+            return weather_service.get_weather_forecast(
+                params["location"], 
+                params.get("days", 3)
+            )
+        
+        # News functions
+        if name == "get_news":
+            category = params.get("category")
+            limit = params.get("limit", 5)
+            if category == "business":
+                return news_service.get_business_news(limit)
+            elif category == "technology":
+                return news_service.get_technology_news(limit)
+            elif category == "science":
+                return news_service.get_science_news(limit)
+            else:
+                return news_service.get_top_headlines(limit=limit)
+        
+        if name == "search_news":
+            return news_service.search_news(params["query"], params.get("limit", 5))
+        
+        if name == "get_daily_briefing":
+            return news_service.get_daily_briefing()
+        
+        # Task management functions
+        if name == "create_task":
+            return task_manager.create_task(
+                params["title"],
+                params.get("description", ""),
+                params.get("due_date"),
+                params.get("priority", "medium")
+            )
+        
+        if name == "list_tasks":
+            return task_manager.list_tasks(
+                params.get("filter_completed", False),
+                params.get("filter_priority")
+            )
+        
+        if name == "complete_task":
+            return task_manager.complete_task(params["task_id"])
+        
+        if name == "create_reminder":
+            return task_manager.create_reminder(
+                params["message"],
+                params["remind_at"]
+            )
+        
+        if name == "list_reminders":
+            return task_manager.list_reminders()
+        
+        if name == "get_task_summary":
+            return task_manager.get_task_summary()
+        
+        # Contact management functions
+        if name == "add_contact":
+            return contact_manager.add_local_contact(
+                params["name"],
+                params.get("phone"),
+                params.get("email"),
+                params.get("notes")
+            )
+        
+        if name == "search_contacts":
+            return contact_manager.search_all_contacts(params["query"])
+        
+        if name == "list_contacts":
+            return contact_manager.list_local_contacts()
+        
+        if name == "get_contact_summary":
+            return contact_manager.get_contact_summary()
 
         return "I couldn't handle that function call."
     except Exception as e:

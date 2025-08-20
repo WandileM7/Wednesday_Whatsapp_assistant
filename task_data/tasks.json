@@ -1,0 +1,13 @@
+{
+  "545b7cec": {
+    "id": "545b7cec",
+    "title": "Test task",
+    "description": "This is a test task",
+    "due_date": null,
+    "priority": "high",
+    "completed": false,
+    "created_at": "2025-08-20T16:56:43.311441",
+    "completed_at": null,
+    "tags": []
+  }
+}
