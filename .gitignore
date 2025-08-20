@@ -36,3 +36,12 @@ tokens/
 
 # Render/Deployment
 secrets/
+
+# Flask session files
+flask_session/
+
+# Audio files (temporary)
+/tmp/audio/
+*.ogg
+*.wav
+*.mp3

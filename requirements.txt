@@ -18,3 +18,5 @@ flask-session
 werkzeug
 psutil
 pytz
+google-cloud-speech
+google-cloud-texttospeech

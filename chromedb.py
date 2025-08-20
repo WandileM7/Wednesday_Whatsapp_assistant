@@ -113,6 +113,10 @@ def retrieve_conversation_history(phone, n_results=5):
         logger.warning(f"Failed to query conversation history: {e}")
         return []
 
+def query_conversation_history(phone, query, limit=5):
+    """Query conversation history - alias for retrieve_conversation_history"""
+    return retrieve_conversation_history(phone, n_results=limit)
+
 def clear_old_conversations(days_old: int = 7) -> bool:
     """Clear old conversations to manage memory"""
     try:
