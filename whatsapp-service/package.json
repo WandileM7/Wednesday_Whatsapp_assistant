@@ -4,7 +4,7 @@
   "description": "Lightweight WhatsApp API service as alternative to WAHA",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "ENABLE_REAL_WHATSAPP=true node server-production.js",
     "start:prod": "ENABLE_REAL_WHATSAPP=true node server-production.js",
     "dev": "nodemon server.js"
   },
