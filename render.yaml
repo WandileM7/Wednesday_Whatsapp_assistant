@@ -34,4 +34,4 @@ services:
         value: message
       # Don't show QR in logs to save memory
       - key: SHOW_QR
-        value: "false"
+        value: "true"
