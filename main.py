@@ -866,7 +866,7 @@ def test_google_services():
     
     # Overall status
     all_tests = results["tests"]
-    successful_tests = sum(1 for test in all_tests values() if test.get("success", False))
+    successful_tests = sum(1 for test in all_tests.values() if test.get("success", False))
     total_tests = len(all_tests)
     
     results["summary"] = {
@@ -1040,7 +1040,7 @@ def test_spotify():
             "user": user["display_name"],
             "user_id": user["id"],
             "has_active_device": bool(playback),
-            "current_track": playback["item"]["name"] if playback and playback get("item") else None,
+            "current_track": playback["item"]["name"] if playback and playback.get("item") else None,
             "token_expires": token_info.get("expires_at"),
             "scopes": token_info.get("scope", "").split()
         }
