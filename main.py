@@ -1234,14 +1234,18 @@ def send_message(phone, text):
             logger.warning("WAHA not ready; message not sent")
             return False
         headers = {"Content-Type": "application/json"}
-        payload = {"chatId": phone, "text": text}
+        session_name = os.getenv("WAHA_SESSION", "default")
+        payload = {
+            "chatId": phone, 
+            "text": text,
+            "session": session_name
+        }
         # Primary (legacy) endpoint
         r = requests.post(waha_url, headers=headers, data=json.dumps(payload), timeout=20)
         if r.status_code in (200, 201):
             return True
         # Fallback to session-scoped messages API
         base = _waha_base()
-        session_name = "default"
         alt = f"{base}/api/sessions/{session_name}/messages/text"
         r2 = requests.post(alt, headers=headers, data=json.dumps(payload), timeout=20)
         if r2.status_code in (200, 201):
@@ -1249,7 +1253,6 @@ def send_message(phone, text):
         logger.error(f"WAHA send_message failed: {r.status_code} {r.text} | alt={r2.status_code} {r2.text}")
         return False
     except Exception as e:
-        logger.error(f"WAHA send_message error: {e}")
         logger.error(f"WAHA send_message error: {e}")
         return False
 
@@ -1264,29 +1267,83 @@ def send_voice_message(phone, text):
         
         if not waha_health_check():
             return False
-        headers = {}
+            
         base = _waha_base()
-        session_name = "default"
-        # Try WAHA file upload endpoint for audio
-        files = {
-            "file": open(audio_file, "rb"),
-            "chatId": (None, phone),
-            "filename": (None, os.path.basename(audio_file)),
-        }
-        # Common endpoints: sendFile or messages/voice
-        ep1 = f"{base}/api/sendFile"
-        ep2 = f"{base}/api/sessions/{session_name}/messages/file"
-        for ep in (ep1, ep2):
-            try:
-                resp = requests.post(ep, files=files, timeout=60)
+        session_name = os.getenv("WAHA_SESSION", "default")
+        
+        # First try to upload the file and get a URL
+        try:
+            # Try file upload first to get URL for sendVoice
+            headers = {}
+            files = {
+                "file": open(audio_file, "rb"),
+                "chatId": (None, phone),
+                "filename": (None, os.path.basename(audio_file)),
+                "session": (None, session_name)
+            }
+            
+            # Try different file upload endpoints
+            upload_endpoints = [
+                f"{base}/api/sendFile",
+                f"{base}/api/sessions/{session_name}/messages/file"
+            ]
+            
+            for upload_ep in upload_endpoints:
+                try:
+                    resp = requests.post(upload_ep, files=files, timeout=60)
+                    if resp.status_code in (200, 201):
+                        cleanup_temp_file(audio_file)
+                        return True
+                except Exception:
+                    continue
+            
+            # If file upload fails, try sendVoice with local file reference
+            # Some WAHA instances support direct file upload via sendVoice
+            voice_headers = {"Content-Type": "application/json"}
+            voice_payload = {
+                "chatId": phone,
+                "file": {
+                    "mimetype": "audio/ogg; codecs=opus",
+                    "filename": os.path.basename(audio_file)
+                },
+                "reply_to": None,
+                "convert": True,
+                "session": session_name
+            }
+            
+            sendvoice_ep = f"{base}/api/sendVoice"
+            resp = requests.post(sendvoice_ep, headers=voice_headers, data=json.dumps(voice_payload), timeout=60)
+            if resp.status_code in (200, 201):
+                cleanup_temp_file(audio_file)
+                return True
+                
+            # Final fallback: Try multipart sendVoice
+            with open(audio_file, "rb") as audio:
+                voice_files = {
+                    "file": audio,
+                    "chatId": (None, phone),
+                    "session": (None, session_name),
+                    "convert": (None, "true")
+                }
+                resp = requests.post(sendvoice_ep, files=voice_files, timeout=60)
                 if resp.status_code in (200, 201):
                     cleanup_temp_file(audio_file)
                     return True
-            except Exception:
+                    
+        except Exception as e:
+            logger.error(f"Error in voice upload process: {e}")
+        finally:
+            # Ensure file handle is closed
+            try:
+                if 'files' in locals() and 'file' in files:
+                    files['file'].close()
+            except:
                 pass
-        logger.warning(f"WAHA voice send failed via {ep1} and {ep2}")
+                
+        logger.warning(f"WAHA voice send failed via {base}/api/sendFile, {base}/api/sessions/{session_name}/messages/file, and {base}/api/sendVoice")
         cleanup_temp_file(audio_file)
         return False
+        
     except Exception as e:
         logger.error(f"WAHA voice send error: {e}")
         return False
