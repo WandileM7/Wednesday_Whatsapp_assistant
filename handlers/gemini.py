@@ -1,6 +1,6 @@
 import google.generativeai as genai
 import json
-import signal
+import threading
 from config import GEMINI_API_KEY, PERSONALITY_PROMPT
 from handlers.spotify import play_album, play_playlist, play_song, get_current_song
 from handlers.gmail import send_email, summarize_emails
@@ -12,12 +12,9 @@ from handlers.contacts import contact_manager
 import logging
 from chromedb import *
 
-# Timeout handler
+# Timeout handler for thread-safe timeout
 class TimeoutException(Exception):
     pass
-
-def timeout_handler(signum, frame):
-    raise TimeoutException("Gemini API call timed out")
 # Initialize Gemini
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.0-flash")
@@ -289,33 +286,49 @@ Here's the conversation history:
 User: {user_message}
 """
 
-    # Set timeout for Gemini API call
-    signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(30)  # 30 second timeout
+    # Thread-safe timeout for Gemini API call
+    timeout_occurred = threading.Event()
+    response = None
+    exception_info = None
     
-    try:
-        response = model.generate_content(
-            contents=[
-                {"role": "model", "parts": [PERSONALITY_PROMPT]},
-                {"role": "user", "parts": [prompt]}
-            ],
-            tools=[{"function_declarations": FUNCTIONS}],
-            tool_config={"function_calling_config": {"mode": "auto"}}
-        )
-        signal.alarm(0)  # Cancel the alarm
-        logging.getLogger("WhatsAppAssistant").debug(f"Gemini raw response: {response}")
-    except TimeoutException:
-        signal.alarm(0)  # Cancel the alarm
+    def api_call():
+        nonlocal response, exception_info
+        try:
+            response = model.generate_content(
+                contents=[
+                    {"role": "model", "parts": [PERSONALITY_PROMPT]},
+                    {"role": "user", "parts": [prompt]}
+                ],
+                tools=[{"function_declarations": FUNCTIONS}],
+                tool_config={"function_calling_config": {"mode": "auto"}}
+            )
+        except Exception as e:
+            exception_info = e
+    
+    # Start API call in thread
+    api_thread = threading.Thread(target=api_call)
+    api_thread.daemon = True
+    api_thread.start()
+    
+    # Wait for completion or timeout
+    api_thread.join(timeout=30)
+    
+    if api_thread.is_alive():
+        # Timeout occurred
         logging.getLogger("WhatsAppAssistant").error("Gemini API call timed out")
         add_to_conversation_history(phone, "user", user_message)
         add_to_conversation_history(phone, "assistant", "Sorry, I'm experiencing delays. Please try again.")
         return {"name": None, "content": "Sorry, I'm experiencing delays. Please try again."}
-    except Exception as e:
-        signal.alarm(0)  # Cancel the alarm
-        logging.getLogger("WhatsAppAssistant").error(f"Gemini API error: {e}")
+    
+    if exception_info:
+        # API call failed
+        logging.getLogger("WhatsAppAssistant").error(f"Gemini API error: {exception_info}")
         add_to_conversation_history(phone, "user", user_message)
-        add_to_conversation_history(phone, "assistant", f"API Error: {e}")
+        add_to_conversation_history(phone, "assistant", f"API Error: {exception_info}")
         return {"name": None, "content": "Sorry, I encountered an API error."}
+    
+    if response:
+        logging.getLogger("WhatsAppAssistant").debug(f"Gemini raw response: {response}")
 
     # Try to extract function call or text robustly
     try:
