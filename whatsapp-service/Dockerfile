@@ -23,6 +23,9 @@ COPY package.json package-lock.json ./
 ARG ENABLE_REAL_WHATSAPP=false
 ENV ENABLE_REAL_WHATSAPP=${ENABLE_REAL_WHATSAPP}
 
+# Verify package.json exists before npm install
+RUN test -f package.json || (echo "Error: package.json not found" && exit 1)
+
 RUN if [ "$ENABLE_REAL_WHATSAPP" = "true" ]; then \
         npm install; \
     else \
