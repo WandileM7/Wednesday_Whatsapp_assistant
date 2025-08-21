@@ -190,7 +190,7 @@ def waha_health_check():
         base = _waha_base()
         if not base:
             return False
-        session_name = WAHA_SESSION or "default"
+        session_name = "default"
         # Check session status
         r = requests.get(f"{base}/api/sessions/{session_name}", timeout=10)
         if r.status_code == 200:
@@ -1233,7 +1233,7 @@ def send_message(phone, text):
             return True
         # Fallback to session-scoped messages API
         base = _waha_base()
-        session_name = WAHA_SESSION or "default"
+        session_name = "default"
         alt = f"{base}/api/sessions/{session_name}/messages/text"
         r2 = requests.post(alt, headers=headers, data=json.dumps(payload), timeout=20)
         if r2.status_code in (200, 201):
@@ -1258,7 +1258,7 @@ def send_voice_message(phone, text):
             return False
         headers = {}
         base = _waha_base()
-        session_name = WAHA_SESSION or "default"
+        session_name = "default"
         # Try WAHA file upload endpoint for audio
         files = {
             "file": open(audio_file, "rb"),
