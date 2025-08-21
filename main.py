@@ -1840,6 +1840,33 @@ class ConversationManager:
 # Initialize conversation manager
 conversation_manager = ConversationManager()
 
+
+class WAHAClient:
+    def __init__(self):
+        self.waha_url = waha_url
+        self.api_key = WAHA_API_KEY
+    
+    def send_message(self, phone, text):
+        if not self.waha_url:
+            logger.warning("WAHA_URL not configured")
+            return False
+        
+        try:
+            if "@c.us" not in phone:
+                phone = f"{phone}@c.us"
+            
+            payload = {"chatId": phone, "text": text}
+            headers = _waha_headers()
+            
+            response = requests.post(self.waha_url, headers=headers, json=payload, timeout=10)
+            return response.status_code in (200, 201)
+        except Exception as e:
+            logger.error(f"Error sending message: {e}")
+            return False
+
+# Initialize WAHA client
+waha_client = WAHAClient()
+
 if __name__ == '__main__':
     logger.info("Launching Memory-Optimized WhatsApp Assistant...")
     
