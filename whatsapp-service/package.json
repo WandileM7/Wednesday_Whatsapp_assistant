@@ -5,11 +5,16 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "start:prod": "ENABLE_REAL_WHATSAPP=true node server-production.js",
     "dev": "nodemon server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
     "fs-extra": "^11.1.1"
+  },
+  "optionalDependencies": {
+    "whatsapp-web.js": "^1.23.0",
+    "qr-terminal": "^0.12.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

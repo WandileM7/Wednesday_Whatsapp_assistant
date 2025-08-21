@@ -84,6 +84,7 @@ async function forwardToWebhook(message) {
 app.get('/health', (req, res) => {
     res.json({
         status: 'healthy',
+        mode: 'mock',
         whatsapp_ready: isClientReady,
         has_qr: !!qrCodeData,
         timestamp: new Date().toISOString(),
@@ -224,6 +225,23 @@ app.post('/test/simulate-message', async (req, res) => {
     res.json({ success: true, message: 'Message simulated and forwarded to webhook' });
 });
 
+// Service info endpoint
+app.get('/api/info', (req, res) => {
+    res.json({
+        service: 'lightweight-whatsapp-service',
+        version: '1.0.0',
+        mode: 'mock',
+        features: {
+            real_whatsapp: false,
+            webhook_forwarding: !!WEBHOOK_URL,
+            qr_display: process.env.SHOW_QR !== 'false',
+            test_simulation: true
+        },
+        memory_efficient: true,
+        waha_compatible: true
+    });
+});
+
 // Error handling middleware
 app.use((error, req, res, next) => {
     console.error('❌ Server error:', error);
@@ -235,6 +253,7 @@ app.listen(PORT, () => {
     console.log(`🌐 Lightweight WhatsApp Service running on port ${PORT}`);
     console.log(`📋 Health check: http://localhost:${PORT}/health`);
     console.log(`📱 QR code: http://localhost:${PORT}/api/qr`);
+    console.log(`ℹ️ Service info: http://localhost:${PORT}/api/info`);
     console.log(`🧪 Test message: POST http://localhost:${PORT}/test/simulate-message`);
     
     // Initialize WhatsApp client
