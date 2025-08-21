@@ -1,7 +1,8 @@
-FROM node:18-alpine
+FROM node:22-alpine
 
 # Install Chrome dependencies if production mode
-ARG ENABLE_REAL_WHATSAPP=false
+ARG ENABLE_REAL_WHATSAPP=true
+ENV ENABLE_REAL_WHATSAPP=${ENABLE_REAL_WHATSAPP}
 RUN if [ "$ENABLE_REAL_WHATSAPP" = "true" ]; then \
     apk add --no-cache chromium nss freetype freetype-dev harfbuzz ca-certificates ttf-freefont; \
     fi
@@ -13,7 +14,7 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+COPY whatsapp-service/package*.json ./
 
 # Install dependencies conditionally
 RUN if [ "$ENABLE_REAL_WHATSAPP" = "true" ]; then \
