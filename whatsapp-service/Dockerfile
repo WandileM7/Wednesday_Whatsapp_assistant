@@ -17,7 +17,7 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 # Copy package files
-COPY whatsapp-service/package.json whatsapp-service/package-lock.json ./
+COPY whatsapp-servicepackage.json whatsapp-servicepackage-lock.json ./
 
 # Install dependencies conditionally
 ARG ENABLE_REAL_WHATSAPP=true
@@ -26,14 +26,14 @@ ENV ENABLE_REAL_WHATSAPP=${ENABLE_REAL_WHATSAPP}
 # Verify package.json exists before npm install
 RUN test -f package.json || (echo "Error: package.json not found" && exit 1)
 
-RUN if [ "$ENABLE_REAL_WHATSAPP" = "true" ]; then \
-        npm install; \
-    else \
-        npm install --omit=optional; \
-    fi
+# Install all dependencies (now that qrcode-terminal and whatsapp-web.js are regular dependencies)
+# Set PUPPETEER_SKIP_CHROMIUM_DOWNLOAD to skip downloading Chrome (will use system Chrome)
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+
+RUN npm install
 
 # Copy application files
-COPY whatsapp-service/ .
+COPY whatsapp-service/
 
 # Create session directory
 RUN mkdir -p session
