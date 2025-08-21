@@ -9,7 +9,7 @@ services:
     autoDeploy: true
     envVars:
       - key: WAHA_URL
-        value: https://whatsapp-service.onrender.com/api/sendText
+        value: https://whatsapp-service-xumb.onrender.com/api/sendText
       - key: WAHA_SESSION
         value: default
       - key: WAHA_KEEPALIVE_INTERVAL
