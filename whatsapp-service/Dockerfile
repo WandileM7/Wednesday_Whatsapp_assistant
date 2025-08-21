@@ -20,7 +20,7 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 COPY whatsapp-service/package.json whatsapp-service/package-lock.json ./
 
 # Install dependencies conditionally
-ARG ENABLE_REAL_WHATSAPP=false
+ARG ENABLE_REAL_WHATSAPP=true
 ENV ENABLE_REAL_WHATSAPP=${ENABLE_REAL_WHATSAPP}
 
 # Verify package.json exists before npm install
