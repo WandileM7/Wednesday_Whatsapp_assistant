@@ -33,7 +33,7 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 RUN npm install
 
 # Copy application files
-COPY whatsapp-service/
+COPY whatsapp-service/ .
 
 # Create session directory
 RUN mkdir -p session
