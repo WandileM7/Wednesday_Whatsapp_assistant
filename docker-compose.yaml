@@ -8,6 +8,10 @@ services:
     environment:
       - WHATSAPP_HOOK_URL=http://assistant:5000/webhook
       - WHATSAPP_HOOK_EVENTS=message
+      # Memory optimization settings
+      - WAHA_PRINT_QR=false
+      - WAHA_LOG_LEVEL=warn
+      - REDIS_URL=""
 
     volumes:
       - ./waha-data:/app/data
