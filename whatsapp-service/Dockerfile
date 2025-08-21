@@ -33,7 +33,7 @@ RUN if [ "$ENABLE_REAL_WHATSAPP" = "true" ]; then \
     fi
 
 # Copy application files
-COPY . .
+COPY whatsapp-service/ .
 
 # Create session directory
 RUN mkdir -p session
