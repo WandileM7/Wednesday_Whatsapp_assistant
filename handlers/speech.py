@@ -15,15 +15,27 @@ def get_speech_client():
     try:
         # Try using existing Google credentials from the project
         creds = load_credentials()
-        if creds:
-            speech_client = speech.SpeechClient(credentials=creds)
-            return speech_client
+        if creds and hasattr(creds, 'token'):
+            # For OAuth2 credentials, ensure we have the cloud-platform scope
+            if hasattr(creds, 'scopes') and 'https://www.googleapis.com/auth/cloud-platform' in (creds.scopes or []):
+                speech_client = speech.SpeechClient(credentials=creds)
+                # Test the client with a quick call
+                try:
+                    # This is a minimal test - just checking if we can create a config
+                    speech.RecognitionConfig()
+                    logger.info("Speech client initialized successfully with OAuth credentials")
+                    return speech_client
+                except Exception as test_e:
+                    logger.warning(f"Speech client test failed: {test_e}")
+            else:
+                logger.warning("OAuth credentials don't include cloud-platform scope")
     except Exception as e:
         logger.warning(f"Could not use existing Google credentials for Speech API: {e}")
     
     # Fallback to environment credentials
     try:
         speech_client = speech.SpeechClient()
+        logger.info("Speech client initialized with application default credentials")
         return speech_client
     except Exception as e:
         logger.error(f"Could not initialize Speech client: {e}")
@@ -34,15 +46,27 @@ def get_tts_client():
     try:
         # Try using existing Google credentials from the project
         creds = load_credentials()
-        if creds:
-            tts_client = texttospeech.TextToSpeechClient(credentials=creds)
-            return tts_client
+        if creds and hasattr(creds, 'token'):
+            # For OAuth2 credentials, ensure we have the cloud-platform scope
+            if hasattr(creds, 'scopes') and 'https://www.googleapis.com/auth/cloud-platform' in (creds.scopes or []):
+                tts_client = texttospeech.TextToSpeechClient(credentials=creds)
+                # Test the client with a quick call
+                try:
+                    # This is a minimal test - just checking if we can create a synthesis input
+                    texttospeech.SynthesisInput(text="test")
+                    logger.info("TTS client initialized successfully with OAuth credentials")
+                    return tts_client
+                except Exception as test_e:
+                    logger.warning(f"TTS client test failed: {test_e}")
+            else:
+                logger.warning("OAuth credentials don't include cloud-platform scope")
     except Exception as e:
         logger.warning(f"Could not use existing Google credentials for TTS API: {e}")
     
     # Fallback to environment credentials
     try:
         tts_client = texttospeech.TextToSpeechClient()
+        logger.info("TTS client initialized with application default credentials")
         return tts_client
     except Exception as e:
         logger.error(f"Could not initialize TTS client: {e}")
