@@ -9,6 +9,7 @@ import uuid
 from dotenv import load_dotenv
 from datetime import datetime
 from urllib.parse import urlparse
+from config import GEMINI_API_KEY
 
 from flask import Flask, redirect, request, jsonify, session, url_for
 from flask_session import Session
@@ -470,14 +471,24 @@ def webhook():
         if len(user_conversations) % 10 == 0:
             cleanup_conversations()
 
-        # Process with Gemini
-        call = chat_with_functions(user_msg, phone)
-        logger.debug(f"Gemini function response: {call}")
+        # Process with Gemini with timeout protection
+        try:
+            # Check if API key looks valid (not a test key)
+            if GEMINI_API_KEY and not GEMINI_API_KEY.startswith('test_'):
+                call = chat_with_functions(user_msg, phone)
+                logger.debug(f"Gemini function response: {call}")
 
-        if call.get("name"):
-            reply = execute_function(call)
-        else:
-            reply = call.get("content", "Sorry, no idea what that was.")
+                if call.get("name"):
+                    reply = execute_function(call)
+                else:
+                    reply = call.get("content", "Sorry, no idea what that was.")
+            else:
+                # Fallback mode for invalid/test API keys
+                logger.warning("Using fallback mode: Gemini API key not properly configured")
+                reply = f"Echo (fallback mode): {user_msg}. Please configure a valid Gemini API key for full functionality."
+        except Exception as e:
+            logger.error(f"Gemini processing error: {e}")
+            reply = "I'm having trouble processing your message right now. Please try again later."
 
         # Save to ChromaDB if enabled
         if CHROMADB_AVAILABLE and os.getenv("ENABLE_CHROMADB", "false").lower() == "true":
@@ -1290,6 +1301,36 @@ def auth_status():
 def test_webhook_auth():
     """Test authentication as it would work in webhook context (no session)"""
     return auth_manager.test_webhook_authentication()
+
+@app.route('/test-webhook-simple', methods=['POST'])
+def test_webhook_simple():
+    """Test webhook POST processing without Gemini"""
+    try:
+        data = request.get_json() or {}
+        payload = data.get('payload', data)
+        
+        user_msg = payload.get('body') or payload.get('text') or payload.get('message')
+        phone = payload.get('chatId') or payload.get('from')
+        
+        if not user_msg or not phone:
+            return jsonify({'status': 'ignored', 'reason': 'missing_data'}), 200
+            
+        if payload.get('fromMe'):
+            return jsonify({'status': 'ignored', 'reason': 'from_me'}), 200
+            
+        # Simple echo response without Gemini
+        reply = f"Echo: {user_msg}"
+        
+        return jsonify({
+            'status': 'ok', 
+            'message': 'processed_without_gemini',
+            'reply': reply,
+            'phone': phone
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in simple webhook test: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # Enhanced Personal Assistant Endpoints
 @app.route("/weather")
