@@ -9,7 +9,7 @@ services:
     autoDeploy: true
     envVars:
       - key: WAHA_URL
-        value: https://waha-service-ypoa.onrender.com/api/sendText
+        value: https://whatsapp-service.onrender.com/api/sendText
       - key: WAHA_SESSION
         value: default
       - key: WAHA_KEEPALIVE_INTERVAL
@@ -18,29 +18,20 @@ services:
       - key: SPOTIFY_REDIRECT_URI
         value: https://waha-gemini-assistant.onrender.com/callback
 
-  # WAHA WhatsApp Gateway
+  # Lightweight WhatsApp Gateway (Alternative to WAHA)
   - type: web
-    name: waha-service
-    runtime: image
+    name: whatsapp-service
+    runtime: docker
     region: oregon
     plan: free
-    image:
-      url: devlikeapro/waha:latest
+    dockerfilePath: ./whatsapp-service/Dockerfile
     autoDeploy: true
     envVars:
-      - key: WAHA_SESSION
-        value: default
-      - key: WAHA_APPS_ENABLED
-        value: "False"   # Disable Apps to avoid Redis requirement on Render
-      # WAHA -> Assistant (public URL of Flask webhook)
+      # WhatsApp -> Assistant (public URL of Flask webhook)
       - key: WHATSAPP_HOOK_URL
         value: https://waha-gemini-assistant.onrender.com/webhook
       - key: WHATSAPP_HOOK_EVENTS
         value: message
-      # Memory optimization settings
-      - key: WAHA_PRINT_QR
-        value: "false"   # Disable QR code printing to reduce memory usage
-      - key: WAHA_LOG_LEVEL
-        value: "warn"    # Reduce log verbosity to save memory
-      - key: REDIS_URL
-        value: ""        # Explicitly disable Redis to prevent connection attempts
+      # Don't show QR in logs to save memory
+      - key: SHOW_QR
+        value: "false"

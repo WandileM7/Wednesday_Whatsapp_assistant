@@ -1,20 +1,15 @@
 services:
-  waha:
-    image: devlikeapro/waha:latest
-    container_name: waha
+  whatsapp-service:
+    build: ./whatsapp-service
+    container_name: whatsapp-service
     ports:
       - "3000:3000"
-      - "3001:3001"
     environment:
       - WHATSAPP_HOOK_URL=http://assistant:5000/webhook
       - WHATSAPP_HOOK_EVENTS=message
-      # Memory optimization settings
-      - WAHA_PRINT_QR=false
-      - WAHA_LOG_LEVEL=warn
-      - REDIS_URL=""
-
+      - SHOW_QR=false
     volumes:
-      - ./waha-data:/app/data
+      - ./whatsapp-session:/app/session
 
   assistant:
     build: .
@@ -23,7 +18,7 @@ services:
       - "5000:5000"
     env_file: .env
     environment:
-      - WAHA_URL=http://waha:3000/api/sendText
+      - WAHA_URL=http://whatsapp-service:3000/api/sendText
       - WAHA_KEEPALIVE_INTERVAL=600
     depends_on:
-      - waha
+      - whatsapp-service
