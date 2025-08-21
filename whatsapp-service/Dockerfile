@@ -17,7 +17,7 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 # Copy package files
-COPY package.json package-lock.json ./
+COPY whatsapp-service/package.json whatsapp-service/package-lock.json ./
 
 # Install dependencies conditionally
 ARG ENABLE_REAL_WHATSAPP=false
