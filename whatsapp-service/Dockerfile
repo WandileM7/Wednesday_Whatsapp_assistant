@@ -17,11 +17,14 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 # Copy package files
-COPY package*.json ./
+COPY package.json package-lock.json ./
 
 # Install dependencies conditionally
 ARG ENABLE_REAL_WHATSAPP=false
 ENV ENABLE_REAL_WHATSAPP=${ENABLE_REAL_WHATSAPP}
+
+# Verify package.json exists before npm install
+RUN test -f package.json || (echo "Error: package.json not found" && exit 1)
 
 RUN if [ "$ENABLE_REAL_WHATSAPP" = "true" ]; then \
         npm install; \
