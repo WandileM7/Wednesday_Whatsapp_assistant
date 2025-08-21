@@ -5,6 +5,7 @@ import time
 import threading
 import logging
 import requests
+import uuid
 from dotenv import load_dotenv
 from datetime import datetime
 from urllib.parse import urlparse
@@ -21,8 +22,6 @@ from handlers.weather import weather_service
 from handlers.news import news_service
 from handlers.tasks import task_manager
 from handlers.contacts import contact_manager
-import google.generativeai as genai
-from flask_session import Session
 from handlers.spotify_client import make_spotify_oauth
 
 # Google and Spotify imports
@@ -69,6 +68,33 @@ app.register_blueprint(auth_bp)
 user_conversations = {}
 MAX_CONVERSATIONS = 50
 MAX_MESSAGES_PER_USER = 15
+
+# Session cache for user preferences
+def cache_user_session(phone, gemini_url=None):
+    """Cache user session data including phone number and Gemini service URL"""
+    if not phone:
+        return
+    
+    session_data = session.get('user_cache', {})
+    
+    # Cache phone number
+    session_data['phone'] = phone
+    session_data['last_seen'] = datetime.now().isoformat()
+    
+    # Cache Gemini service URL if provided
+    if gemini_url:
+        session_data['gemini_url'] = gemini_url
+    
+    # Set default location to Johannesburg
+    if 'location' not in session_data:
+        session_data['location'] = 'Johannesburg'
+    
+    session['user_cache'] = session_data
+    logger.info(f"Cached session for {phone} with location: {session_data.get('location')}")
+
+def get_cached_session():
+    """Get cached session data"""
+    return session.get('user_cache', {})
 
 # Try to import Gemini helpers; fallback to simple stubs if missing
 try:
@@ -122,7 +148,7 @@ def _waha_headers(is_json=True):
     return headers
 
 if not waha_url:
-    logger.warning("WAHA_URL not set. Set WAHA_URL to the WAHA public endpoint (e.g. https://waha-service.onrender.com/api/sendText)")
+    logger.warning("WAHA_URL not set. Set WAHA_URL to the WAHA public endpoint (e.g.https://waha-service-ypoa.onrender.com/api/sendText)")
 
 # Derive WAHA base URL for other API calls
 def _waha_base():
@@ -187,15 +213,6 @@ def stop_waha_keepalive():
 
 # Spotify OAuth Setup
 SPOTIFY_SCOPE = "user-read-playback-state user-modify-playback-state"
-
-def make_spotify_oauth():
-    return SpotifyOAuth(
-        client_id=os.getenv("SPOTIFY_CLIENT_ID"),
-        client_secret=os.getenv("SPOTIFY_SECRET"),
-        redirect_uri=os.getenv("SPOTIFY_REDIRECT_URI"),
-        scope=SPOTIFY_SCOPE,
-        cache_path=None
-    )
 
 def get_token_info():
     """Get token info from session and refresh if needed"""
@@ -315,10 +332,13 @@ def initialize_services():
         logger.info("Spotify refresh token present")
     else:
         logger.info("Spotify refresh token not set; will use interactive login when needed")
+    
     # Initialize Google authentication
     initialize_google_auth()
+    
     # Start WAHA keep-alive
     start_waha_keepalive()
+    
     logger.info("Service initialization complete")
 
 # Initialize services on startup
@@ -331,7 +351,7 @@ except Exception as e:
 # Routes
 @app.route("/")
 def home():
-    return jsonify({"status": "online", "services": ["spotify", "gmail", "gemini"]})
+    return jsonify({"status": "online", "services": ["spotify", "gmail", "gemini", "weather", "tasks", "contacts"]})
 
 @app.route("/login")
 def spotify_login():
@@ -400,6 +420,9 @@ def webhook():
         user_msg = payload.get('body') or payload.get('text') or payload.get('message')
         phone = payload.get('chatId') or payload.get('from')
         is_voice_message = False
+        
+        # Cache user session data
+        cache_user_session(phone)
         
         # Check for voice message
         if not user_msg and payload.get('type') == 'voice':
@@ -843,7 +866,7 @@ def test_google_services():
     
     # Overall status
     all_tests = results["tests"]
-    successful_tests = sum(1 for test in all_tests.values() if test.get("success", False))
+    successful_tests = sum(1 for test in all_tests values() if test.get("success", False))
     total_tests = len(all_tests)
     
     results["summary"] = {
@@ -947,7 +970,7 @@ def services_overview():
             "weather": {
                 "status": "active" if weather_service.is_configured() else "not_configured",
                 "configured": weather_service.is_configured(),
-                "test_endpoint": "/weather?location=New York",
+                "test_endpoint": "/weather?location=Johannesburg",
                 "required_env": "OPENWEATHER_API_KEY"
             },
             "news": {
@@ -1017,7 +1040,7 @@ def test_spotify():
             "user": user["display_name"],
             "user_id": user["id"],
             "has_active_device": bool(playback),
-            "current_track": playback["item"]["name"] if playback and playback.get("item") else None,
+            "current_track": playback["item"]["name"] if playback and playback get("item") else None,
             "token_expires": token_info.get("expires_at"),
             "scopes": token_info.get("scope", "").split()
         }
@@ -1271,15 +1294,22 @@ def test_webhook_auth():
 # Enhanced Personal Assistant Endpoints
 @app.route("/weather")
 def get_weather():
-    """Get weather information"""
-    location = request.args.get('location', 'New York')
+    """Get weather information for Johannesburg by default"""
+    # Get location from session cache or use Johannesburg as default
+    cached_session = get_cached_session()
+    default_location = cached_session.get('location', 'Johannesburg')
+    location = request.args.get('location', default_location)
+    
     return weather_service.get_current_weather(location)
 
 @app.route("/weather/forecast")
 def get_weather_forecast():
-    """Get weather forecast"""
-    location = request.args.get('location', 'New York')
+    """Get weather forecast for Johannesburg by default"""
+    cached_session = get_cached_session()
+    default_location = cached_session.get('location', 'Johannesburg')
+    location = request.args.get('location', default_location)
     days = int(request.args.get('days', 3))
+    
     return weather_service.get_weather_forecast(location, days)
 
 @app.route("/news")
@@ -1409,13 +1439,17 @@ def contact_summary():
 @app.route("/assistant/status")
 def assistant_status():
     """Get comprehensive assistant status including all services"""
+    cached_session = get_cached_session()
+    
     status = {
         'timestamp': datetime.now().isoformat(),
+        'session_cache': cached_session,
         'authentication': auth_manager.get_auth_status(),
         'services': {
             'weather': {
                 'configured': weather_service.is_configured(),
-                'status': 'active' if weather_service.is_configured() else 'needs_api_key'
+                'status': 'active' if weather_service.is_configured() else 'needs_api_key',
+                'default_location': cached_session.get('location', 'Johannesburg')
             },
             'news': {
                 'configured': news_service.is_configured(),
@@ -1436,9 +1470,35 @@ def assistant_status():
     }
     return status
 
+@app.route("/session-cache")
+def view_session_cache():
+    """View current session cache"""
+    return get_cached_session()
+
+@app.route("/session-cache", methods=['POST'])
+def update_session_cache():
+    """Update session cache"""
+    data = request.get_json() or {}
+    
+    phone = data.get('phone')
+    location = data.get('location')
+    gemini_url = data.get('gemini_url')
+    
+    if phone:
+        cache_user_session(phone, gemini_url)
+    
+    if location:
+        session_data = session.get('user_cache', {})
+        session_data['location'] = location
+        session['user_cache'] = session_data
+    
+    return {"message": "Session cache updated", "cache": get_cached_session()}
+
 @app.route("/quick-setup")
 def quick_setup():
     """Quick setup page with all necessary links"""
+    cached_session = get_cached_session()
+    
     return f"""
     <!DOCTYPE html>
     <html>
@@ -1457,6 +1517,15 @@ def quick_setup():
     </head>
     <body>
         <h1>WhatsApp Assistant - Quick Setup</h1>
+        
+        <div class="card success">
+            <h3>📱 Session Cache Status</h3>
+            <p><strong>Phone:</strong> {cached_session.get('phone', 'Not cached')}</p>
+            <p><strong>Location:</strong> {cached_session.get('location', 'Johannesburg (default)')}</p>
+            <p><strong>Gemini URL:</strong> {cached_session.get('gemini_url', 'Not set')}</p>
+            <p><strong>Last Seen:</strong> {cached_session.get('last_seen', 'Never')}</p>
+            <a href="/session-cache" class="button">View Cache</a>
+        </div>
         
         <div class="card warning">
             <h3>🚀 Authentication Setup</h3>
@@ -1485,18 +1554,8 @@ def quick_setup():
         </div>
         
         <div class="card">
-            <h3>🧪 Testing & Debugging</h3>
-            <a href="/test-current-email" class="button">Test Email</a>
-            <a href="/test-spotify" class="button">Test Spotify</a>
-            <a href="/google-debug" class="button">Debug Google</a>
-            <a href="/health" class="button">Health Check</a>
-            <a href="/auth-status" class="button">Auth Status</a>
-            <a href="/assistant/status" class="button">Assistant Status</a>
-        </div>
-        
-        <div class="card">
             <h3>🌟 Enhanced Personal Assistant Features</h3>
-            <a href="/weather?location=New York" class="button">Test Weather</a>
+            <a href="/weather?location=Johannesburg" class="button">Test Weather</a>
             <a href="/news" class="button">Test News</a>
             <a href="/news/briefing" class="button">Daily Briefing</a>
             <a href="/tasks" class="button">View Tasks</a>
