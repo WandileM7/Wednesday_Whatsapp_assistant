@@ -37,3 +37,10 @@ services:
         value: https://waha-gemini-assistant.onrender.com/webhook
       - key: WHATSAPP_HOOK_EVENTS
         value: message
+      # Memory optimization settings
+      - key: WAHA_PRINT_QR
+        value: "false"   # Disable QR code printing to reduce memory usage
+      - key: WAHA_LOG_LEVEL
+        value: "warn"    # Reduce log verbosity to save memory
+      - key: REDIS_URL
+        value: ""        # Explicitly disable Redis to prevent connection attempts
