@@ -11,19 +11,22 @@ logger = logging.getLogger(__name__)
 def get_chroma_client():
     """Get ChromaDB client with memory-optimized settings"""
     try:
+        # Disable all external connections for ChromaDB 
+        settings = chromadb.Settings(
+            anonymized_telemetry=False,  # Disable telemetry
+            allow_reset=True
+        )
+        
         # Use ephemeral client (in-memory) to save disk space
         # Or use persistent with minimal settings
         if os.getenv("USE_MEMORY_DB", "true").lower() == "true":
             logger.info("Using in-memory ChromaDB client")
-            client = chromadb.EphemeralClient()
+            client = chromadb.EphemeralClient(settings=settings)
         else:
             logger.info("Using persistent ChromaDB client")
             client = chromadb.PersistentClient(
                 path="./chroma_db",
-                settings=chromadb.Settings(
-                    anonymized_telemetry=False,  # Disable telemetry
-                    allow_reset=True
-                )
+                settings=settings
             )
         return client
     except Exception as e:

@@ -479,6 +479,12 @@ def webhook():
         # Cache user session data
         cache_user_session(phone)
         
+        # Check if this is the boss
+        boss_phone = os.getenv("BOSS_PHONE_NUMBER", "27729224495@c.us")
+        is_boss = phone == boss_phone
+        if is_boss:
+            logger.info(f"Processing message from BOSS: {phone}")
+        
         # Check for voice message
         if not user_msg and payload.get('type') == 'voice':
             voice_data = payload.get('voice') or payload.get('media')
@@ -2160,6 +2166,44 @@ def test_speech():
         results["speech_tests"]["tts_test"] = {"success": False, "error": str(e)}
     
     return jsonify(results)
+
+@app.route("/test-conversation-history")
+def test_conversation_history():
+    """Test conversation history functionality"""
+    try:
+        test_phone = "27729224495@c.us"  # Use boss phone for testing
+        results = {
+            "timestamp": datetime.now().isoformat(),
+            "phone": test_phone
+        }
+        
+        # Test ChromaDB availability
+        if CHROMADB_AVAILABLE:
+            try:
+                # Test adding a conversation
+                success = add_to_conversation_history(test_phone, "user", "Test message for history")
+                results["add_test"] = {"success": success}
+                
+                if success:
+                    # Test retrieving conversation history
+                    history = retrieve_conversation_history(test_phone, n_results=5)
+                    results["retrieve_test"] = {
+                        "success": True,
+                        "history_count": len(history),
+                        "latest_messages": history[:3] if history else []
+                    }
+                else:
+                    results["retrieve_test"] = {"success": False, "reason": "Add failed"}
+                    
+            except Exception as e:
+                results["chromadb_error"] = str(e)
+        else:
+            results["chromadb_available"] = False
+            
+        return jsonify(results)
+        
+    except Exception as e:
+        return jsonify({"error": str(e), "timestamp": datetime.now().isoformat()}), 500
 
 class ConversationManager:
     def __init__(self):
