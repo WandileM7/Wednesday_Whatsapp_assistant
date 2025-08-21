@@ -1,5 +1,6 @@
 import google.generativeai as genai
 import json
+import signal
 from config import GEMINI_API_KEY, PERSONALITY_PROMPT
 from handlers.spotify import play_album, play_playlist, play_song, get_current_song
 from handlers.gmail import send_email, summarize_emails
@@ -10,6 +11,13 @@ from handlers.tasks import task_manager
 from handlers.contacts import contact_manager
 import logging
 from chromedb import *
+
+# Timeout handler
+class TimeoutException(Exception):
+    pass
+
+def timeout_handler(signum, frame):
+    raise TimeoutException("Gemini API call timed out")
 # Initialize Gemini
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.0-flash")
@@ -115,7 +123,7 @@ FUNCTIONS = [
             "type": "object",
             "properties": {
                 "location": {"type": "string", "description": "City name or location"},
-                "days": {"type": "integer", "description": "Number of days (1-5)", "default": 3}
+                "days": {"type": "integer", "description": "Number of days (1-5)"}
             },
             "required": ["location"]
         }
@@ -127,7 +135,7 @@ FUNCTIONS = [
             "type": "object",
             "properties": {
                 "category": {"type": "string", "description": "News category: general, business, technology, science"},
-                "limit": {"type": "integer", "description": "Number of articles (1-10)", "default": 5}
+                "limit": {"type": "integer", "description": "Number of articles (1-10)"}
             },
             "required": []
         }
@@ -139,7 +147,7 @@ FUNCTIONS = [
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Search query"},
-                "limit": {"type": "integer", "description": "Number of articles (1-10)", "default": 5}
+                "limit": {"type": "integer", "description": "Number of articles (1-10)"}
             },
             "required": ["query"]
         }
@@ -162,7 +170,7 @@ FUNCTIONS = [
                 "title": {"type": "string", "description": "Task title"},
                 "description": {"type": "string", "description": "Task description"},
                 "due_date": {"type": "string", "description": "Due date in YYYY-MM-DD HH:MM format"},
-                "priority": {"type": "string", "description": "Priority: low, medium, high, urgent", "default": "medium"}
+                "priority": {"type": "string", "description": "Priority: low, medium, high, urgent"}
             },
             "required": ["title"]
         }
@@ -173,7 +181,7 @@ FUNCTIONS = [
         "parameters": {
             "type": "object",
             "properties": {
-                "filter_completed": {"type": "boolean", "description": "Hide completed tasks", "default": "false"},
+                "filter_completed": {"type": "boolean", "description": "Hide completed tasks"},
                 "filter_priority": {"type": "string", "description": "Filter by priority: low, medium, high, urgent"}
             },
             "required": []
@@ -281,15 +289,33 @@ Here's the conversation history:
 User: {user_message}
 """
 
-    response = model.generate_content(
-        contents=[
-            {"role": "model", "parts": [PERSONALITY_PROMPT]},
-            {"role": "user", "parts": [prompt]}
-        ],
-        tools=[{"function_declarations": FUNCTIONS}],
-        tool_config={"function_calling_config": {"mode": "auto"}}
-    )
-    logging.getLogger("WhatsAppAssistant").debug(f"Gemini raw response: {response}")
+    # Set timeout for Gemini API call
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(30)  # 30 second timeout
+    
+    try:
+        response = model.generate_content(
+            contents=[
+                {"role": "model", "parts": [PERSONALITY_PROMPT]},
+                {"role": "user", "parts": [prompt]}
+            ],
+            tools=[{"function_declarations": FUNCTIONS}],
+            tool_config={"function_calling_config": {"mode": "auto"}}
+        )
+        signal.alarm(0)  # Cancel the alarm
+        logging.getLogger("WhatsAppAssistant").debug(f"Gemini raw response: {response}")
+    except TimeoutException:
+        signal.alarm(0)  # Cancel the alarm
+        logging.getLogger("WhatsAppAssistant").error("Gemini API call timed out")
+        add_to_conversation_history(phone, "user", user_message)
+        add_to_conversation_history(phone, "assistant", "Sorry, I'm experiencing delays. Please try again.")
+        return {"name": None, "content": "Sorry, I'm experiencing delays. Please try again."}
+    except Exception as e:
+        signal.alarm(0)  # Cancel the alarm
+        logging.getLogger("WhatsAppAssistant").error(f"Gemini API error: {e}")
+        add_to_conversation_history(phone, "user", user_message)
+        add_to_conversation_history(phone, "assistant", f"API Error: {e}")
+        return {"name": None, "content": "Sorry, I encountered an API error."}
 
     # Try to extract function call or text robustly
     try:

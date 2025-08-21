@@ -9,6 +9,11 @@ import uuid
 from dotenv import load_dotenv
 from datetime import datetime
 from urllib.parse import urlparse
+from config import GEMINI_API_KEY
+
+# Timeout exception for webhook processing
+class TimeoutException(Exception):
+    pass
 
 from flask import Flask, redirect, request, jsonify, session, url_for
 from flask_session import Session
@@ -68,6 +73,32 @@ app.register_blueprint(auth_bp)
 user_conversations = {}
 MAX_CONVERSATIONS = 50
 MAX_MESSAGES_PER_USER = 15
+
+# Simple rate limiting tracking
+request_timestamps = {}
+MAX_REQUESTS_PER_MINUTE = 30
+
+def check_rate_limit(phone):
+    """Simple rate limiting to prevent abuse"""
+    if not phone:
+        return True
+        
+    now = time.time()
+    minute_ago = now - 60
+    
+    # Clean old timestamps
+    if phone in request_timestamps:
+        request_timestamps[phone] = [t for t in request_timestamps[phone] if t > minute_ago]
+    else:
+        request_timestamps[phone] = []
+    
+    # Check if under limit
+    if len(request_timestamps[phone]) >= MAX_REQUESTS_PER_MINUTE:
+        return False
+        
+    # Add current request
+    request_timestamps[phone].append(now)
+    return True
 
 # Session cache for user preferences
 def cache_user_session(phone, gemini_url=None):
@@ -409,12 +440,20 @@ def spotify_callback_alias():
 
 @app.route('/webhook', methods=['POST', 'GET'])
 def webhook():
+    """Enhanced webhook with robust error handling to prevent 503 errors"""
     if request.method == 'GET':
         return jsonify({"status": "online", "memory_optimized": True})
 
+    start_time = time.time()
     try:
+        # Quick validation to prevent processing invalid requests
         data = request.get_json() or {}
+        if not data:
+            return jsonify({'status': 'ignored', 'reason': 'no_data'}), 200
+            
         payload = data.get('payload', data)
+        if not payload:
+            return jsonify({'status': 'ignored', 'reason': 'no_payload'}), 200
         
         # Handle both text and voice messages
         user_msg = payload.get('body') or payload.get('text') or payload.get('message')
@@ -443,10 +482,15 @@ def webhook():
                             return jsonify({'status': 'ignored'}), 200
 
         if not user_msg or not phone:
-            return jsonify({'status': 'ignored'}), 200
+            return jsonify({'status': 'ignored', 'reason': 'missing_data'}), 200
 
         if payload.get('fromMe'):
-            return jsonify({'status': 'ignored'}), 200
+            return jsonify({'status': 'ignored', 'reason': 'from_me'}), 200
+            
+        # Rate limiting check
+        if not check_rate_limit(phone):
+            logger.warning(f"Rate limit exceeded for {phone}")
+            return jsonify({'status': 'rate_limited', 'message': 'Too many requests'}), 200
 
         logger.info(f"Processing {'voice' if is_voice_message else 'text'} message from {phone}: {user_msg[:30]}...")
         
@@ -470,14 +514,24 @@ def webhook():
         if len(user_conversations) % 10 == 0:
             cleanup_conversations()
 
-        # Process with Gemini
-        call = chat_with_functions(user_msg, phone)
-        logger.debug(f"Gemini function response: {call}")
+        # Process with Gemini with timeout protection
+        try:
+            # Check if API key looks valid (not a test key)
+            if GEMINI_API_KEY and not GEMINI_API_KEY.startswith('test_'):
+                call = chat_with_functions(user_msg, phone)
+                logger.debug(f"Gemini function response: {call}")
 
-        if call.get("name"):
-            reply = execute_function(call)
-        else:
-            reply = call.get("content", "Sorry, no idea what that was.")
+                if call.get("name"):
+                    reply = execute_function(call)
+                else:
+                    reply = call.get("content", "Sorry, no idea what that was.")
+            else:
+                # Fallback mode for invalid/test API keys
+                logger.warning("Using fallback mode: Gemini API key not properly configured")
+                reply = f"Echo (fallback mode): {user_msg}. Please configure a valid Gemini API key for full functionality."
+        except Exception as e:
+            logger.error(f"Gemini processing error: {e}")
+            reply = "I'm having trouble processing your message right now. Please try again later."
 
         # Save to ChromaDB if enabled
         if CHROMADB_AVAILABLE and os.getenv("ENABLE_CHROMADB", "false").lower() == "true":
@@ -504,11 +558,33 @@ def webhook():
         else:
             send_message(phone, reply)
             
-        return jsonify({'status': 'ok', 'memory_optimized': True})
+        # Log processing time for monitoring
+        processing_time = time.time() - start_time
+        logger.debug(f"Webhook processed in {processing_time:.2f}s")
+        
+        return jsonify({
+            'status': 'ok', 
+            'memory_optimized': True,
+            'processing_time_ms': int(processing_time * 1000)
+        })
 
+    except MemoryError:
+        logger.error("Memory error in webhook processing")
+        return jsonify({'status': 'error', 'message': 'Memory limit exceeded'}), 503
+    except TimeoutException:
+        logger.error("Timeout in webhook processing")  
+        return jsonify({'status': 'error', 'message': 'Request timeout'}), 503
     except Exception as e:
-        logger.error(f"Error during chat processing: {e}")
-        return jsonify({'status': 'error', 'message': 'Processing failed'}), 500
+        processing_time = time.time() - start_time
+        logger.error(f"Error during chat processing after {processing_time:.2f}s: {e}")
+        
+        # Return 200 instead of 500 to prevent webhook retries from WAHA
+        return jsonify({
+            'status': 'error', 
+            'message': 'Processing failed', 
+            'error_type': type(e).__name__,
+            'processing_time_ms': int(processing_time * 1000)
+        }), 200  # Changed from 500 to 200
 
 @app.route('/send', methods=['POST'])
 def send_initial_message():
@@ -866,7 +942,7 @@ def test_google_services():
     
     # Overall status
     all_tests = results["tests"]
-    successful_tests = sum(1 for test in all_tests values() if test.get("success", False))
+    successful_tests = sum(1 for test in all_tests.values() if test.get("success", False))
     total_tests = len(all_tests)
     
     results["summary"] = {
@@ -1040,7 +1116,7 @@ def test_spotify():
             "user": user["display_name"],
             "user_id": user["id"],
             "has_active_device": bool(playback),
-            "current_track": playback["item"]["name"] if playback and playback get("item") else None,
+            "current_track": playback["item"]["name"] if playback and playback.get("item") else None,
             "token_expires": token_info.get("expires_at"),
             "scopes": token_info.get("scope", "").split()
         }
@@ -1290,6 +1366,75 @@ def auth_status():
 def test_webhook_auth():
     """Test authentication as it would work in webhook context (no session)"""
     return auth_manager.test_webhook_authentication()
+
+@app.route('/test-webhook-simple', methods=['POST'])
+def test_webhook_simple():
+    """Test webhook POST processing without Gemini"""
+    try:
+        data = request.get_json() or {}
+        payload = data.get('payload', data)
+        
+        user_msg = payload.get('body') or payload.get('text') or payload.get('message')
+        phone = payload.get('chatId') or payload.get('from')
+        
+        if not user_msg or not phone:
+            return jsonify({'status': 'ignored', 'reason': 'missing_data'}), 200
+            
+        if payload.get('fromMe'):
+            return jsonify({'status': 'ignored', 'reason': 'from_me'}), 200
+            
+        # Simple echo response without Gemini
+        reply = f"Echo: {user_msg}"
+        
+        return jsonify({
+            'status': 'ok', 
+            'message': 'processed_without_gemini',
+            'reply': reply,
+            'phone': phone
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in simple webhook test: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/waha-config-test')
+def waha_config_test():
+    """Test WAHA configuration and webhook setup"""
+    try:
+        # Get the webhook URL that WAHA should use
+        webhook_url = request.url_root.rstrip('/') + '/webhook'
+        
+        config = {
+            "webhook_url": webhook_url,
+            "waha_url": os.getenv("WAHA_URL", "not_configured"),
+            "waha_session": os.getenv("WAHA_SESSION", "default"),
+            "current_host": request.host,
+            "request_url_root": request.url_root,
+            "environment": {
+                "WAHA_URL": os.getenv("WAHA_URL"),
+                "WAHA_SESSION": os.getenv("WAHA_SESSION"),
+                "WAHA_KEEPALIVE_INTERVAL": os.getenv("WAHA_KEEPALIVE_INTERVAL")
+            }
+        }
+        
+        # Test webhook URL accessibility
+        try:
+            response = requests.get(webhook_url, timeout=5)
+            config["webhook_test"] = {
+                "status_code": response.status_code,
+                "accessible": response.status_code == 200,
+                "response": response.json() if response.headers.get('content-type', '').startswith('application/json') else response.text[:100]
+            }
+        except Exception as e:
+            config["webhook_test"] = {
+                "accessible": False,
+                "error": str(e)
+            }
+            
+        return jsonify(config)
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # Enhanced Personal Assistant Endpoints
 @app.route("/weather")
