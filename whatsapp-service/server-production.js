@@ -34,7 +34,7 @@ async function initializeClient() {
         // Production mode with real WhatsApp Web.js
         try {
             const { Client, LocalAuth } = require('whatsapp-web.js');
-            const qrcode = require('qr-terminal');
+            const qrcode = require('qrcode-terminal');
             
             whatsappClient = new Client({
                 authStrategy: new LocalAuth({
@@ -104,12 +104,18 @@ async function initializeClient() {
                 }
             });
 
-            // Initialize the client
-            whatsappClient.initialize();
+            // Initialize the client with error handling
+            try {
+                await whatsappClient.initialize();
+            } catch (initError) {
+                console.error('❌ Failed to initialize client:', initError.message);
+                throw initError;
+            }
             
         } catch (error) {
             console.error('❌ Failed to initialize WhatsApp client:', error.message);
             console.log('🔄 Falling back to mock mode...');
+            whatsappClient = null; // Clear the failed client
             initializeMockClient();
         }
     } else {
@@ -147,8 +153,8 @@ function initializeMockClient() {
 
 // Send message function
 async function sendMessage(chatId, text) {
-    if (ENABLE_REAL_WHATSAPP && whatsappClient) {
-        // Production mode - real WhatsApp sending
+    if (ENABLE_REAL_WHATSAPP && whatsappClient && isClientReady) {
+        // Production mode - real WhatsApp sending (only if client is ready)
         try {
             await whatsappClient.sendMessage(chatId, text);
             console.log(`📤 Sent WhatsApp message to ${chatId}: ${text}`);
@@ -392,6 +398,25 @@ app.get('/api/info', (req, res) => {
 app.use((error, req, res, next) => {
     console.error('❌ Server error:', error);
     res.status(500).json({ error: 'Internal server error' });
+});
+
+// Global error handlers
+process.on('uncaughtException', (error) => {
+    console.error('❌ Uncaught Exception:', error.message);
+    console.log('🔄 Attempting to continue with mock mode...');
+    if (ENABLE_REAL_WHATSAPP && !isClientReady) {
+        console.log('🧪 Falling back to mock WhatsApp client...');
+        initializeMockClient();
+    }
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+    console.log('🔄 Attempting to continue with mock mode...');
+    if (ENABLE_REAL_WHATSAPP && !isClientReady) {
+        console.log('🧪 Falling back to mock WhatsApp client...');
+        initializeMockClient();
+    }
 });
 
 // Start server
