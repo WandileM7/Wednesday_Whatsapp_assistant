@@ -11,6 +11,16 @@ from datetime import datetime
 from urllib.parse import urlparse
 from config import GEMINI_API_KEY
 
+# Initialize logger
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+# Import Google Generative AI
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
+
 # Timeout exception for webhook processing
 class TimeoutException(Exception):
     pass
@@ -138,7 +148,7 @@ class _DummyModel:
             text = "Hello. Gemini is not configured; using a dummy response."
         return _R()
 
-if gemini_api_key:
+if gemini_api_key and genai:
     try:
         genai.configure(api_key=gemini_api_key)
         model = genai.GenerativeModel('gemini-2.0-flash')
@@ -147,7 +157,10 @@ if gemini_api_key:
         logger.warning(f"Gemini init failed; using dummy model: {e}")
         model = _DummyModel()
 else:
-    logger.warning("GEMINI_API_KEY not set. Using dummy model; app will still start.")
+    if not gemini_api_key:
+        logger.warning("GEMINI_API_KEY not set. Using dummy model; app will still start.")
+    elif not genai:
+        logger.warning("google-generativeai not available. Using dummy model; app will still start.")
     model = _DummyModel()
 
 PERSONALITY_PROMPT = os.getenv("PERSONALITY_PROMPT", "You are a sarcastic and sassy assistant.")
@@ -183,10 +196,7 @@ waha_keepalive_active = False
 
 def waha_health_check():
     """Ensure WAHA session exists and is started using sessions API (no Apps dependency)."""
-    """Ensure WAHA session exists and is started using sessions API (no Apps dependency)."""
     try:
-        base = _waha_base()
-        if not base:
         base = _waha_base()
         if not base:
             return False
@@ -1170,8 +1180,6 @@ def status():
 def waha_status():
     ok = waha_health_check()
     return jsonify({"waha_ok": ok, "session": WAHA_SESSION, "base": _waha_base()})
-    ok = waha_health_check()
-    return jsonify({"waha_ok": ok, "session": WAHA_SESSION, "base": _waha_base()})
 
 @app.route("/waha-restart-keepalive", methods=['POST'])
 def restart_waha_keepalive():
@@ -1279,13 +1287,7 @@ def send_voice_message(phone, text):
         logger.warning(f"WAHA voice send failed via {ep1} and {ep2}")
         cleanup_temp_file(audio_file)
         return False
-            except Exception:
-                pass
-        logger.warning(f"WAHA voice send failed via {ep1} and {ep2}")
-        cleanup_temp_file(audio_file)
-        return False
     except Exception as e:
-        logger.error(f"WAHA voice send error: {e}")
         logger.error(f"WAHA voice send error: {e}")
         return False
 
