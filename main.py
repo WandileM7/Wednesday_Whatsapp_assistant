@@ -1228,16 +1228,22 @@ def send_message(phone, text):
         if not waha_health_check():
             logger.warning("WAHA not ready; message not sent")
             return False
-        payload = {"chatId": phone, "text": text}
+        
+        session_name = WAHA_SESSION or "default"
+        payload = {"chatId": phone, "text": text, "session": session_name}
+        
+        # First try the legacy endpoint
         r = requests.post(waha_url, headers=_waha_headers(), data=json.dumps(payload), timeout=20)
         if r.status_code in (200, 201):
             return True
+            
+        # If legacy fails, try session-specific endpoint  
         base = _waha_base()
-        session_name = WAHA_SESSION or "default"
         alt = f"{base}/api/sessions/{session_name}/messages/text"
         r2 = requests.post(alt, headers=_waha_headers(), data=json.dumps(payload), timeout=20)
         if r2.status_code in (200, 201):
             return True
+            
         logger.error(f"WAHA send_message failed: {r.status_code} {r.text} | alt={r2.status_code} {r2.text}")
         return False
     except Exception as e:
