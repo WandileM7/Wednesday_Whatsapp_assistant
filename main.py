@@ -1,8 +1,25 @@
 import json
+import os
+import sys
+import time
+import threading
+import logging
+import requests
+import uuid
 from dotenv import load_dotenv
+from datetime import datetime
+from urllib.parse import urlparse
+from config import GEMINI_API_KEY
+
+# Timeout exception for webhook processing
+class TimeoutException(Exception):
+    pass
 
 from flask import Flask, redirect, request, jsonify, session, url_for
-from handlers.gemini import chat_with_functions, execute_function
+from flask_session import Session
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+# Import handlers
 from handlers.google_auth import auth_bp
 from handlers.speech import speech_to_text, text_to_speech, download_voice_message, should_respond_with_voice, cleanup_temp_file
 from handlers.auth_manager import auth_manager
@@ -10,14 +27,6 @@ from handlers.weather import weather_service
 from handlers.news import news_service
 from handlers.tasks import task_manager
 from handlers.contacts import contact_manager
-import google.generativeai as genai
-import sys
-import os
-import requests
-import logging
-import time
-import threading
-from flask_session import Session
 from handlers.spotify_client import make_spotify_oauth
 import os, time, json, threading, logging, requests
 from urllib.parse import urlparse
@@ -27,31 +36,14 @@ try:
     from chromedb import add_to_conversation_history, query_conversation_history
     CHROMADB_AVAILABLE = True
 except ImportError as e:
-    logger = logging.getLogger("WhatsAppAssistant")
     logger.warning(f"ChromaDB not available: {e}")
     CHROMADB_AVAILABLE = False
     
     # Fallback functions
     def add_to_conversation_history(phone, role, message):
         return True
-    
     def query_conversation_history(phone, query, limit=5):
         return []
-
-from datetime import datetime
-from werkzeug.middleware.proxy_fix import ProxyFix
-from spotipy.oauth2 import SpotifyOAuth
-import spotipy
-
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler()  # Only console logging for memory efficiency
-    ]
-)
-logger = logging.getLogger("WhatsAppAssistant")
 
 load_dotenv()
 app = Flask(__name__)
@@ -69,25 +61,110 @@ user_conversations = {}
 MAX_CONVERSATIONS = 50
 MAX_MESSAGES_PER_USER = 15
 
-# Initialize Gemini
-gemini_api_key = os.getenv("GEMINI_API_KEY")
-if not gemini_api_key:
-    logger.error("GEMINI_API_KEY is not set. Quitting.")
-    sys.exit(1)
+# Simple rate limiting tracking
+request_timestamps = {}
+MAX_REQUESTS_PER_MINUTE = 30
 
+def check_rate_limit(phone):
+    """Simple rate limiting to prevent abuse"""
+    if not phone:
+        return True
+        
+    now = time.time()
+    minute_ago = now - 60
+    
+    # Clean old timestamps
+    if phone in request_timestamps:
+        request_timestamps[phone] = [t for t in request_timestamps[phone] if t > minute_ago]
+    else:
+        request_timestamps[phone] = []
+    
+    # Check if under limit
+    if len(request_timestamps[phone]) >= MAX_REQUESTS_PER_MINUTE:
+        return False
+        
+    # Add current request
+    request_timestamps[phone].append(now)
+    return True
+
+# Session cache for user preferences
+def cache_user_session(phone, gemini_url=None):
+    """Cache user session data including phone number and Gemini service URL"""
+    if not phone:
+        return
+    
+    session_data = session.get('user_cache', {})
+    
+    # Cache phone number
+    session_data['phone'] = phone
+    session_data['last_seen'] = datetime.now().isoformat()
+    
+    # Cache Gemini service URL if provided
+    if gemini_url:
+        session_data['gemini_url'] = gemini_url
+    
+    # Set default location to Johannesburg
+    if 'location' not in session_data:
+        session_data['location'] = 'Johannesburg'
+    
+    session['user_cache'] = session_data
+    logger.info(f"Cached session for {phone} with location: {session_data.get('location')}")
+
+def get_cached_session():
+    """Get cached session data"""
+    return session.get('user_cache', {})
+
+# Try to import Gemini helpers; fallback to simple stubs if missing
 try:
-    genai.configure(api_key=gemini_api_key)
-    model = genai.GenerativeModel('gemini-2.0-flash')
-    logger.info("Gemini client initialized")
+    from handlers.gemini import chat_with_functions, execute_function
+    GEMINI_HELPERS_AVAILABLE = True
 except Exception as e:
-    logger.error(f"Gemini init failed: {e}")
-    sys.exit(1)
+    GEMINI_HELPERS_AVAILABLE = False
+    logger.warning(f"Using fallback Gemini stubs: {e}")
+
+    def chat_with_functions(user_message: str, phone: str):
+        # Simple echo-style fallback
+        return {"content": f"I'm running in fallback mode. You said: {user_message}"}
+
+    def execute_function(call):
+        # No function calling in fallback
+        return call.get("content") or "Function calling is disabled in fallback mode."
+
+# Initialize Gemini (non-fatal if missing)
+gemini_api_key = os.getenv("GEMINI_API_KEY")
+class _DummyModel:
+    def generate_content(self, prompt: str):
+        class _R:
+            text = "Hello. Gemini is not configured; using a dummy response."
+        return _R()
+
+if gemini_api_key:
+    try:
+        genai.configure(api_key=gemini_api_key)
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        logger.info("Gemini client initialized")
+    except Exception as e:
+        logger.warning(f"Gemini init failed; using dummy model: {e}")
+        model = _DummyModel()
+else:
+    logger.warning("GEMINI_API_KEY not set. Using dummy model; app will still start.")
+    model = _DummyModel()
 
 PERSONALITY_PROMPT = os.getenv("PERSONALITY_PROMPT", "You are a sarcastic and sassy assistant.")
 GREETING_PROMPT = os.getenv("GREETING_PROMPT", "Give a brief, sarcastic greeting.")
 INITIAL_MESSAGE_PROMPT = os.getenv("INITIAL_MESSAGE_PROMPT", "Send a mysterious message under 50 words.")
 
 waha_url = os.getenv("WAHA_URL")
+WAHA_API_KEY = os.getenv("WAHA_API_KEY")
+
+def _waha_headers(is_json=True):
+    headers = {}
+    if is_json:
+        headers["Content-Type"] = "application/json"
+    if WAHA_API_KEY:
+        headers["X-API-KEY"] = WAHA_API_KEY
+    return headers
+
 if not waha_url:
     logger.warning("WAHA_URL not set. Set WAHA_URL to the WAHA public endpoint (e.g. https://waha-service.onrender.com/api/sendText)")
 # Derive WAHA base URL for other API calls
@@ -106,7 +183,10 @@ waha_keepalive_active = False
 
 def waha_health_check():
     """Ensure WAHA session exists and is started using sessions API (no Apps dependency)."""
+    """Ensure WAHA session exists and is started using sessions API (no Apps dependency)."""
     try:
+        base = _waha_base()
+        if not base:
         base = _waha_base()
         if not base:
             return False
@@ -132,12 +212,17 @@ def waha_health_check():
         return False
     except Exception as e:
         logger.warning(f"WAHA health check error: {e}")
+        logger.warning(f"WAHA health check error: {e}")
         return False
 
 def waha_keepalive():
     """Background keep-alive loop that maintains the WAHA session."""
+    """Background keep-alive loop that maintains the WAHA session."""
     global waha_keepalive_active
     while waha_keepalive_active:
+        ok = waha_health_check()
+        logger.info(f"WAHA keep-alive: {'OK' if ok else 'NOT READY'}")
+        time.sleep(WAHA_KEEPALIVE_INTERVAL)
         ok = waha_health_check()
         logger.info(f"WAHA keep-alive: {'OK' if ok else 'NOT READY'}")
         time.sleep(WAHA_KEEPALIVE_INTERVAL)
@@ -148,6 +233,7 @@ def start_waha_keepalive():
         return
     waha_keepalive_active = True
     threading.Thread(target=waha_keepalive, daemon=True).start()
+    threading.Thread(target=waha_keepalive, daemon=True).start()
 
 def stop_waha_keepalive():
     global waha_keepalive_active
@@ -155,15 +241,6 @@ def stop_waha_keepalive():
 
 # Spotify OAuth Setup
 SPOTIFY_SCOPE = "user-read-playback-state user-modify-playback-state"
-
-def make_spotify_oauth():
-    return SpotifyOAuth(
-        client_id=os.getenv("SPOTIFY_CLIENT_ID"),
-        client_secret=os.getenv("SPOTIFY_SECRET"),
-        redirect_uri=os.getenv("SPOTIFY_REDIRECT_URI"),
-        scope=SPOTIFY_SCOPE,
-        cache_path=None
-    )
 
 def get_token_info():
     """Get token info from session and refresh if needed"""
@@ -209,36 +286,9 @@ def get_spotify_client():
         return None
     return spotipy.Spotify(auth=token_info["access_token"])
 
-# Add these functions after your existing Spotify functions (around line 100)
-
-def initialize_google_auth():
-    """Initialize Google authentication on startup"""
-    logger.info("Initializing Google authentication...")
-    
-    try:
-        from handlers.google_auth import initialize_google_auto_auth
-        
-        # Try automatic authentication
-        if initialize_google_auto_auth():
-            logger.info("✅ Google authentication ready")
-            return True
-        else:
-            logger.warning("❌ Google authentication not available - manual setup required")
-            logger.info("Visit /google-login to authenticate")
-            return False
-            
-    except Exception as e:
-        logger.error(f"Google auth initialization failed: {e}")
-        return False
-
 def save_google_tokens_to_env(credentials):
-    """Save Google tokens to environment variables for automation"""
+    """Save Google tokens to environment file for automation"""
     try:
-        if not credentials.refresh_token:
-            logger.warning("No refresh token available - cannot save for automation")
-            return False
-            
-        # Log the tokens so you can add them to your environment
         logger.info("=== GOOGLE TOKENS FOR ENVIRONMENT SETUP ===")
         logger.info(f"GOOGLE_REFRESH_TOKEN={credentials.refresh_token}")
         logger.info(f"GOOGLE_ACCESS_TOKEN={credentials.token}")
@@ -247,10 +297,10 @@ def save_google_tokens_to_env(credentials):
         logger.info("Add these to your environment variables for automatic authentication")
         logger.info("=============================================")
         
-        # Also try to update .env file if it exists
-        try:
-            env_file = ".env"
-            if os.path.exists(env_file):
+        # Try to update .env file if it exists
+        env_file = os.path.join(os.path.dirname(__file__), '.env')
+        if os.path.exists(env_file):
+            try:
                 with open(env_file, 'r') as f:
                     content = f.read()
                 
@@ -273,12 +323,32 @@ def save_google_tokens_to_env(credentials):
                     f.write(content)
                 
                 logger.info("Updated .env file with Google tokens")
-        except Exception as e:
-            logger.warning(f"Could not update .env file: {e}")
+            except Exception as e:
+                logger.warning(f"Could not update .env file: {e}")
         
         return True
     except Exception as e:
         logger.error(f"Failed to save Google tokens: {e}")
+        return False
+
+def initialize_google_auth():
+    """Initialize Google authentication on startup"""
+    logger.info("Initializing Google authentication...")
+    
+    try:
+        from handlers.google_auth import initialize_google_auto_auth
+        
+        # Try automatic authentication
+        if initialize_google_auto_auth():
+            logger.info("✅ Google authentication ready")
+            return True
+        else:
+            logger.warning("❌ Google authentication not available - manual setup required")
+            logger.info("Visit /google-login to authenticate")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Failed to initialize Google authentication: {e}")
         return False
 
 def initialize_services():
@@ -288,6 +358,7 @@ def initialize_services():
     refresh_token = os.getenv("SPOTIFY_REFRESH_TOKEN")
     if refresh_token:
         logger.info("Spotify refresh token present")
+        logger.info("Spotify refresh token present")
     else:
         logger.info("Spotify refresh token not set; will use interactive login when needed")
     # Initialize Google authentication
@@ -296,7 +367,6 @@ def initialize_services():
     start_waha_keepalive()
     logger.info("Service initialization complete")
 
-# Add this after your app configuration but before the routes (around line 90):
 # Initialize services on startup
 try:
     with app.app_context():
@@ -307,7 +377,7 @@ except Exception as e:
 # Routes
 @app.route("/")
 def home():
-    return jsonify({"status": "online", "services": ["spotify", "gmail", "gemini"]})
+    return jsonify({"status": "online", "services": ["spotify", "gmail", "gemini", "weather", "tasks", "contacts"]})
 
 @app.route("/login")
 def spotify_login():
@@ -358,19 +428,35 @@ def spotify_callback():
         logger.error(f"Error getting Spotify token: {e}")
         return f"❌ Error getting token: {str(e)}", 500
 
+@app.route("/spotify-callback")
+def spotify_callback_alias():
+    # Support SPOTIFY_REDIRECT_URI=http://localhost:5000/spotify-callback
+    return spotify_callback()
+
 @app.route('/webhook', methods=['POST', 'GET'])
 def webhook():
+    """Enhanced webhook with robust error handling to prevent 503 errors"""
     if request.method == 'GET':
         return jsonify({"status": "online", "memory_optimized": True})
 
+    start_time = time.time()
     try:
+        # Quick validation to prevent processing invalid requests
         data = request.get_json() or {}
+        if not data:
+            return jsonify({'status': 'ignored', 'reason': 'no_data'}), 200
+            
         payload = data.get('payload', data)
+        if not payload:
+            return jsonify({'status': 'ignored', 'reason': 'no_payload'}), 200
         
         # Handle both text and voice messages
         user_msg = payload.get('body') or payload.get('text') or payload.get('message')
         phone = payload.get('chatId') or payload.get('from')
         is_voice_message = False
+        
+        # Cache user session data
+        cache_user_session(phone)
         
         # Check for voice message
         if not user_msg and payload.get('type') == 'voice':
@@ -391,10 +477,15 @@ def webhook():
                             return jsonify({'status': 'ignored'}), 200
 
         if not user_msg or not phone:
-            return jsonify({'status': 'ignored'}), 200
+            return jsonify({'status': 'ignored', 'reason': 'missing_data'}), 200
 
         if payload.get('fromMe'):
-            return jsonify({'status': 'ignored'}), 200
+            return jsonify({'status': 'ignored', 'reason': 'from_me'}), 200
+            
+        # Rate limiting check
+        if not check_rate_limit(phone):
+            logger.warning(f"Rate limit exceeded for {phone}")
+            return jsonify({'status': 'rate_limited', 'message': 'Too many requests'}), 200
 
         logger.info(f"Processing {'voice' if is_voice_message else 'text'} message from {phone}: {user_msg[:30]}...")
         
@@ -418,14 +509,24 @@ def webhook():
         if len(user_conversations) % 10 == 0:
             cleanup_conversations()
 
-        # Process with Gemini
-        call = chat_with_functions(user_msg, phone)
-        logger.debug(f"Gemini function response: {call}")
+        # Process with Gemini with timeout protection
+        try:
+            # Check if API key looks valid (not a test key)
+            if GEMINI_API_KEY and not GEMINI_API_KEY.startswith('test_'):
+                call = chat_with_functions(user_msg, phone)
+                logger.debug(f"Gemini function response: {call}")
 
-        if call.get("name"):
-            reply = execute_function(call)
-        else:
-            reply = call.get("content", "Sorry, no idea what that was.")
+                if call.get("name"):
+                    reply = execute_function(call)
+                else:
+                    reply = call.get("content", "Sorry, no idea what that was.")
+            else:
+                # Fallback mode for invalid/test API keys
+                logger.warning("Using fallback mode: Gemini API key not properly configured")
+                reply = f"Echo (fallback mode): {user_msg}. Please configure a valid Gemini API key for full functionality."
+        except Exception as e:
+            logger.error(f"Gemini processing error: {e}")
+            reply = "I'm having trouble processing your message right now. Please try again later."
 
         # Save to ChromaDB if enabled
         if CHROMADB_AVAILABLE and os.getenv("ENABLE_CHROMADB", "false").lower() == "true":
@@ -452,11 +553,33 @@ def webhook():
         else:
             send_message(phone, reply)
             
-        return jsonify({'status': 'ok', 'memory_optimized': True})
+        # Log processing time for monitoring
+        processing_time = time.time() - start_time
+        logger.debug(f"Webhook processed in {processing_time:.2f}s")
+        
+        return jsonify({
+            'status': 'ok', 
+            'memory_optimized': True,
+            'processing_time_ms': int(processing_time * 1000)
+        })
 
+    except MemoryError:
+        logger.error("Memory error in webhook processing")
+        return jsonify({'status': 'error', 'message': 'Memory limit exceeded'}), 503
+    except TimeoutException:
+        logger.error("Timeout in webhook processing")  
+        return jsonify({'status': 'error', 'message': 'Request timeout'}), 503
     except Exception as e:
-        logger.error(f"Error during chat processing: {e}")
-        return jsonify({'status': 'error', 'message': 'Processing failed'}), 500
+        processing_time = time.time() - start_time
+        logger.error(f"Error during chat processing after {processing_time:.2f}s: {e}")
+        
+        # Return 200 instead of 500 to prevent webhook retries from WAHA
+        return jsonify({
+            'status': 'error', 
+            'message': 'Processing failed', 
+            'error_type': type(e).__name__,
+            'processing_time_ms': int(processing_time * 1000)
+        }), 200  # Changed from 500 to 200
 
 @app.route('/send', methods=['POST'])
 def send_initial_message():
@@ -530,7 +653,6 @@ def test_gmail():
     except Exception as e:
         return {"error": str(e)}, 500
 
-# Add the new Google service routes here:
 @app.route("/google-login")
 def google_login():
     """Start Google OAuth flow"""
@@ -556,6 +678,7 @@ def google_login():
         <p>Error: {str(e)}</p>
         <p><a href="/google-status">Check Google Status</a></p>
         """, 500
+
 @app.route("/setup-google-auto-auth")
 def setup_google_auto_auth():
     """One-time setup for automatic Google authentication"""
@@ -580,7 +703,7 @@ def setup_google_auto_auth():
             """
     except Exception as e:
         return f"<h2>❌ Setup Failed</h2><p>Error: {str(e)}</p>", 500
-    
+
 @app.route("/refresh-google-token")
 def refresh_google_token():
     """Manually refresh Google token"""
@@ -607,7 +730,7 @@ def refresh_google_token():
         }
     except Exception as e:
         return {"error": str(e)}, 500
-    
+
 @app.route("/force-google-auth")
 def force_google_auth():
     """Force Google authentication for testing"""
@@ -629,38 +752,37 @@ def force_google_auth():
                 "scopes": list(creds.scopes) if hasattr(creds, 'scopes') else []
             }
         else:
-                return {
-                    "success": False,
-                    "message": "Google authentication failed - OAuth flow required",
-                    "authenticated": False,
-                    "auth_url": url_for('google_login', _external=True)
-                }
+            return {
+                "success": False,
+                "message": "Google authentication failed - OAuth flow required",
+                "authenticated": False,
+                "auth_url": url_for('google_login', _external=True)
+            }
     except Exception as e:
         return {"error": str(e)}, 500
-    
+
 @app.route("/test-email-send")
 def test_email_send():
     """Test email sending functionality"""
     try:
         from handlers.gmail import send_email
         
-        # Send a test email to yourself (fix the email address)
+        # Send a test email to yourself
         result = send_email(
-            to="wandilemawela4@gmail.com",  # Fixed - removed the extra .com
+            to="wandilemawela4@gmail.com",
             subject="Test Email from WhatsApp Assistant",
-            body="This is a test email to verify Gmail integration is working."
+            message_text="This is a test email to verify Gmail integration is working."
         )
         
         return {
             "test": "email_send",
             "result": result,
-            "success": not result.startswith("❌"),
+            "success": not str(result).startswith("❌"),
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
         return {"error": str(e)}, 500
 
-# Add the test current email route
 @app.route("/test-current-email")
 def test_current_email():
     """Test email with current session authentication"""
@@ -669,20 +791,20 @@ def test_current_email():
         
         # Test with current session
         result = send_email(
-            to="wandilemawela4@gmail.com",  # Your email
+            to="wandilemawela4@gmail.com",
             subject="Test from Current Session",
-            body="Testing email functionality with current authentication session."
+            message_text="Testing email functionality with current authentication session."
         )
         
         return {
             "result": result,
-            "success": not result.startswith("❌"),
+            "success": not str(result).startswith("❌"),
             "session_has_google_creds": bool(session.get('google_credentials')),
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
         return {"error": str(e), "traceback": str(e)}, 500
-    
+
 @app.route("/google-auth-status")
 def google_auth_status():
     """Detailed Google authentication status with helpful links"""
@@ -919,7 +1041,7 @@ def services_overview():
             "weather": {
                 "status": "active" if weather_service.is_configured() else "not_configured",
                 "configured": weather_service.is_configured(),
-                "test_endpoint": "/weather?location=New York",
+                "test_endpoint": "/weather?location=Johannesburg",
                 "required_env": "OPENWEATHER_API_KEY"
             },
             "news": {
@@ -967,7 +1089,7 @@ def services_overview():
         }
     }
 
-# Spotify endpoints (continue with existing Spotify routes...)
+# Spotify endpoints
 @app.route("/test-spotify")
 def test_spotify():
     """Test Spotify functionality"""
@@ -1023,6 +1145,7 @@ def health():
             "chromadb_enabled": CHROMADB_AVAILABLE and os.getenv("ENABLE_CHROMADB", "false").lower() == "true",
             "waha_status": "connected" if waha_healthy else ("disconnected" if waha_healthy is False else "not_configured"),
             "waha_keepalive": waha_keepalive_active,
+            "gemini_helpers": GEMINI_HELPERS_AVAILABLE,
             "timestamp": datetime.now().isoformat()
         })
     except ImportError:
@@ -1031,6 +1154,7 @@ def health():
             "memory_mb": "unavailable",
             "active_conversations": len(user_conversations),
             "waha_status": "connected" if waha_health_check() else "disconnected" if waha_url else "not_configured",
+            "gemini_helpers": GEMINI_HELPERS_AVAILABLE,
             "timestamp": datetime.now().isoformat()
         })
 
@@ -1044,6 +1168,8 @@ def status():
 
 @app.route("/waha-status")
 def waha_status():
+    ok = waha_health_check()
+    return jsonify({"waha_ok": ok, "session": WAHA_SESSION, "base": _waha_base()})
     ok = waha_health_check()
     return jsonify({"waha_ok": ok, "session": WAHA_SESSION, "base": _waha_base()})
 
@@ -1085,7 +1211,7 @@ def typing_indicator(phone, seconds=2):
         phone = phone if "@c.us" in phone else f"{phone}@c.us"
         for action in ["startTyping", "stopTyping"]:
             url = os.getenv("WAHA_URL").replace("sendText", action)
-            requests.post(url, json={"chatId": phone, "session": os.getenv("WAHA_SESSION")})
+            requests.post(url, headers=_waha_headers(), json={"chatId": phone, "session": os.getenv("WAHA_SESSION")})
             if action == "startTyping":
                 time.sleep(seconds)
         return True
@@ -1116,14 +1242,13 @@ def send_message(phone, text):
         return False
     except Exception as e:
         logger.error(f"WAHA send_message error: {e}")
+        logger.error(f"WAHA send_message error: {e}")
         return False
 
 def send_voice_message(phone, text):
     """Send voice message by converting text to speech"""
     try:
         phone = phone if "@c.us" in phone else f"{phone}@c.us"
-        
-        # Convert text to speech
         audio_file = text_to_speech(text)
         if not audio_file:
             logger.error("Failed to generate voice from text")
@@ -1154,11 +1279,15 @@ def send_voice_message(phone, text):
         logger.warning(f"WAHA voice send failed via {ep1} and {ep2}")
         cleanup_temp_file(audio_file)
         return False
+            except Exception:
+                pass
+        logger.warning(f"WAHA voice send failed via {ep1} and {ep2}")
+        cleanup_temp_file(audio_file)
+        return False
     except Exception as e:
         logger.error(f"WAHA voice send error: {e}")
+        logger.error(f"WAHA voice send error: {e}")
         return False
-
-# Add this route after your existing Google routes (around line 580)
 
 @app.route("/save-current-google-tokens")
 def save_current_google_tokens():
@@ -1249,19 +1378,94 @@ def test_webhook_auth():
     """Test authentication as it would work in webhook context (no session)"""
     return auth_manager.test_webhook_authentication()
 
-# Enhanced Personal Assistant Endpoints
+@app.route('/test-webhook-simple', methods=['POST'])
+def test_webhook_simple():
+    """Test webhook POST processing without Gemini"""
+    try:
+        data = request.get_json() or {}
+        payload = data.get('payload', data)
+        
+        user_msg = payload.get('body') or payload.get('text') or payload.get('message')
+        phone = payload.get('chatId') or payload.get('from')
+        
+        if not user_msg or not phone:
+            return jsonify({'status': 'ignored', 'reason': 'missing_data'}), 200
+            
+        if payload.get('fromMe'):
+            return jsonify({'status': 'ignored', 'reason': 'from_me'}), 200
+            
+        # Simple echo response without Gemini
+        reply = f"Echo: {user_msg}"
+        
+        return jsonify({
+            'status': 'ok', 
+            'message': 'processed_without_gemini',
+            'reply': reply,
+            'phone': phone
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in simple webhook test: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@app.route('/waha-config-test')
+def waha_config_test():
+    """Test WAHA configuration and webhook setup"""
+    try:
+        # Get the webhook URL that WAHA should use
+        webhook_url = request.url_root.rstrip('/') + '/webhook'
+        
+        config = {
+            "webhook_url": webhook_url,
+            "waha_url": os.getenv("WAHA_URL", "not_configured"),
+            "waha_session": os.getenv("WAHA_SESSION", "default"),
+            "current_host": request.host,
+            "request_url_root": request.url_root,
+            "environment": {
+                "WAHA_URL": os.getenv("WAHA_URL"),
+                "WAHA_SESSION": os.getenv("WAHA_SESSION"),
+                "WAHA_KEEPALIVE_INTERVAL": os.getenv("WAHA_KEEPALIVE_INTERVAL")
+            }
+        }
+        
+        # Test webhook URL accessibility
+        try:
+            response = requests.get(webhook_url, timeout=5)
+            config["webhook_test"] = {
+                "status_code": response.status_code,
+                "accessible": response.status_code == 200,
+                "response": response.json() if response.headers.get('content-type', '').startswith('application/json') else response.text[:100]
+            }
+        except Exception as e:
+            config["webhook_test"] = {
+                "accessible": False,
+                "error": str(e)
+            }
+            
+        return jsonify(config)
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# Enhanced Personal Assistant Endpoints
 @app.route("/weather")
 def get_weather():
-    """Get weather information"""
-    location = request.args.get('location', 'New York')
+    """Get weather information for Johannesburg by default"""
+    # Get location from session cache or use Johannesburg as default
+    cached_session = get_cached_session()
+    default_location = cached_session.get('location', 'Johannesburg')
+    location = request.args.get('location', default_location)
+    
     return weather_service.get_current_weather(location)
 
 @app.route("/weather/forecast")
 def get_weather_forecast():
-    """Get weather forecast"""
-    location = request.args.get('location', 'New York')
+    """Get weather forecast for Johannesburg by default"""
+    cached_session = get_cached_session()
+    default_location = cached_session.get('location', 'Johannesburg')
+    location = request.args.get('location', default_location)
     days = int(request.args.get('days', 3))
+    
     return weather_service.get_weather_forecast(location, days)
 
 @app.route("/news")
@@ -1391,13 +1595,17 @@ def contact_summary():
 @app.route("/assistant/status")
 def assistant_status():
     """Get comprehensive assistant status including all services"""
+    cached_session = get_cached_session()
+    
     status = {
         'timestamp': datetime.now().isoformat(),
+        'session_cache': cached_session,
         'authentication': auth_manager.get_auth_status(),
         'services': {
             'weather': {
                 'configured': weather_service.is_configured(),
-                'status': 'active' if weather_service.is_configured() else 'needs_api_key'
+                'status': 'active' if weather_service.is_configured() else 'needs_api_key',
+                'default_location': cached_session.get('location', 'Johannesburg')
             },
             'news': {
                 'configured': news_service.is_configured(),
@@ -1418,10 +1626,35 @@ def assistant_status():
     }
     return status
 
+@app.route("/session-cache")
+def view_session_cache():
+    """View current session cache"""
+    return get_cached_session()
+
+@app.route("/session-cache", methods=['POST'])
+def update_session_cache():
+    """Update session cache"""
+    data = request.get_json() or {}
+    
+    phone = data.get('phone')
+    location = data.get('location')
+    gemini_url = data.get('gemini_url')
+    
+    if phone:
+        cache_user_session(phone, gemini_url)
+    
+    if location:
+        session_data = session.get('user_cache', {})
+        session_data['location'] = location
+        session['user_cache'] = session_data
+    
+    return {"message": "Session cache updated", "cache": get_cached_session()}
 
 @app.route("/quick-setup")
 def quick_setup():
     """Quick setup page with all necessary links"""
+    cached_session = get_cached_session()
+    
     return f"""
     <!DOCTYPE html>
     <html>
@@ -1440,6 +1673,15 @@ def quick_setup():
     </head>
     <body>
         <h1>WhatsApp Assistant - Quick Setup</h1>
+        
+        <div class="card success">
+            <h3>📱 Session Cache Status</h3>
+            <p><strong>Phone:</strong> {cached_session.get('phone', 'Not cached')}</p>
+            <p><strong>Location:</strong> {cached_session.get('location', 'Johannesburg (default)')}</p>
+            <p><strong>Gemini URL:</strong> {cached_session.get('gemini_url', 'Not set')}</p>
+            <p><strong>Last Seen:</strong> {cached_session.get('last_seen', 'Never')}</p>
+            <a href="/session-cache" class="button">View Cache</a>
+        </div>
         
         <div class="card warning">
             <h3>🚀 Authentication Setup</h3>
@@ -1468,18 +1710,8 @@ def quick_setup():
         </div>
         
         <div class="card">
-            <h3>🧪 Testing & Debugging</h3>
-            <a href="/test-current-email" class="button">Test Email</a>
-            <a href="/test-spotify" class="button">Test Spotify</a>
-            <a href="/google-debug" class="button">Debug Google</a>
-            <a href="/health" class="button">Health Check</a>
-            <a href="/auth-status" class="button">Auth Status</a>
-            <a href="/assistant/status" class="button">Assistant Status</a>
-        </div>
-        
-        <div class="card">
             <h3>🌟 Enhanced Personal Assistant Features</h3>
-            <a href="/weather?location=New York" class="button">Test Weather</a>
+            <a href="/weather?location=Johannesburg" class="button">Test Weather</a>
             <a href="/news" class="button">Test News</a>
             <a href="/news/briefing" class="button">Daily Briefing</a>
             <a href="/tasks" class="button">View Tasks</a>
@@ -1572,6 +1804,41 @@ def test_speech():
         results["speech_tests"]["tts_test"] = {"success": False, "error": str(e)}
     
     return jsonify(results)
+
+class ConversationManager:
+    def __init__(self):
+        self.user_conversations = {}
+    
+    def process_message(self, message, phone):
+        try:
+            # Simple fallback response when Gemini is not configured
+            if not GEMINI_API_KEY or GEMINI_API_KEY == "test_key_123":
+                return "I'm currently in test mode. Please configure GEMINI_API_KEY for full functionality."
+            
+            # Add conversation history
+            if CHROMADB_AVAILABLE:
+                add_to_conversation_history(phone, "user", message)
+            
+            # Generate response using Gemini (implement this based on your gemini.py)
+            response = self._generate_response(message, phone)
+            
+            if CHROMADB_AVAILABLE:
+                add_to_conversation_history(phone, "assistant", response)
+            
+            return response
+        except Exception as e:
+            logger.error(f"Error processing message: {e}")
+            return "Sorry, I encountered an error processing your message."
+    
+    def _generate_response(self, message, phone):
+        # Implement your Gemini logic here
+        return f"Echo: {message}"
+    
+    def initiate_conversation(self, phone):
+        return waha_client.send_message(phone, "Hello! I'm Wednesday, your AI assistant.")
+
+# Initialize conversation manager
+conversation_manager = ConversationManager()
 
 if __name__ == '__main__':
     logger.info("Launching Memory-Optimized WhatsApp Assistant...")
