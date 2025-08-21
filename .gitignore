@@ -35,6 +35,11 @@ tokens/
 *.pid
 redis-data/
 waha-data/
+whatsapp-session/
+
+# WhatsApp Service
+whatsapp-service/node_modules/
+whatsapp-service/session/
 
 # Render/Deployment
 secrets/
