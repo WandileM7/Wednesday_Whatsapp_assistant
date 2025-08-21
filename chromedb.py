@@ -61,8 +61,8 @@ def add_to_conversation_history(phone: str, role: str, message: str) -> bool:
     try:
         collection = get_collection()
         if collection is None:
-            logger.warning("ChromaDB not available, skipping storage")
-            return False
+            logger.warning("ChromaDB not available, using fallback storage")
+            return _add_to_fallback_history(phone, role, message)
         
         # Create a simple document ID
         doc_id = f"{phone}_{role}_{hash(message) % 10000}"
@@ -82,14 +82,51 @@ def add_to_conversation_history(phone: str, role: str, message: str) -> bool:
         
     except Exception as e:
         logger.warning(f"Failed to add to conversation history: {e}")
+        # Fallback to simple in-memory storage
+        return _add_to_fallback_history(phone, role, message)
+
+# Simple in-memory fallback for conversation history
+_fallback_history = {}
+
+def _add_to_fallback_history(phone: str, role: str, message: str) -> bool:
+    """Fallback conversation history storage"""
+    try:
+        if phone not in _fallback_history:
+            _fallback_history[phone] = []
+        
+        _fallback_history[phone].append({
+            "role": role,
+            "message": message,
+            "timestamp": int(time.time())
+        })
+        
+        # Keep only last 50 messages per phone
+        _fallback_history[phone] = _fallback_history[phone][-50:]
+        logger.debug(f"Added message to fallback history for {phone}")
+        return True
+    except Exception as e:
+        logger.error(f"Fallback history storage failed: {e}")
         return False
+
+def _retrieve_fallback_history(phone: str, n_results: int = 5) -> list:
+    """Retrieve from fallback conversation history"""
+    try:
+        if phone not in _fallback_history:
+            return []
+        
+        messages = _fallback_history[phone][-n_results:]
+        return [f"{msg['role']}: {msg['message']}" for msg in messages]
+    except Exception as e:
+        logger.error(f"Fallback history retrieval failed: {e}")
+        return []
 
 def retrieve_conversation_history(phone, n_results=5):
     """Retrieves the most recent messages from the conversation history."""
     try:
         collection = get_collection()
         if collection is None:
-            return []
+            logger.warning("ChromaDB not available, using fallback history")
+            return _retrieve_fallback_history(phone, n_results)
         
         # Use the phone as a dummy query text to satisfy ChromaDB's requirement
         results = collection.query(
@@ -114,7 +151,8 @@ def retrieve_conversation_history(phone, n_results=5):
     
     except Exception as e:
         logger.warning(f"Failed to query conversation history: {e}")
-        return []
+        # Fallback to simple in-memory storage
+        return _retrieve_fallback_history(phone, n_results)
 
 def query_conversation_history(phone, query, limit=5):
     """Query conversation history - alias for retrieve_conversation_history"""

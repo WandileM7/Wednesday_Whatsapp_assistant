@@ -54,7 +54,7 @@ from urllib.parse import urlparse
 
 # ChromaDB imports with fallback
 try:
-    from chromedb import add_to_conversation_history, query_conversation_history
+    from chromedb import add_to_conversation_history, query_conversation_history, retrieve_conversation_history
     CHROMADB_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"ChromaDB not available: {e}")
@@ -64,6 +64,8 @@ except ImportError as e:
     def add_to_conversation_history(phone, role, message):
         return True
     def query_conversation_history(phone, query, limit=5):
+        return []
+    def retrieve_conversation_history(phone, n_results=5):
         return []
 
 load_dotenv()
@@ -1277,12 +1279,17 @@ def send_voice_message(phone, text):
     """Send voice message by converting text to speech"""
     try:
         phone = phone if "@c.us" in phone else f"{phone}@c.us"
+        
+        # First check if TTS is available
         audio_file = text_to_speech(text)
         if not audio_file:
-            logger.error("Failed to generate voice from text")
+            logger.error("Failed to generate voice from text - TTS not available")
             return False
         
+        # Check if WAHA is available
         if not waha_health_check():
+            logger.warning("WAHA not available for voice message sending")
+            cleanup_temp_file(audio_file)
             return False
             
         base = _waha_base()
@@ -1307,15 +1314,16 @@ def send_voice_message(phone, text):
             
             for upload_ep in upload_endpoints:
                 try:
-                    resp = requests.post(upload_ep, files=files, timeout=60)
+                    resp = requests.post(upload_ep, files=files, timeout=30)
                     if resp.status_code in (200, 201):
+                        logger.info(f"Voice message sent successfully via {upload_ep}")
                         cleanup_temp_file(audio_file)
                         return True
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"Upload endpoint {upload_ep} failed: {e}")
                     continue
             
             # If file upload fails, try sendVoice with local file reference
-            # Some WAHA instances support direct file upload via sendVoice
             voice_headers = {"Content-Type": "application/json"}
             voice_payload = {
                 "chatId": phone,
@@ -1329,8 +1337,9 @@ def send_voice_message(phone, text):
             }
             
             sendvoice_ep = f"{base}/api/sendVoice"
-            resp = requests.post(sendvoice_ep, headers=voice_headers, data=json.dumps(voice_payload), timeout=60)
+            resp = requests.post(sendvoice_ep, headers=voice_headers, data=json.dumps(voice_payload), timeout=30)
             if resp.status_code in (200, 201):
+                logger.info("Voice message sent successfully via sendVoice")
                 cleanup_temp_file(audio_file)
                 return True
                 
@@ -1342,8 +1351,9 @@ def send_voice_message(phone, text):
                     "session": (None, session_name),
                     "convert": (None, "true")
                 }
-                resp = requests.post(sendvoice_ep, files=voice_files, timeout=60)
+                resp = requests.post(sendvoice_ep, files=voice_files, timeout=30)
                 if resp.status_code in (200, 201):
+                    logger.info("Voice message sent successfully via multipart sendVoice")
                     cleanup_temp_file(audio_file)
                     return True
                     
@@ -1357,7 +1367,7 @@ def send_voice_message(phone, text):
             except:
                 pass
                 
-        logger.warning(f"WAHA voice send failed via {base}/api/sendFile, {base}/api/sessions/{session_name}/messages/file, and {base}/api/sendVoice")
+        logger.warning(f"WAHA voice send failed via all endpoints: {base}")
         cleanup_temp_file(audio_file)
         return False
         
@@ -2200,6 +2210,74 @@ def test_conversation_history():
         else:
             results["chromadb_available"] = False
             
+        return jsonify(results)
+        
+    except Exception as e:
+        return jsonify({"error": str(e), "timestamp": datetime.now().isoformat()}), 500
+
+@app.route("/test-all-services")
+def test_all_services():
+    """Test all main services functionality"""
+    try:
+        results = {
+            "timestamp": datetime.now().isoformat(),
+            "tests": {}
+        }
+        
+        # Test conversation history
+        test_phone = "27729224495@c.us"
+        try:
+            add_success = add_to_conversation_history(test_phone, "user", "Test message")
+            if add_success:
+                history = retrieve_conversation_history(test_phone, n_results=3)
+                results["tests"]["conversation_history"] = {
+                    "success": True,
+                    "history_count": len(history)
+                }
+            else:
+                results["tests"]["conversation_history"] = {"success": False, "reason": "Add failed"}
+        except Exception as e:
+            results["tests"]["conversation_history"] = {"success": False, "error": str(e)}
+        
+        # Test task management
+        try:
+            from handlers.tasks import task_manager
+            task_result = task_manager.create_task("Test Task", "This is a test task")
+            results["tests"]["task_management"] = {
+                "success": not task_result.startswith("❌"),
+                "result": task_result[:50] + "..." if len(task_result) > 50 else task_result
+            }
+        except Exception as e:
+            results["tests"]["task_management"] = {"success": False, "error": str(e)}
+            
+        # Test contact management
+        try:
+            from handlers.contacts import contact_manager
+            contact_result = contact_manager.add_local_contact("Test User", "123-456-7890", "test@example.com")
+            results["tests"]["contact_management"] = {
+                "success": not contact_result.startswith("❌"),
+                "result": contact_result[:50] + "..." if len(contact_result) > 50 else contact_result
+            }
+        except Exception as e:
+            results["tests"]["contact_management"] = {"success": False, "error": str(e)}
+            
+        # Test boss recognition
+        results["tests"]["boss_recognition"] = {
+            "boss_phone": os.getenv("BOSS_PHONE_NUMBER", "27729224495@c.us"),
+            "configured": True
+        }
+        
+        # Count successful tests
+        successful = sum(1 for test in results["tests"].values() 
+                        if isinstance(test, dict) and test.get("success", False))
+        total = len([test for test in results["tests"].values() if isinstance(test, dict) and "success" in test])
+        
+        results["summary"] = {
+            "successful": successful,
+            "total": total,
+            "all_passed": successful == total
+        }
+        
         return jsonify(results)
         
     except Exception as e:
