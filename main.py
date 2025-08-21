@@ -10,6 +10,17 @@ from dotenv import load_dotenv
 from datetime import datetime
 from urllib.parse import urlparse
 from config import GEMINI_API_KEY
+import io
+import base64
+
+# QR Code generation
+try:
+    import qrcode
+    from PIL import Image
+    QR_AVAILABLE = True
+except ImportError:
+    logger.warning("QR code generation not available")
+    QR_AVAILABLE = False
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -25,7 +36,7 @@ except ImportError:
 class TimeoutException(Exception):
     pass
 
-from flask import Flask, redirect, request, jsonify, session, url_for
+from flask import Flask, redirect, request, jsonify, session, url_for, send_file, Response
 from flask_session import Session
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -1769,6 +1780,31 @@ def quick_setup():
         </div>
         
         <div class="card">
+            <h3>📱 WhatsApp Integration</h3>
+            <p>Connect your WhatsApp to the assistant:</p>
+            
+            <div class="step">
+                <strong>Step 1:</strong> View WhatsApp QR Code
+                <br>
+                <a href="/whatsapp-qr" class="button">📱 Show QR Code</a>
+                <a href="/whatsapp-status" class="button">📊 Service Status</a>
+            </div>
+            
+            <div class="step">
+                <strong>Step 2:</strong> Scan QR Code with WhatsApp
+                <br>
+                <small>Open WhatsApp → Settings → Linked Devices → Link a Device</small>
+            </div>
+            
+            <div class="step">
+                <strong>Step 3:</strong> Test Connection
+                <br>
+                <a href="/test-webhook-auth" class="button">🔗 Test Webhook</a>
+                <small style="display: block; margin-top: 5px;">Send a message to your WhatsApp number to test</small>
+            </div>
+        </div>
+        
+        <div class="card">
             <h3>🌟 Enhanced Personal Assistant Features</h3>
             <a href="/weather?location=Johannesburg" class="button">Test Weather</a>
             <a href="/news" class="button">Test News</a>
@@ -1812,6 +1848,267 @@ def quick_setup():
     </body>
     </html>
     """
+
+# WhatsApp QR Code Routes
+@app.route("/whatsapp-qr")
+def whatsapp_qr():
+    """Display WhatsApp QR code status and visual QR code"""
+    try:
+        # Get QR data from WhatsApp service
+        whatsapp_url = os.getenv('WAHA_URL', 'http://localhost:3000/api/sendText').replace('/api/sendText', '')
+        qr_response = requests.get(f"{whatsapp_url}/api/qr", timeout=5)
+        qr_data = qr_response.json()
+        
+        # Check if we have QR code data
+        if qr_data.get('qr'):
+            qr_text = qr_data['qr']
+            mode = qr_data.get('mode', 'unknown')
+            timestamp = qr_data.get('timestamp', 'unknown')
+            
+            return f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>WhatsApp QR Code</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; margin: 40px; text-align: center; }}
+                    .qr-container {{ margin: 20px auto; max-width: 400px; }}
+                    .status {{ padding: 15px; border-radius: 5px; margin: 20px; }}
+                    .success {{ background-color: #d4edda; border: 1px solid #28a745; color: #155724; }}
+                    .warning {{ background-color: #fff3cd; border: 1px solid #ffc107; color: #856404; }}
+                    .button {{ display: inline-block; padding: 10px 20px; margin: 10px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }}
+                    .button:hover {{ background: #0056b3; }}
+                    .qr-info {{ margin: 20px; font-size: 14px; color: #666; }}
+                </style>
+                <script>
+                    // Auto-refresh every 30 seconds to check for status changes
+                    setTimeout(() => window.location.reload(), 30000);
+                </script>
+            </head>
+            <body>
+                <h1>📱 WhatsApp QR Code</h1>
+                
+                <div class="status {"success" if mode == "production" else "warning"}">
+                    <h3>Status: {'🟢 Production Mode' if mode == 'production' else '🟡 Mock Mode'}</h3>
+                    <p><strong>Timestamp:</strong> {timestamp}</p>
+                    <p><strong>Service Mode:</strong> {mode.title()}</p>
+                </div>
+                
+                <div class="qr-container">
+                    <h3>Scan this QR code with WhatsApp:</h3>
+                    <img src="/whatsapp-qr-image" alt="WhatsApp QR Code" style="max-width: 100%; border: 1px solid #ddd; padding: 10px;">
+                </div>
+                
+                <div class="qr-info">
+                    <p><strong>Instructions:</strong></p>
+                    <ol style="text-align: left; max-width: 500px; margin: 0 auto;">
+                        <li>Open WhatsApp on your phone</li>
+                        <li>Go to Settings → Linked Devices</li>
+                        <li>Tap "Link a Device"</li>
+                        <li>Scan the QR code above</li>
+                    </ol>
+                </div>
+                
+                <div>
+                    <a href="/whatsapp-qr" class="button">🔄 Refresh</a>
+                    <a href="/quick-setup" class="button">← Back to Setup</a>
+                    <a href="/whatsapp-status" class="button">📊 Status</a>
+                </div>
+                
+                <div class="qr-info">
+                    <p><em>This page automatically refreshes every 30 seconds</em></p>
+                    <p><strong>QR Data:</strong> <code style="word-break: break-all; font-size: 12px;">{qr_text[:50]}...</code></p>
+                </div>
+            </body>
+            </html>
+            """
+        else:
+            # No QR code available
+            status = qr_data.get('status', 'unknown')
+            message = qr_data.get('message', 'No status message')
+            mode = qr_data.get('mode', 'unknown')
+            
+            return f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>WhatsApp Status</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; margin: 40px; text-align: center; }}
+                    .status {{ padding: 15px; border-radius: 5px; margin: 20px; }}
+                    .success {{ background-color: #d4edda; border: 1px solid #28a745; color: #155724; }}
+                    .warning {{ background-color: #fff3cd; border: 1px solid #ffc107; color: #856404; }}
+                    .error {{ background-color: #f8d7da; border: 1px solid #dc3545; color: #721c24; }}
+                    .button {{ display: inline-block; padding: 10px 20px; margin: 10px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }}
+                    .button:hover {{ background: #0056b3; }}
+                </style>
+                <script>
+                    // Auto-refresh every 10 seconds when waiting for QR
+                    setTimeout(() => window.location.reload(), 10000);
+                </script>
+            </head>
+            <body>
+                <h1>📱 WhatsApp Status</h1>
+                
+                <div class="status {"success" if status == "authenticated" else "warning" if status == "waiting" else "error"}">
+                    <h3>{'✅ Connected!' if status == "authenticated" else '⏳ Waiting...' if status == "waiting" else '❌ Error'}</h3>
+                    <p><strong>Status:</strong> {status.title()}</p>
+                    <p><strong>Message:</strong> {message}</p>
+                    <p><strong>Mode:</strong> {mode.title()}</p>
+                </div>
+                
+                <div>
+                    <a href="/whatsapp-qr" class="button">🔄 Refresh</a>
+                    <a href="/quick-setup" class="button">← Back to Setup</a>
+                    <a href="/whatsapp-status" class="button">📊 Detailed Status</a>
+                </div>
+                
+                <div style="margin: 20px; font-size: 14px; color: #666;">
+                    <p><em>This page automatically refreshes every 10 seconds</em></p>
+                </div>
+            </body>
+            </html>
+            """
+    except requests.RequestException as e:
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>WhatsApp Service Error</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 40px; text-align: center; }}
+                .error {{ padding: 15px; border-radius: 5px; margin: 20px; background-color: #f8d7da; border: 1px solid #dc3545; color: #721c24; }}
+                .button {{ display: inline-block; padding: 10px 20px; margin: 10px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }}
+            </style>
+        </head>
+        <body>
+            <h1>❌ WhatsApp Service Error</h1>
+            <div class="error">
+                <h3>Cannot connect to WhatsApp service</h3>
+                <p><strong>Error:</strong> {str(e)}</p>
+                <p>Make sure the WhatsApp service is running on port 3000</p>
+            </div>
+            <a href="/quick-setup" class="button">← Back to Setup</a>
+        </body>
+        </html>
+        """
+
+@app.route("/whatsapp-qr-image")
+def whatsapp_qr_image():
+    """Generate and serve QR code image"""
+    if not QR_AVAILABLE:
+        return "QR code generation not available", 500
+    
+    try:
+        # Get QR data from WhatsApp service
+        whatsapp_url = os.getenv('WAHA_URL', 'http://localhost:3000/api/sendText').replace('/api/sendText', '')
+        qr_response = requests.get(f"{whatsapp_url}/api/qr", timeout=5)
+        qr_data = qr_response.json()
+        
+        if not qr_data.get('qr'):
+            return "No QR code available", 404
+        
+        # Generate QR code image
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(qr_data['qr'])
+        qr.make(fit=True)
+        
+        # Create QR code image
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        # Convert to bytes
+        img_io = io.BytesIO()
+        img.save(img_io, 'PNG')
+        img_io.seek(0)
+        
+        return send_file(img_io, mimetype='image/png')
+        
+    except requests.RequestException:
+        return "WhatsApp service not available", 503
+    except Exception as e:
+        logger.error(f"Error generating QR code: {e}")
+        return "Error generating QR code", 500
+
+@app.route("/whatsapp-status")
+def whatsapp_status():
+    """Detailed WhatsApp service status"""
+    try:
+        whatsapp_url = os.getenv('WAHA_URL', 'http://localhost:3000/api/sendText').replace('/api/sendText', '')
+        
+        # Get various status endpoints
+        status_data = {}
+        
+        try:
+            health_response = requests.get(f"{whatsapp_url}/health", timeout=5)
+            status_data['health'] = health_response.json()
+        except:
+            status_data['health'] = {"error": "Health check failed"}
+        
+        try:
+            qr_response = requests.get(f"{whatsapp_url}/api/qr", timeout=5)
+            status_data['qr'] = qr_response.json()
+        except:
+            status_data['qr'] = {"error": "QR check failed"}
+        
+        try:
+            info_response = requests.get(f"{whatsapp_url}/api/info", timeout=5)
+            status_data['info'] = info_response.json()
+        except:
+            status_data['info'] = {"error": "Info check failed"}
+        
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>WhatsApp Service Status</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 40px; }}
+                .status-card {{ border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 20px 0; }}
+                .success {{ border-color: #28a745; background-color: #d4edda; }}
+                .warning {{ border-color: #ffc107; background-color: #fff3cd; }}
+                .error {{ border-color: #dc3545; background-color: #f8d7da; }}
+                .button {{ display: inline-block; padding: 10px 20px; margin: 5px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }}
+                .json {{ background: #f8f9fa; padding: 10px; border-radius: 5px; font-family: monospace; white-space: pre-wrap; overflow-x: auto; }}
+            </style>
+        </head>
+        <body>
+            <h1>📊 WhatsApp Service Status</h1>
+            
+            <div class="status-card">
+                <h3>🏥 Health Status</h3>
+                <div class="json">{json.dumps(status_data['health'], indent=2)}</div>
+            </div>
+            
+            <div class="status-card">
+                <h3>📱 QR Code Status</h3>
+                <div class="json">{json.dumps(status_data['qr'], indent=2)}</div>
+            </div>
+            
+            <div class="status-card">
+                <h3>ℹ️ Service Info</h3>
+                <div class="json">{json.dumps(status_data['info'], indent=2)}</div>
+            </div>
+            
+            <div>
+                <a href="/whatsapp-qr" class="button">📱 View QR Code</a>
+                <a href="/whatsapp-status" class="button">🔄 Refresh Status</a>
+                <a href="/quick-setup" class="button">← Back to Setup</a>
+            </div>
+        </body>
+        </html>
+        """
+        
+    except Exception as e:
+        return f"""
+        <h1>❌ Error</h1>
+        <p>Could not get WhatsApp service status: {str(e)}</p>
+        <a href="/quick-setup">← Back to Setup</a>
+        """
 
 @app.route("/test-speech")
 def test_speech():
