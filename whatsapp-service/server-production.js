@@ -450,3 +450,46 @@ process.on('SIGTERM', async () => {
     }
     process.exit(0);
 });
+
+
+const { MessageMedia } = require('whatsapp-web.js');
+
+const multer = require('multer');
+const upload = multer({ dest: 'uploads/' });
+
+app.post('/api/sendVoice', upload.single('audio'), async (req, res) => {
+    if (!isClientReady) {
+        return res.status(503).json({ error: 'WhatsApp client not ready' });
+    }
+
+    const { chatId } = req.body;
+    const audioFile = req.file;
+
+    if (!chatId || !audioFile) {
+        return res.status(400).json({ error: 'chatId and audio file are required' });
+    }
+
+    try {
+        if (ENABLE_REAL_WHATSAPP && whatsappClient) {
+            // Production mode - send real voice message
+            const media = MessageMedia.fromFilePath(audioFile.path);
+            await whatsappClient.sendMessage(chatId, media, { sendAudioAsVoice: true });
+            
+            // Clean up uploaded file
+            fs.unlinkSync(audioFile.path);
+            
+            res.json({ success: true, message: 'Voice message sent successfully' });
+        } else {
+            // Mock mode - simulate voice sending
+            console.log(`🎤 Mock sending voice message to ${chatId}: ${audioFile.originalname}`);
+            fs.unlinkSync(audioFile.path); // Clean up
+            res.json({ success: true, message: 'Voice message simulated' });
+        }
+    } catch (error) {
+        console.error('❌ Send voice error:', error);
+        if (fs.existsSync(audioFile.path)) {
+            fs.unlinkSync(audioFile.path);
+        }
+        res.status(500).json({ error: error.message });
+    }
+});

@@ -590,36 +590,29 @@ def webhook():
             return jsonify({'status': 'ignored', 'reason': 'no_payload'}), 200
         
         # Handle both text and voice messages
-        user_msg = payload.get('body') or payload.get('text') or payload.get('message')
+        message_type = payload.get('type', 'text')
+
+        if message_type == 'voice' or payload.get('hasMedia'):
+            # Handle voice message
+            voice_url = payload.get('mediaUrl') or payload.get('media', {}).get('url')
+            if voice_url:
+                # Download and transcribe
+                audio_path = download_voice_message(voice_url, WAHA_SESSION)
+                if audio_path:
+                    user_msg = speech_to_text(audio_path)
+                    user_sent_voice = True
+                    cleanup_temp_file(audio_path)
+                else:
+                    user_msg = "Voice message received but could not be processed"
+                    user_sent_voice = False
+            else:
+                user_msg = payload.get('body', 'Voice message')
+                user_sent_voice = True
+        else:
+            user_msg = payload.get('body') or payload.get('text')
+            user_sent_voice = False
+
         phone = payload.get('chatId') or payload.get('from')
-        is_voice_message = False
-        
-        # Cache user session data
-        cache_user_session(phone)
-        
-        # Check if this is the boss
-        boss_phone = os.getenv("BOSS_PHONE_NUMBER", "27729224495@c.us")
-        is_boss = phone == boss_phone
-        if is_boss:
-            logger.info(f"Processing message from BOSS: {phone}")
-        
-        # Check for voice message
-        if not user_msg and payload.get('type') == 'voice':
-            voice_data = payload.get('voice') or payload.get('media')
-            if voice_data:
-                voice_url = voice_data.get('url') or voice_data.get('downloadUrl')
-                if voice_url:
-                    logger.info(f"Processing voice message from {phone}")
-                    # Download and transcribe voice message
-                    audio_file = download_voice_message(voice_url, os.getenv("WAHA_SESSION"))
-                    if audio_file:
-                        user_msg = speech_to_text(audio_file)
-                        is_voice_message = True
-                        if user_msg:
-                            logger.info(f"Voice transcribed: {user_msg[:50]}...")
-                        else:
-                            logger.warning("Could not transcribe voice message")
-                            return jsonify({'status': 'ignored'}), 200
 
         if not user_msg or not phone:
             return jsonify({'status': 'ignored', 'reason': 'missing_data'}), 200
@@ -632,7 +625,7 @@ def webhook():
             logger.warning(f"Rate limit exceeded for {phone}")
             return jsonify({'status': 'rate_limited', 'message': 'Too many requests'}), 200
 
-        logger.info(f"Processing {'voice' if is_voice_message else 'text'} message from {phone}: {user_msg[:30]}...")
+        logger.info(f"Processing {'voice' if user_sent_voice else 'text'} message from {phone}: {user_msg[:30]}...")
         
         # Memory-efficient conversation management
         if phone not in user_conversations:
@@ -689,7 +682,7 @@ def webhook():
         conversation['messages'] = conversation['messages'][-MAX_MESSAGES_PER_USER:]
 
         # Decide whether to send voice or text response
-        if should_respond_with_voice(is_voice_message, len(reply)):
+        if should_respond_with_voice(user_sent_voice, len(reply)):
             success = send_voice_message(phone, reply)
             if not success:
                 # Fallback to text if voice fails
@@ -1528,104 +1521,45 @@ def send_message(phone, text):
         return False
 
 def send_voice_message(phone, text):
-    """Send voice message by converting text to speech"""
+    """Send voice message using TTS"""
     try:
-        phone = phone if "@c.us" in phone else f"{phone}@c.us"
-        
-        # First check if TTS is available
+        # Generate audio file from text
         audio_file = text_to_speech(text)
         if not audio_file:
-            logger.error("Failed to generate voice from text - TTS not available")
-            return False
+            # Fallback to text message
+            return send_message(phone, text)
         
-        # Check if WAHA is available
-        if not waha_health_check():
-            logger.warning("WAHA not available for voice message sending")
+        # Send via WAHA voice endpoint
+        if not waha_url:
+            logger.warning("WAHA URL not configured")
             cleanup_temp_file(audio_file)
             return False
-            
-        base = _waha_base()
-        session_name = os.getenv("WAHA_SESSION", "default")
         
-        # First try to upload the file and get a URL
-        try:
-            # Try file upload first to get URL for sendVoice
-            headers = {}
-            files = {
-                "file": open(audio_file, "rb"),
-                "chatId": (None, phone),
-                "filename": (None, os.path.basename(audio_file)),
-                "session": (None, session_name)
-            }
+        base_url = _waha_base()
+        voice_url = f"{base_url}/api/sendVoice"
+        
+        with open(audio_file, 'rb') as f:
+            files = {'audio': f}
+            data = {'chatId': phone}
+            headers = _waha_headers(is_json=False)
             
-            # Try different file upload endpoints
-            upload_endpoints = [
-                f"{base}/api/sendFile",
-                f"{base}/api/sessions/{session_name}/messages/file"
-            ]
-            
-            for upload_ep in upload_endpoints:
-                try:
-                    resp = requests.post(upload_ep, files=files, timeout=30)
-                    if resp.status_code in (200, 201):
-                        logger.info(f"Voice message sent successfully via {upload_ep}")
-                        cleanup_temp_file(audio_file)
-                        return True
-                except Exception as e:
-                    logger.debug(f"Upload endpoint {upload_ep} failed: {e}")
-                    continue
-            
-            # If file upload fails, try sendVoice with local file reference
-            voice_headers = {"Content-Type": "application/json"}
-            voice_payload = {
-                "chatId": phone,
-                "file": {
-                    "mimetype": "audio/ogg; codecs=opus",
-                    "filename": os.path.basename(audio_file)
-                },
-                "reply_to": None,
-                "convert": True,
-                "session": session_name
-            }
-            
-            sendvoice_ep = f"{base}/api/sendVoice"
-            resp = requests.post(sendvoice_ep, headers=voice_headers, data=json.dumps(voice_payload), timeout=30)
-            if resp.status_code in (200, 201):
-                logger.info("Voice message sent successfully via sendVoice")
-                cleanup_temp_file(audio_file)
-                return True
-                
-            # Final fallback: Try multipart sendVoice
-            with open(audio_file, "rb") as audio:
-                voice_files = {
-                    "file": audio,
-                    "chatId": (None, phone),
-                    "session": (None, session_name),
-                    "convert": (None, "true")
-                }
-                resp = requests.post(sendvoice_ep, files=voice_files, timeout=30)
-                if resp.status_code in (200, 201):
-                    logger.info("Voice message sent successfully via multipart sendVoice")
-                    cleanup_temp_file(audio_file)
-                    return True
-                    
-        except Exception as e:
-            logger.error(f"Error in voice upload process: {e}")
-        finally:
-            # Ensure file handle is closed
-            try:
-                if 'files' in locals() and 'file' in files:
-                    files['file'].close()
-            except:
-                pass
-                
-        logger.warning(f"WAHA voice send failed via all endpoints: {base}")
+            response = requests.post(voice_url, files=files, data=data, headers=headers, timeout=30)
+        
         cleanup_temp_file(audio_file)
-        return False
         
+        if response.status_code == 200:
+            logger.info(f"Voice message sent to {phone}")
+            return True
+        else:
+            logger.error(f"Voice send failed: {response.status_code}")
+            # Fallback to text
+            return send_message(phone, text)
+            
     except Exception as e:
-        logger.error(f"WAHA voice send error: {e}")
-        return False
+        logger.error(f"Voice message error: {e}")
+        if audio_file:
+            cleanup_temp_file(audio_file)
+        return send_message(phone, text)  # Fallback to text
 
 @app.route("/save-current-google-tokens")
 def save_current_google_tokens():
