@@ -1522,18 +1522,21 @@ def send_message(phone, text):
 
 def send_voice_message(phone, text):
     """Send voice message using TTS"""
+    audio_file = None
     try:
-        # Generate audio file from text
+        # Generate audio file from text (now in MP3 format)
         audio_file = text_to_speech(text)
         if not audio_file:
-            # Fallback to text message
+            logger.warning("TTS generation failed, falling back to text message")
             return send_message(phone, text)
+        
+        logger.info(f"Generated MP3 audio file: {audio_file}")
         
         # Send via WAHA voice endpoint
         if not waha_url:
             logger.warning("WAHA URL not configured")
             cleanup_temp_file(audio_file)
-            return False
+            return send_message(phone, text)
         
         base_url = _waha_base()
         voice_url = f"{base_url}/api/sendVoice"
@@ -1543,23 +1546,59 @@ def send_voice_message(phone, text):
             data = {'chatId': phone}
             headers = _waha_headers(is_json=False)
             
+            logger.info(f"Attempting to send MP3 voice message to {phone} via {voice_url}")
             response = requests.post(voice_url, files=files, data=data, headers=headers, timeout=30)
         
         cleanup_temp_file(audio_file)
         
         if response.status_code == 200:
-            logger.info(f"Voice message sent to {phone}")
+            logger.info(f"✅ Voice message (MP3) sent successfully to {phone}")
             return True
         else:
-            logger.error(f"Voice send failed: {response.status_code}")
-            # Fallback to text
-            return send_message(phone, text)
+            logger.error(f"❌ Voice send failed with status {response.status_code}: {response.text}")
+            # Try to send as a regular MP3 file attachment instead of voice message
+            return send_audio_file(phone, audio_file, text)
             
     except Exception as e:
         logger.error(f"Voice message error: {e}")
         if audio_file:
             cleanup_temp_file(audio_file)
         return send_message(phone, text)  # Fallback to text
+
+def send_audio_file(phone, audio_file_path, original_text):
+    """Send audio file as regular attachment if voice message fails"""
+    try:
+        if not audio_file_path or not os.path.exists(audio_file_path):
+            logger.warning("Audio file not available for file attachment fallback")
+            return send_message(phone, original_text)
+            
+        # Try to send as a document/media file instead of voice message
+        base_url = _waha_base()
+        
+        # Check if WAHA has sendMedia endpoint for sending files
+        media_url = f"{base_url}/api/sendMedia"
+        
+        with open(audio_file_path, 'rb') as f:
+            files = {'media': f}
+            data = {
+                'chatId': phone,
+                'caption': f'🎵 Audio message: {original_text[:100]}...' if len(original_text) > 100 else f'🎵 Audio message: {original_text}'
+            }
+            headers = _waha_headers(is_json=False)
+            
+            logger.info(f"Attempting to send MP3 file attachment to {phone}")
+            response = requests.post(media_url, files=files, data=data, headers=headers, timeout=30)
+        
+        if response.status_code == 200:
+            logger.info(f"✅ Audio file sent successfully to {phone}")
+            return True
+        else:
+            logger.warning(f"Audio file send failed: {response.status_code}, falling back to text")
+            return send_message(phone, original_text)
+            
+    except Exception as e:
+        logger.error(f"Audio file send error: {e}")
+        return send_message(phone, original_text)
 
 @app.route("/save-current-google-tokens")
 def save_current_google_tokens():

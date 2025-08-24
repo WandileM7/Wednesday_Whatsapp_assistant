@@ -1,6 +1,6 @@
 # Speech Configuration
 
-The WhatsApp assistant now supports Text-to-Speech (TTS) and Speech-to-Text (STT) functionality.
+The WhatsApp assistant now supports Text-to-Speech (TTS) and Speech-to-Text (STT) functionality with improved MP3 support for better compatibility.
 
 ## Required Environment Variables
 
@@ -32,20 +32,32 @@ If you already have Google services (Gmail, Calendar) configured, the speech fea
 - Automatically detects voice messages from WhatsApp
 - Converts voice to text using Google Speech-to-Text
 - Supports multiple languages (English, Spanish, French)
+- Handles both OGG and MP3 audio formats
 - Processes transcribed text normally through Gemini
 
 ### Text-to-Speech (TTS)
-- Converts text responses to voice messages
+- Converts text responses to voice messages in MP3 format for better WhatsApp compatibility
 - Responds with voice when:
   - User sent a voice message, OR
   - Response text is short (under MAX_VOICE_RESPONSE_LENGTH)
-- Falls back to text if voice generation fails
+- Multiple fallback options:
+  1. First tries to send as WhatsApp voice message
+  2. If voice message fails, tries to send as MP3 file attachment
+  3. If both fail, falls back to text message
 - Uses pleasant female voice in multiple languages
+
+## WhatsApp Integration Improvements
+
+The system now provides better compatibility with WhatsApp:
+- **MP3 Format**: Generated audio files use MP3 format instead of OGG for better playability
+- **Fallback Options**: If voice messages don't work, the system will try to send MP3 files as attachments
+- **Better Logging**: Enhanced logging to help debug voice message issues
 
 ## WAHA Integration
 
 The system expects WAHA to support:
 - `sendVoice` endpoint for sending voice messages
+- `sendMedia` endpoint for sending MP3 file attachments (fallback)
 - Voice message webhooks with `type: "voice"` and media URL
 - File upload capability for voice messages
 
@@ -53,8 +65,7 @@ The system expects WAHA to support:
 
 Run the speech tests:
 ```bash
-cd /path/to/project
-PYTHONPATH=. python /tmp/test_speech.py
+curl http://localhost:5000/test-speech
 ```
 
 Note: TTS tests will fail without proper Google Cloud credentials, but the voice logic tests should pass.
