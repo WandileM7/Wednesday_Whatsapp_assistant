@@ -266,26 +266,55 @@ def stop_waha_keepalive():
 SPOTIFY_SCOPE = "user-read-playback-state user-modify-playback-state"
 
 def get_token_info():
-    """Get token info from session and refresh if needed"""
+    """Get token info from session and refresh if needed with persistent storage"""
+    from helpers.token_storage import token_storage
+    
     token_info = session.get("token_info", {})
+    
+    # If no token info in session, try stored tokens first, then environment
     if not token_info:
+        # Try persistent storage first
+        stored_tokens = token_storage.load_spotify_tokens()
+        if stored_tokens and stored_tokens.get('refresh_token'):
+            try:
+                sp_oauth = make_spotify_oauth()
+                token_info = sp_oauth.refresh_access_token(stored_tokens['refresh_token'])
+                session["token_info"] = token_info
+                logger.info("Successfully refreshed token from persistent storage")
+                return token_info
+            except Exception as e:
+                logger.warning(f"Failed to refresh from stored tokens: {e}")
+        
+        # Fallback to environment variable
         refresh_token = os.getenv("SPOTIFY_REFRESH_TOKEN")
         if refresh_token:
             try:
                 sp_oauth = make_spotify_oauth()
                 token_info = sp_oauth.refresh_access_token(refresh_token)
                 session["token_info"] = token_info
+                # Update persistent storage with working token
+                token_storage.save_spotify_tokens(
+                    refresh_token=refresh_token,
+                    access_token=token_info.get('access_token')
+                )
+                logger.info("Successfully refreshed token from environment and saved to storage")
                 return token_info
             except Exception as e:
                 logger.error(f"Error refreshing token from environment: {e}")
                 return None
         return None
     
+    # Check if current token is expired and refresh if needed
     sp_oauth = make_spotify_oauth()
     if sp_oauth.is_token_expired(token_info):
         try:
             token_info = sp_oauth.refresh_access_token(token_info["refresh_token"])
             session["token_info"] = token_info
+            # Update persistent storage
+            token_storage.save_spotify_tokens(
+                refresh_token=token_info.get('refresh_token'),
+                access_token=token_info.get('access_token')
+            )
         except Exception as e:
             logger.error(f"Error refreshing session token: {e}")
             session.pop("token_info", None)
@@ -409,7 +438,7 @@ def spotify_login():
 
 @app.route("/callback")
 def spotify_callback():
-    """Handle Spotify OAuth callback with auto-save"""
+    """Handle Spotify OAuth callback with persistent token storage"""
     code = request.args.get('code')
     error = request.args.get('error')
     
@@ -421,6 +450,8 @@ def spotify_callback():
         return "❌ No authorization code received from Spotify.", 400
     
     try:
+        from helpers.token_storage import token_storage
+        
         sp_oauth = make_spotify_oauth()
         token_info = sp_oauth.get_access_token(code)
         session["token_info"] = token_info
@@ -429,23 +460,36 @@ def spotify_callback():
         from handlers.spotify import save_token_globally
         save_token_globally(token_info)
         
-        # Save tokens for future automation
+        # Save tokens persistently using TokenStorage
         if token_info.get('refresh_token'):
-            logger.info("=== SPOTIFY TOKENS FOR ENVIRONMENT SETUP ===")
-            logger.info(f"SPOTIFY_REFRESH_TOKEN={token_info['refresh_token']}")
-            logger.info(f"SPOTIFY_ACCESS_TOKEN={token_info['access_token']}")
-            logger.info("Add these to your environment variables for automatic authentication")
-            logger.info("=============================================")
+            success = token_storage.save_spotify_tokens(
+                refresh_token=token_info['refresh_token'],
+                access_token=token_info['access_token']
+            )
+            
+            if success:
+                logger.info("✅ Spotify tokens saved persistently")
+                # Also save to environment for automation
+                logger.info("=== SPOTIFY TOKENS FOR ENVIRONMENT SETUP ===")
+                logger.info(f"SPOTIFY_REFRESH_TOKEN={token_info['refresh_token']}")
+                logger.info(f"SPOTIFY_ACCESS_TOKEN={token_info['access_token']}")
+                logger.info("Tokens are now saved locally and ready for automation")
+                logger.info("=============================================")
+            else:
+                logger.warning("Failed to save Spotify tokens persistently")
         
-        logger.info("Spotify authorization successful")
+        logger.info("Spotify authorization successful with persistent storage")
         return """
         <h2>✅ Spotify Authorization Successful!</h2>
-        <p>Your tokens have been saved for automatic authentication.</p>
-        <p>Check your logs for environment variables to add to your deployment.</p>
+        <p>Your tokens have been saved persistently and won't expire every 30 minutes!</p>
+        <p>The assistant will now automatically refresh your Spotify tokens as needed.</p>
         <h3>Quick Tests</h3>
         <ul>
             <li><a href="/test-spotify">Test Spotify</a></li>
+            <li><a href="/spotify-status">Check Spotify Status</a></li>
         </ul>
+        <h3>Next Steps</h3>
+        <p>Your Spotify integration is now persistent. The assistant can control your music even after restarts!</p>
         """
     except Exception as e:
         logger.error(f"Error getting Spotify token: {e}")
@@ -455,6 +499,77 @@ def spotify_callback():
 def spotify_callback_alias():
     # Support SPOTIFY_REDIRECT_URI=http://localhost:5000/spotify-callback
     return spotify_callback()
+
+@app.route("/spotify-status")
+def spotify_status():
+    """Check Spotify authentication status and token health"""
+    try:
+        from helpers.token_storage import token_storage
+        
+        # Check session token
+        session_token = session.get("token_info")
+        
+        # Check stored tokens
+        stored_tokens = token_storage.load_spotify_tokens()
+        
+        # Check environment token
+        env_refresh_token = os.getenv("SPOTIFY_REFRESH_TOKEN")
+        
+        # Test current authentication
+        current_token = get_token_info()
+        client = get_spotify_client()
+        
+        status = {
+            "authentication": {
+                "session_token_exists": bool(session_token),
+                "stored_tokens_exist": bool(stored_tokens),
+                "env_refresh_token_exists": bool(env_refresh_token),
+                "current_token_valid": bool(current_token),
+                "spotify_client_ready": bool(client)
+            },
+            "token_details": {}
+        }
+        
+        if current_token:
+            status["token_details"]["expires_at"] = current_token.get("expires_at")
+            status["token_details"]["has_refresh_token"] = bool(current_token.get("refresh_token"))
+        
+        if stored_tokens:
+            status["token_details"]["stored_refresh_token"] = bool(stored_tokens.get("refresh_token"))
+            status["token_details"]["stored_access_token"] = bool(stored_tokens.get("access_token"))
+        
+        # Test API call
+        if client:
+            try:
+                user_info = client.current_user()
+                status["api_test"] = {
+                    "success": True,
+                    "user_id": user_info.get("id"),
+                    "display_name": user_info.get("display_name")
+                }
+            except Exception as e:
+                status["api_test"] = {
+                    "success": False,
+                    "error": str(e)
+                }
+        
+        return status
+        
+    except Exception as e:
+        return {"error": str(e)}, 500
+
+@app.route("/clear-spotify-tokens")
+def clear_spotify_tokens():
+    """Clear all Spotify tokens from session and storage"""
+    from helpers.token_storage import token_storage
+    
+    # Clear session
+    session.pop("token_info", None)
+    
+    # Clear persistent storage
+    token_storage.clear_spotify_tokens()
+    
+    return "✅ All Spotify tokens cleared. Please visit /login to re-authenticate."
 
 @app.route('/webhook', methods=['POST', 'GET'])
 def webhook():
@@ -631,37 +746,100 @@ def send_initial_message():
 # Google Services Endpoints
 @app.route("/google-status")
 def google_status():
-    """Check Google services status"""
+    """Check Google services status with persistent storage integration"""
     from handlers.google_auth import load_credentials, get_credentials_path, validate_credentials_file
+    from helpers.token_storage import token_storage
     
     try:
         creds_path = get_credentials_path()
+        
+        # Check environment tokens
+        env_refresh_token = os.getenv("GOOGLE_REFRESH_TOKEN")
+        env_client_id = os.getenv("GOOGLE_CLIENT_ID")
+        env_client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+        
+        # Check stored tokens
+        stored_tokens = token_storage.load_google_tokens()
+        
+        # Check session tokens
+        session_creds = session.get('google_credentials')
+        
+        # Test current authentication
+        current_creds = load_credentials()
+        
         status = {
+            "authentication": {
+                "credentials_file_exists": bool(creds_path and os.path.exists(creds_path)),
+                "env_tokens_exist": bool(env_refresh_token and env_client_id and env_client_secret),
+                "stored_tokens_exist": bool(stored_tokens and stored_tokens.get('refresh_token')),
+                "session_tokens_exist": bool(session_creds),
+                "current_auth_valid": bool(current_creds and current_creds.valid)
+            },
             "credentials_path": creds_path,
-            "file_exists": bool(creds_path and os.path.exists(creds_path)),
             "env_var_set": bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
         }
         
-        if creds_path:
+        # File validation if exists
+        if creds_path and os.path.exists(creds_path):
             is_valid, result = validate_credentials_file(creds_path)
             status.update({
                 "file_valid": is_valid,
                 "validation_result": result
             })
-            
-            if is_valid:
+        
+        # Token details
+        if stored_tokens:
+            status["stored_token_details"] = {
+                "has_refresh_token": bool(stored_tokens.get('refresh_token')),
+                "has_access_token": bool(stored_tokens.get('access_token')),
+                "has_client_id": bool(stored_tokens.get('client_id')),
+                "has_client_secret": bool(stored_tokens.get('client_secret'))
+            }
+        
+        # Test API access
+        if current_creds:
+            try:
+                from googleapiclient.discovery import build
+                
+                # Test Gmail
                 try:
-                    creds = load_credentials()
-                    status.update({
-                        "credentials_loaded": True,
-                        "has_credentials": creds is not None,
-                        "credential_type": "service_account" if hasattr(creds, 'service_account_email') else "oauth"
-                    })
+                    gmail_service = build('gmail', 'v1', credentials=current_creds)
+                    profile = gmail_service.users().getProfile(userId='me').execute()
+                    status["api_tests"] = status.get("api_tests", {})
+                    status["api_tests"]["gmail"] = {
+                        "success": True,
+                        "email": profile.get('emailAddress')
+                    }
                 except Exception as e:
-                    status.update({
-                        "credentials_loaded": False,
-                        "load_error": str(e)
-                    })
+                    status["api_tests"] = status.get("api_tests", {})
+                    status["api_tests"]["gmail"] = {
+                        "success": False,
+                        "error": str(e)
+                    }
+                
+                # Test Calendar
+                try:
+                    calendar_service = build('calendar', 'v3', credentials=current_creds)
+                    calendar_list = calendar_service.calendarList().list().execute()
+                    status["api_tests"]["calendar"] = {
+                        "success": True,
+                        "calendar_count": len(calendar_list.get('items', []))
+                    }
+                except Exception as e:
+                    status["api_tests"]["calendar"] = {
+                        "success": False,
+                        "error": str(e)
+                    }
+                    
+            except Exception as e:
+                status["api_tests"] = {
+                    "error": f"Failed to test APIs: {str(e)}"
+                }
+        
+        return status
+        
+    except Exception as e:
+        return {"error": str(e)}, 500
         
         return status
     except Exception as e:
@@ -1147,11 +1325,84 @@ def test_spotify():
     except Exception as e:
         return {"error": str(e)}, 500
 
-@app.route("/clear-spotify-tokens")
-def clear_spotify_tokens():
-    """Clear all Spotify tokens"""
-    session.pop("token_info", None)
-    return "✅ Spotify tokens cleared. Please visit /login to re-authenticate."
+@app.route("/test-speech")
+def test_speech():
+    """Test speech functionality (TTS and STT)"""
+    try:
+        from handlers.speech import get_speech_client, get_tts_client, text_to_speech
+        
+        results = {
+            "timestamp": datetime.now().isoformat(),
+            "tests": {}
+        }
+        
+        # Test TTS client initialization
+        try:
+            tts_client = get_tts_client()
+            results["tests"]["tts_client"] = {
+                "success": tts_client is not None,
+                "message": "TTS client initialized" if tts_client else "TTS client not available"
+            }
+        except Exception as e:
+            results["tests"]["tts_client"] = {
+                "success": False,
+                "error": str(e)
+            }
+        
+        # Test STT client initialization
+        try:
+            speech_client = get_speech_client()
+            results["tests"]["stt_client"] = {
+                "success": speech_client is not None,
+                "message": "STT client initialized" if speech_client else "STT client not available"
+            }
+        except Exception as e:
+            results["tests"]["stt_client"] = {
+                "success": False,
+                "error": str(e)
+            }
+        
+        # Test actual TTS if client is available
+        test_text = "Hello, this is a test of the text to speech functionality."
+        try:
+            if results["tests"]["tts_client"]["success"]:
+                audio_file = text_to_speech(test_text)
+                results["tests"]["tts_generation"] = {
+                    "success": audio_file is not None,
+                    "message": f"Generated audio file: {audio_file}" if audio_file else "Failed to generate audio",
+                    "test_text": test_text
+                }
+                
+                # Clean up test file
+                if audio_file and os.path.exists(audio_file):
+                    try:
+                        os.unlink(audio_file)
+                    except:
+                        pass
+            else:
+                results["tests"]["tts_generation"] = {
+                    "success": False,
+                    "message": "Skipped - TTS client not available"
+                }
+        except Exception as e:
+            results["tests"]["tts_generation"] = {
+                "success": False,
+                "error": str(e)
+            }
+        
+        # Configuration check
+        results["configuration"] = {
+            "voice_responses_enabled": os.getenv("ENABLE_VOICE_RESPONSES", "true").lower() == "true",
+            "max_voice_length": int(os.getenv("MAX_VOICE_RESPONSE_LENGTH", "200")),
+            "google_creds_env": bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS")),
+            "has_google_oauth": bool(session.get('google_credentials'))
+        }
+        
+        return results
+        
+    except Exception as e:
+        return {"error": str(e)}, 500
+
 
 # Health and monitoring
 @app.route("/health")

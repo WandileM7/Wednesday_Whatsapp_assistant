@@ -178,6 +178,85 @@ class WeatherService:
         except (KeyError, IndexError) as e:
             logger.error(f"Error formatting forecast data: {e}")
             return "Error formatting weather forecast"
+    
+    def get_weather_by_coordinates(self, lat: float, lon: float) -> str:
+        """Get weather by GPS coordinates"""
+        if not self.is_configured():
+            return "Weather service not configured. Please set OPENWEATHER_API_KEY environment variable."
+        
+        try:
+            # Get current weather
+            weather_url = f"{self.base_url}/weather"
+            weather_params = {
+                'lat': lat,
+                'lon': lon,
+                'appid': self.api_key,
+                'units': 'metric'
+            }
+            
+            weather_response = requests.get(weather_url, params=weather_params, timeout=10)
+            weather_response.raise_for_status()
+            weather_data = weather_response.json()
+            
+            # Get location name from reverse geocoding
+            location_name = weather_data.get('name', f"Location ({lat:.2f}, {lon:.2f})")
+            
+            return self._format_current_weather(weather_data, location_name)
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Weather API request failed: {e}")
+            return f"Failed to get weather information: {str(e)}"
+        except Exception as e:
+            logger.error(f"Weather service error: {e}")
+            return f"Weather service error: {str(e)}"
+    
+    def detect_location_from_message(self, message: str) -> Optional[str]:
+        """Extract location from message text"""
+        import re
+        
+        # Common location patterns
+        patterns = [
+            r"weather in ([A-Za-z\s,]+)",
+            r"weather for ([A-Za-z\s,]+)",
+            r"weather at ([A-Za-z\s,]+)",
+            r"how is the weather in ([A-Za-z\s,]+)",
+            r"what's the weather like in ([A-Za-z\s,]+)"
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, message.lower())
+            if match:
+                location = match.group(1).strip()
+                return location
+        
+        return None
+    
+    def get_smart_weather_response(self, message: str, user_location: Optional[Dict] = None) -> str:
+        """Get intelligent weather response based on message and location"""
+        try:
+            # First try to extract location from message
+            detected_location = self.detect_location_from_message(message)
+            
+            if detected_location:
+                logger.info(f"Detected location from message: {detected_location}")
+                return self.get_current_weather(detected_location)
+            
+            # If user sent location coordinates (WhatsApp location sharing)
+            if user_location and 'latitude' in user_location and 'longitude' in user_location:
+                lat = float(user_location['latitude'])
+                lon = float(user_location['longitude'])
+                logger.info(f"Using shared coordinates: {lat}, {lon}")
+                return self.get_weather_by_coordinates(lat, lon)
+            
+            # Default to asking for location
+            return ("🌤️ I'd be happy to check the weather for you! Please either:\n"
+                   "• Send me your location using WhatsApp's location sharing\n"
+                   "• Tell me the city name (e.g., 'weather in London')\n"
+                   "• Ask like 'What's the weather like in Paris?'")
+            
+        except Exception as e:
+            logger.error(f"Smart weather response error: {e}")
+            return f"❌ Weather service error: {str(e)}"
 
 
 # Global weather service instance
