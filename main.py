@@ -1250,7 +1250,7 @@ def services_overview():
                 "status": "active" if weather_service.is_configured() else "not_configured",
                 "configured": weather_service.is_configured(),
                 "test_endpoint": "/weather?location=Johannesburg",
-                "required_env": "OPENWEATHER_API_KEY"
+                "required_env": "WEATHERAPI_KEY"
             },
             "news": {
                 "status": "active" if news_service.is_configured() else "not_configured",
@@ -2109,7 +2109,7 @@ def quick_setup():
             </code>
             <p><strong>Enhanced Features (Optional):</strong></p>
             <code>
-                OPENWEATHER_API_KEY=your_openweather_key<br>
+                WEATHERAPI_KEY=your_weatherapi_key<br>
                 NEWS_API_KEY=your_newsapi_key
             </code>
         </div>
@@ -2328,8 +2328,8 @@ def auth_dashboard():
                         <div class="auth-details">
                             <div class="auth-row">
                                 <span class="auth-label">Weather API:</span>
-                                <span class="auth-value {'success' if os.getenv('OPENWEATHER_API_KEY') else 'warning'}">
-                                    {'✅ Configured' if os.getenv('OPENWEATHER_API_KEY') else '⚠️ Not Set'}
+                                <span class="auth-value {'success' if os.getenv('WEATHERAPI_KEY') else 'warning'}">
+                                    {'✅ Configured' if os.getenv('WEATHERAPI_KEY') else '⚠️ Not Set'}
                                 </span>
                             </div>
                             <div class="auth-row">
