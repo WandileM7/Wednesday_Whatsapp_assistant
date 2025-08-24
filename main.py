@@ -429,7 +429,8 @@ except Exception as e:
 # Routes
 @app.route("/")
 def home():
-    return jsonify({"status": "online", "services": ["spotify", "gmail", "gemini", "weather", "tasks", "contacts"]})
+    """Redirect to the main authentication dashboard"""
+    return redirect(url_for('auth_dashboard'))
 
 @app.route("/login")
 def spotify_login():
@@ -2116,6 +2117,275 @@ def quick_setup():
     </html>
     """
 
+@app.route("/auth-dashboard")
+def auth_dashboard():
+    """Comprehensive authentication dashboard"""
+    try:
+        from helpers.token_storage import token_storage
+        
+        # Get status of all authentication methods
+        spotify_tokens = token_storage.load_spotify_tokens()
+        google_tokens = token_storage.load_google_tokens()
+        
+        env_spotify_token = os.getenv("SPOTIFY_REFRESH_TOKEN")
+        env_google_token = os.getenv("GOOGLE_REFRESH_TOKEN")
+        
+        session_spotify = session.get("token_info")
+        session_google = session.get("google_credentials")
+        
+        # Test current connections
+        spotify_working = False
+        google_working = False
+        
+        try:
+            test_token = get_token_info()
+            spotify_working = test_token is not None
+        except:
+            pass
+        
+        try:
+            from handlers.google_auth import load_credentials
+            test_creds = load_credentials()
+            google_working = test_creds is not None and test_creds.valid
+        except:
+            pass
+        
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Wednesday Assistant - Authentication Dashboard</title>
+            <style>
+                body {{ 
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    margin: 0; padding: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: #333; min-height: 100vh;
+                }}
+                .container {{ max-width: 1200px; margin: 0 auto; padding: 20px; }}
+                .header {{ text-align: center; color: white; margin-bottom: 40px; }}
+                .auth-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; }}
+                .auth-card {{ 
+                    background: white; border-radius: 15px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+                    transition: transform 0.3s ease; border-left: 5px solid #007bff;
+                }}
+                .auth-card:hover {{ transform: translateY(-5px); }}
+                .service-header {{ display: flex; align-items: center; margin-bottom: 20px; }}
+                .service-icon {{ font-size: 2em; margin-right: 15px; }}
+                .service-title {{ font-size: 1.4em; font-weight: bold; margin: 0; }}
+                .status-indicator {{ 
+                    display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+                    margin-left: 10px;
+                }}
+                .status-connected {{ background: #28a745; }}
+                .status-disconnected {{ background: #dc3545; }}
+                .status-partial {{ background: #ffc107; }}
+                .auth-details {{ margin: 15px 0; }}
+                .auth-row {{ display: flex; justify-content: space-between; margin: 8px 0; }}
+                .auth-label {{ font-weight: 500; color: #666; }}
+                .auth-value {{ font-weight: 600; }}
+                .success {{ color: #28a745; }}
+                .warning {{ color: #ffc107; }}
+                .error {{ color: #dc3545; }}
+                .button {{ 
+                    display: inline-block; padding: 10px 20px; margin: 5px;
+                    background: #007bff; color: white; text-decoration: none;
+                    border-radius: 5px; transition: background 0.3s ease;
+                }}
+                .button:hover {{ background: #0056b3; }}
+                .button.success {{ background: #28a745; }}
+                .button.success:hover {{ background: #1e7e34; }}
+                .button.warning {{ background: #ffc107; color: #212529; }}
+                .button.warning:hover {{ background: #e0a800; }}
+                .button.danger {{ background: #dc3545; }}
+                .button.danger:hover {{ background: #c82333; }}
+                .footer {{ text-align: center; margin-top: 40px; color: white; opacity: 0.8; }}
+                .info-box {{ 
+                    background: #f8f9fa; border-radius: 8px; padding: 15px; margin: 15px 0;
+                    border-left: 4px solid #17a2b8;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>🤖 Wednesday Assistant</h1>
+                    <h2>Authentication Dashboard</h2>
+                    <p>Manage your service connections and authentication status</p>
+                </div>
+                
+                <div class="auth-grid">
+                    <!-- Spotify Authentication Card -->
+                    <div class="auth-card">
+                        <div class="service-header">
+                            <div class="service-icon">🎵</div>
+                            <div class="service-title">Spotify</div>
+                            <div class="status-indicator {'status-connected' if spotify_working else 'status-disconnected'}"></div>
+                        </div>
+                        
+                        <div class="auth-details">
+                            <div class="auth-row">
+                                <span class="auth-label">Status:</span>
+                                <span class="auth-value {'success' if spotify_working else 'error'}">
+                                    {'✅ Connected' if spotify_working else '❌ Not Connected'}
+                                </span>
+                            </div>
+                            <div class="auth-row">
+                                <span class="auth-label">Session Token:</span>
+                                <span class="auth-value {'success' if session_spotify else 'error'}">
+                                    {'✅ Available' if session_spotify else '❌ Missing'}
+                                </span>
+                            </div>
+                            <div class="auth-row">
+                                <span class="auth-label">Stored Token:</span>
+                                <span class="auth-value {'success' if spotify_tokens else 'error'}">
+                                    {'✅ Available' if spotify_tokens else '❌ Missing'}
+                                </span>
+                            </div>
+                            <div class="auth-row">
+                                <span class="auth-label">Environment Token:</span>
+                                <span class="auth-value {'success' if env_spotify_token else 'error'}">
+                                    {'✅ Available' if env_spotify_token else '❌ Missing'}
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <div style="text-align: center;">
+                            <a href="/login" class="button">🔐 Login to Spotify</a>
+                            <a href="/spotify-status" class="button warning">📊 Check Status</a>
+                            <a href="/clear-spotify-tokens" class="button danger">🗑️ Clear Tokens</a>
+                        </div>
+                        
+                        <div class="info-box">
+                            <strong>What this enables:</strong>
+                            <ul style="margin: 5px 0; padding-left: 20px;">
+                                <li>Music playback control</li>
+                                <li>Play songs, albums, playlists</li>
+                                <li>Current song information</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <!-- Google Authentication Card -->
+                    <div class="auth-card">
+                        <div class="service-header">
+                            <div class="service-icon">📧</div>
+                            <div class="service-title">Google Services</div>
+                            <div class="status-indicator {'status-connected' if google_working else 'status-disconnected'}"></div>
+                        </div>
+                        
+                        <div class="auth-details">
+                            <div class="auth-row">
+                                <span class="auth-label">Status:</span>
+                                <span class="auth-value {'success' if google_working else 'error'}">
+                                    {'✅ Connected' if google_working else '❌ Not Connected'}
+                                </span>
+                            </div>
+                            <div class="auth-row">
+                                <span class="auth-label">Session Token:</span>
+                                <span class="auth-value {'success' if session_google else 'error'}">
+                                    {'✅ Available' if session_google else '❌ Missing'}
+                                </span>
+                            </div>
+                            <div class="auth-row">
+                                <span class="auth-label">Stored Token:</span>
+                                <span class="auth-value {'success' if google_tokens else 'error'}">
+                                    {'✅ Available' if google_tokens else '❌ Missing'}
+                                </span>
+                            </div>
+                            <div class="auth-row">
+                                <span class="auth-label">Environment Token:</span>
+                                <span class="auth-value {'success' if env_google_token else 'error'}">
+                                    {'✅ Available' if env_google_token else '❌ Missing'}
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <div style="text-align: center;">
+                            <a href="/google-login" class="button">🔐 Login to Google</a>
+                            <a href="/google-status" class="button warning">📊 Check Status</a>
+                            <a href="/test-google-services" class="button success">🧪 Test Services</a>
+                        </div>
+                        
+                        <div class="info-box">
+                            <strong>What this enables:</strong>
+                            <ul style="margin: 5px 0; padding-left: 20px;">
+                                <li>Email reading and sending</li>
+                                <li>Calendar management</li>
+                                <li>Voice to text and text to speech</li>
+                                <li>Contact management</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <!-- Optional Services Card -->
+                    <div class="auth-card">
+                        <div class="service-header">
+                            <div class="service-icon">🌟</div>
+                            <div class="service-title">Optional Services</div>
+                            <div class="status-indicator status-partial"></div>
+                        </div>
+                        
+                        <div class="auth-details">
+                            <div class="auth-row">
+                                <span class="auth-label">Weather API:</span>
+                                <span class="auth-value {'success' if os.getenv('OPENWEATHER_API_KEY') else 'warning'}">
+                                    {'✅ Configured' if os.getenv('OPENWEATHER_API_KEY') else '⚠️ Not Set'}
+                                </span>
+                            </div>
+                            <div class="auth-row">
+                                <span class="auth-label">News API:</span>
+                                <span class="auth-value {'success' if os.getenv('NEWS_API_KEY') else 'warning'}">
+                                    {'✅ Configured' if os.getenv('NEWS_API_KEY') else '⚠️ Not Set'}
+                                </span>
+                            </div>
+                            <div class="auth-row">
+                                <span class="auth-label">Search API:</span>
+                                <span class="auth-value warning">⚠️ Configure for web search</span>
+                            </div>
+                        </div>
+                        
+                        <div style="text-align: center;">
+                            <a href="/weather?location=London" class="button warning">🌤️ Test Weather</a>
+                            <a href="/news" class="button warning">📰 Test News</a>
+                            <a href="/test-speech" class="button warning">🎙️ Test Speech</a>
+                        </div>
+                        
+                        <div class="info-box">
+                            <strong>To enable these features:</strong>
+                            <ol style="margin: 5px 0; padding-left: 20px; font-size: 0.9em;">
+                                <li>Get API keys from respective services</li>
+                                <li>Add them to your environment variables</li>
+                                <li>Restart the application</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Quick Actions Section -->
+                <div style="margin-top: 40px; text-align: center;">
+                    <h3 style="color: white;">Quick Actions</h3>
+                    <a href="/health" class="button success">📊 System Health</a>
+                    <a href="/services" class="button">🔧 All Services</a>
+                    <a href="/quick-setup" class="button warning">⚡ Quick Setup</a>
+                    <a href="/test-webhook-auth" class="button">📨 Test Webhook</a>
+                </div>
+                
+                <div class="footer">
+                    <p>Wednesday WhatsApp Assistant v2.0 | Enhanced with Persistent Authentication</p>
+                    <p>🔐 Your tokens are stored securely and will persist across restarts</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+    except Exception as e:
+        return f"""
+        <h1>❌ Error Loading Authentication Dashboard</h1>
+        <p>Error: {str(e)}</p>
+        <a href="/quick-setup">← Back to Setup</a>
+        """
+
 # WhatsApp QR Code Routes
 @app.route("/whatsapp-qr")
 def whatsapp_qr():
@@ -2377,56 +2647,7 @@ def whatsapp_status():
         <a href="/quick-setup">← Back to Setup</a>
         """
 
-@app.route("/test-speech")
-def test_speech():
-    """Test speech functionality"""
-    results = {
-        "timestamp": datetime.now().isoformat(),
-        "speech_tests": {}
-    }
-    
-    # Test voice response logic
-    os.environ.setdefault("ENABLE_VOICE_RESPONSES", "true")
-    os.environ.setdefault("MAX_VOICE_RESPONSE_LENGTH", "200")
-    
-    results["speech_tests"]["voice_logic"] = {
-        "user_voice_short": should_respond_with_voice(True, 50),
-        "user_voice_long": should_respond_with_voice(True, 300),
-        "user_text_short": should_respond_with_voice(False, 50),
-        "user_text_long": should_respond_with_voice(False, 300),
-        "settings": {
-            "voice_enabled": os.getenv("ENABLE_VOICE_RESPONSES", "true"),
-            "max_length": os.getenv("MAX_VOICE_RESPONSE_LENGTH", "200")
-        }
-    }
-    
-    # Test TTS client availability
-    try:
-        from handlers.speech import get_tts_client, get_speech_client
-        tts_client = get_tts_client()
-        speech_client = get_speech_client()
-        
-        results["speech_tests"]["clients"] = {
-            "tts_available": tts_client is not None,
-            "stt_available": speech_client is not None
-        }
-    except Exception as e:
-        results["speech_tests"]["clients"] = {
-            "error": str(e)
-        }
-    
-    # Test simple TTS if available
-    try:
-        test_audio = text_to_speech("Hello, this is a test.")
-        if test_audio:
-            cleanup_temp_file(test_audio)
-            results["speech_tests"]["tts_test"] = {"success": True}
-        else:
-            results["speech_tests"]["tts_test"] = {"success": False, "reason": "No audio generated"}
-    except Exception as e:
-        results["speech_tests"]["tts_test"] = {"success": False, "error": str(e)}
-    
-    return jsonify(results)
+
 
 @app.route("/test-conversation-history")
 def test_conversation_history():

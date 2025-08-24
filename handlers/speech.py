@@ -81,29 +81,6 @@ def get_tts_client():
     except Exception as e:
         logger.error(f"Could not initialize TTS client: {e}")
         return None
-            if hasattr(creds, 'scopes') and 'https://www.googleapis.com/auth/cloud-platform' in (creds.scopes or []):
-                tts_client = texttospeech.TextToSpeechClient(credentials=creds)
-                # Test the client with a quick call
-                try:
-                    # This is a minimal test - just checking if we can create a synthesis input
-                    texttospeech.SynthesisInput(text="test")
-                    logger.info("TTS client initialized successfully with OAuth credentials")
-                    return tts_client
-                except Exception as test_e:
-                    logger.warning(f"TTS client test failed: {test_e}")
-            else:
-                logger.warning("OAuth credentials don't include cloud-platform scope")
-    except Exception as e:
-        logger.warning(f"Could not use existing Google credentials for TTS API: {e}")
-    
-    # Fallback to environment credentials
-    try:
-        tts_client = texttospeech.TextToSpeechClient()
-        logger.info("TTS client initialized with application default credentials")
-        return tts_client
-    except Exception as e:
-        logger.error(f"Could not initialize TTS client: {e}")
-        return None
 
 def download_voice_message(voice_url: str, session: str) -> Optional[str]:
     """Download voice message from WAHA and return local file path"""
