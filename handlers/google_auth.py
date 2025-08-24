@@ -47,41 +47,80 @@ def initialize_google_auto_auth():
         return False
 
 def load_tokens_from_env():
-    """Load Google tokens from environment variables"""
+    """Load Google tokens from environment variables with persistent storage fallback"""
     try:
+        # First try environment variables
         refresh_token = os.getenv('GOOGLE_REFRESH_TOKEN')
-        if not refresh_token:
-            logger.debug("No GOOGLE_REFRESH_TOKEN found in environment")
-            return None
+        if refresh_token:
+            creds_info = {
+                'refresh_token': refresh_token,
+                'token': os.getenv('GOOGLE_ACCESS_TOKEN'),
+                'client_id': os.getenv('GOOGLE_CLIENT_ID'),
+                'client_secret': os.getenv('GOOGLE_CLIENT_SECRET'),
+                'token_uri': 'https://oauth2.googleapis.com/token',
+                'scopes': SCOPES
+            }
             
-        creds_info = {
-            'refresh_token': refresh_token,
-            'token': os.getenv('GOOGLE_ACCESS_TOKEN'),
-            'client_id': os.getenv('GOOGLE_CLIENT_ID'),
-            'client_secret': os.getenv('GOOGLE_CLIENT_SECRET'),
-            'token_uri': 'https://oauth2.googleapis.com/token',
-            'scopes': SCOPES
-        }
+            # Validate that we have the minimum required info
+            if all([creds_info['client_id'], creds_info['client_secret']]):
+                creds = Credentials.from_authorized_user_info(creds_info, SCOPES)
+                
+                # Refresh if needed
+                if creds.expired and creds.refresh_token:
+                    logger.info("Refreshing Google credentials from environment...")
+                    creds.refresh(Request())
+                    os.environ['GOOGLE_ACCESS_TOKEN'] = creds.token
+                    logger.info("Google credentials refreshed successfully")
+                    
+                return creds
+            else:
+                logger.warning("Missing client_id or client_secret in environment variables")
         
-        # Validate that we have the minimum required info
-        if not all([creds_info['client_id'], creds_info['client_secret']]):
-            logger.warning("Missing client_id or client_secret in environment variables")
-            return None
-        
-        creds = Credentials.from_authorized_user_info(creds_info, SCOPES)
-        
-        # Refresh if needed
-        if creds.expired and creds.refresh_token:
-            logger.info("Refreshing Google credentials from environment...")
-            creds.refresh(Request())
-            # Update environment with new token
-            os.environ['GOOGLE_ACCESS_TOKEN'] = creds.token
-            logger.info("Google credentials refreshed successfully")
+        # Fallback to persistent storage
+        try:
+            from helpers.token_storage import token_storage
+            stored_tokens = token_storage.load_google_tokens()
             
-        return creds
+            if stored_tokens and stored_tokens.get('refresh_token'):
+                logger.info("Trying stored Google tokens...")
+                creds_info = {
+                    'refresh_token': stored_tokens['refresh_token'],
+                    'token': stored_tokens.get('access_token'),
+                    'client_id': stored_tokens.get('client_id'),
+                    'client_secret': stored_tokens.get('client_secret'),
+                    'token_uri': 'https://oauth2.googleapis.com/token',
+                    'scopes': SCOPES
+                }
+                
+                if all([creds_info['client_id'], creds_info['client_secret']]):
+                    creds = Credentials.from_authorized_user_info(creds_info, SCOPES)
+                    
+                    # Refresh if needed
+                    if creds.expired and creds.refresh_token:
+                        logger.info("Refreshing Google credentials from storage...")
+                        creds.refresh(Request())
+                        # Update storage with new token
+                        token_storage.save_google_tokens(
+                            refresh_token=creds.refresh_token,
+                            access_token=creds.token,
+                            client_id=creds.client_id,
+                            client_secret=creds.client_secret
+                        )
+                        logger.info("Google credentials refreshed and updated in storage")
+                        
+                    return creds
+                else:
+                    logger.warning("Missing client_id or client_secret in stored tokens")
+            else:
+                logger.debug("No stored Google tokens available")
+        except Exception as e:
+            logger.warning(f"Failed to load from storage: {e}")
+        
+        logger.debug("No valid Google tokens found in environment or storage")
+        return None
         
     except Exception as e:
-        logger.error(f"Failed to load Google tokens from environment: {e}")
+        logger.error(f"Failed to load Google tokens: {e}")
         return None
 
 def get_credentials_path():
@@ -353,19 +392,41 @@ def oauth2callback():
         global _cached_credentials
         _cached_credentials = credentials
         
+        # Save tokens persistently using TokenStorage
+        try:
+            from helpers.token_storage import token_storage
+            success = token_storage.save_google_tokens(
+                refresh_token=credentials.refresh_token,
+                access_token=credentials.token,
+                client_id=credentials.client_id,
+                client_secret=credentials.client_secret
+            )
+            
+            if success:
+                logger.info("✅ Google tokens saved persistently")
+            else:
+                logger.warning("Failed to save Google tokens persistently")
+        except Exception as e:
+            logger.error(f"Error saving Google tokens to storage: {e}")
+        
         # Clean up session
         session.pop('state', None)
         session.pop('oauth_scopes', None)
         
-        logger.info("OAuth flow completed successfully")
+        logger.info("OAuth flow completed successfully with persistent storage")
         return """
         <h2>✅ Google Authorization Successful!</h2>
-        <p>Google services are now authenticated and ready to use.</p>
-        <h3>Next Steps</h3>
+        <p>Google services are now authenticated and tokens saved persistently!</p>
+        <p>Your Google authentication will persist across app restarts.</p>
+        <h3>Quick Tests</h3>
         <ul>
-            <li><a href="/save-current-google-tokens">Save Tokens for Auto-Auth</a></li>
             <li><a href="/test-gmail">Test Gmail</a></li>
             <li><a href="/test-google-services">Test All Google Services</a></li>
+            <li><a href="/google-status">Check Google Status</a></li>
+        </ul>
+        <h3>Next Steps</h3>
+        <ul>
+            <li><a href="/save-current-google-tokens">Save Tokens for Environment Setup</a></li>
         </ul>
         """
     except Exception as e:

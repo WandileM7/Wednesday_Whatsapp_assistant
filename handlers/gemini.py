@@ -267,6 +267,38 @@ FUNCTIONS = [
             "properties": {},
             "required": []
         }
+    },
+    {
+        "name": "search_web",
+        "description": "Search the internet for current information on any topic",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query for the web"},
+                "num_results": {"type": "integer", "description": "Number of results (1-5)"}
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "get_calendar_summary",
+        "description": "Get a summary of upcoming calendar events",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "days_ahead": {"type": "integer", "description": "Number of days to look ahead (1-30)"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "get_smart_email_brief",
+        "description": "Get an intelligent summary of recent emails",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
     }
 
 ]
@@ -482,6 +514,24 @@ def execute_function(call: dict) -> str:
         
         if name == "get_contact_summary":
             return contact_manager.get_contact_summary()
+        
+        # Web search function
+        if name == "search_web":
+            from handlers.search import web_search
+            return web_search.search_and_summarize(
+                params["query"], 
+                params.get("num_results", 3)
+            )
+        
+        # Enhanced calendar functions
+        if name == "get_calendar_summary":
+            from handlers.calendar import get_smart_calendar_brief
+            return get_smart_calendar_brief()
+        
+        # Enhanced email functions
+        if name == "get_smart_email_brief":
+            from handlers.gmail import get_smart_email_brief
+            return get_smart_email_brief()
 
         return "I couldn't handle that function call."
     except Exception as e:

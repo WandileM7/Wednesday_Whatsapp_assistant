@@ -297,3 +297,107 @@ def search_events(query, max_results=10):
         logger.error(f"Error searching events: {e}")
         return f"❌ Error searching events: {str(e)}"
 
+def get_calendar_summary(days_ahead=7):
+    """Get an intelligent summary of upcoming calendar events"""
+    try:
+        service = get_calendar_service()
+        
+        # Get events for the next week
+        now = datetime.utcnow()
+        end_time = now + timedelta(days=days_ahead)
+        
+        events_result = service.events().list(
+            calendarId='primary',
+            timeMin=now.isoformat() + 'Z',
+            timeMax=end_time.isoformat() + 'Z',
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
+        
+        events = events_result.get('items', [])
+        
+        if not events:
+            return f"📅 No events scheduled for the next {days_ahead} days."
+        
+        # Organize events by day
+        events_by_day = {}
+        for event in events:
+            start = event['start'].get('dateTime', event['start'].get('date'))
+            summary = event.get('summary', 'No title')
+            description = event.get('description', '')
+            location = event.get('location', '')
+            
+            try:
+                if 'T' in start:
+                    dt = datetime.fromisoformat(start.replace('Z', '+00:00'))
+                    day_key = dt.strftime('%A, %B %d')
+                    time_str = dt.strftime('%H:%M')
+                else:
+                    # All-day event
+                    dt = datetime.fromisoformat(start)
+                    day_key = dt.strftime('%A, %B %d')
+                    time_str = "All day"
+                
+                if day_key not in events_by_day:
+                    events_by_day[day_key] = []
+                
+                event_info = {
+                    'time': time_str,
+                    'summary': summary,
+                    'description': description,
+                    'location': location
+                }
+                events_by_day[day_key].append(event_info)
+                
+            except Exception as e:
+                logger.warning(f"Error parsing event time: {e}")
+                continue
+        
+        # Format the summary
+        summary_parts = [f"📅 Calendar Summary (Next {days_ahead} days):\n"]
+        
+        for day, day_events in events_by_day.items():
+            summary_parts.append(f"\n🗓️ {day}")
+            for event in day_events:
+                event_line = f"  • {event['time']} - {event['summary']}"
+                if event['location']:
+                    event_line += f" 📍 {event['location']}"
+                summary_parts.append(event_line)
+        
+        # Add quick stats
+        total_events = len(events)
+        days_with_events = len(events_by_day)
+        summary_parts.append(f"\n📊 Summary: {total_events} events across {days_with_events} days")
+        
+        return "\n".join(summary_parts)
+        
+    except Exception as e:
+        logger.error(f"Error getting calendar summary: {e}")
+        return f"❌ Error getting calendar summary: {str(e)}"
+
+def get_smart_calendar_brief():
+    """Get an AI-friendly calendar brief for the assistant"""
+    try:
+        # Get raw calendar data
+        calendar_summary = get_calendar_summary(7)
+        today_events = get_today_events()
+        
+        # Create a simple intelligent summary without depending on gemini
+        summary_parts = ["📅 Smart Calendar Brief:\n"]
+        
+        # Today's focus
+        if "No events" not in today_events:
+            summary_parts.append("🔥 Today's Focus:")
+            summary_parts.append(today_events)
+            summary_parts.append("")
+        
+        # Weekly overview
+        summary_parts.append("📊 This Week:")
+        summary_parts.append(calendar_summary)
+        
+        return "\n".join(summary_parts)
+        
+    except Exception as e:
+        logger.error(f"Error generating smart calendar brief: {e}")
+        # Fallback to simple summary
+        return get_calendar_summary(7)
