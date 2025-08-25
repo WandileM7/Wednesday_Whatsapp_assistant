@@ -275,7 +275,7 @@ def get_token_info():
     if not token_info:
         # Try persistent storage first
         stored_tokens = token_storage.load_spotify_tokens()
-        if stored_tokens and stored_tokens.get('refresh_token'):
+        if (stored_tokens and stored_tokens.get('refresh_token')):
             try:
                 sp_oauth = make_spotify_oauth()
                 token_info = sp_oauth.refresh_access_token(stored_tokens['refresh_token'])
@@ -1520,46 +1520,66 @@ def send_message(phone, text):
         logger.error(f"WAHA send_message error: {e}")
         return False
 
-def send_voice_message(phone, text):
-    """Send voice message using TTS"""
+def send_voice_message(phone: str, text: str) -> bool:
+    """Send voice message using text-to-speech"""
     try:
         # Generate audio file from text
         audio_file = text_to_speech(text)
         if not audio_file:
-            # Fallback to text message
+            logger.warning("TTS failed, falling back to text message")
             return send_message(phone, text)
         
         # Send via WAHA voice endpoint
+        waha_url = os.getenv("WAHA_URL")
         if not waha_url:
             logger.warning("WAHA URL not configured")
             cleanup_temp_file(audio_file)
             return False
         
-        base_url = _waha_base()
+        # Extract base URL for voice endpoint
+        if "/api/" in waha_url:
+            base_url = waha_url.split("/api/")[0]
+        else:
+            base_url = waha_url.rstrip("/")
+        
         voice_url = f"{base_url}/api/sendVoice"
         
+        # Prepare form data
         with open(audio_file, 'rb') as f:
-            files = {'audio': f}
+            files = {'audio': ('voice.ogg', f, 'audio/ogg')}
             data = {'chatId': phone}
-            headers = _waha_headers(is_json=False)
+            headers = {}
             
-            response = requests.post(voice_url, files=files, data=data, headers=headers, timeout=30)
+            # Add API key if configured
+            waha_api_key = os.getenv("WAHA_API_KEY")
+            if waha_api_key:
+                headers['X-Api-Key'] = waha_api_key
+            
+            response = requests.post(
+                voice_url, 
+                files=files, 
+                data=data, 
+                headers=headers, 
+                timeout=30
+            )
         
+        # Clean up temp file
         cleanup_temp_file(audio_file)
         
         if response.status_code == 200:
-            logger.info(f"Voice message sent to {phone}")
+            logger.info(f"🎤 Voice message sent to {phone}")
             return True
         else:
-            logger.error(f"Voice send failed: {response.status_code}")
-            # Fallback to text
+            logger.error(f"Voice send failed: {response.status_code} - {response.text}")
+            # Fallback to text message
             return send_message(phone, text)
             
     except Exception as e:
         logger.error(f"Voice message error: {e}")
-        if audio_file:
+        if 'audio_file' in locals():
             cleanup_temp_file(audio_file)
-        return send_message(phone, text)  # Fallback to text
+        # Fallback to text message
+        return send_message(phone, text)
 
 @app.route("/save-current-google-tokens")
 def save_current_google_tokens():

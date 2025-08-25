@@ -172,28 +172,38 @@ async function sendMessage(chatId, text) {
 
 // Forward message to webhook
 async function forwardToWebhook(message) {
+    if (!WEBHOOK_URL) return;
+
     try {
+        // Enhanced message object for voice messages
         const webhookData = {
             event: 'message',
             session: 'default',
-            payload: message
+            payload: {
+                id: message.id._serialized || message.id,
+                from: message.from,
+                to: message.to,
+                body: message.body,
+                type: message.type,
+                timestamp: message.timestamp,
+                // Voice message specific fields
+                hasMedia: message.hasMedia,
+                mediaUrl: message.hasMedia ? `/api/media/${message.id._serialized}` : null,
+                mimetype: message.hasMedia ? message._data.mimetype : null
+            }
         };
 
-        if (WEBHOOK_URL) {
-            const response = await fetch(WEBHOOK_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(webhookData)
-            });
+        const response = await fetch(WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(webhookData)
+        });
 
-            if (!response.ok) {
-                console.warn(`⚠️ Webhook failed: ${response.status}`);
-            }
+        if (!response.ok) {
+            console.error(`❌ Webhook failed: ${response.status}`);
         }
     } catch (error) {
-        console.error('❌ Webhook error:', error.message);
+        console.error('❌ Webhook error:', error);
     }
 }
 
@@ -451,9 +461,7 @@ process.on('SIGTERM', async () => {
     process.exit(0);
 });
 
-
 const { MessageMedia } = require('whatsapp-web.js');
-
 const multer = require('multer');
 const upload = multer({ dest: 'uploads/' });
 
@@ -473,23 +481,58 @@ app.post('/api/sendVoice', upload.single('audio'), async (req, res) => {
         if (ENABLE_REAL_WHATSAPP && whatsappClient) {
             // Production mode - send real voice message
             const media = MessageMedia.fromFilePath(audioFile.path);
-            await whatsappClient.sendMessage(chatId, media, { sendAudioAsVoice: true });
+            media.mimetype = 'audio/ogg; codecs=opus';
+            media.filename = null; // Remove filename to send as voice note
             
-            // Clean up uploaded file
-            fs.unlinkSync(audioFile.path);
+            await whatsappClient.sendMessage(chatId, media, { 
+                sendAudioAsVoice: true 
+            });
             
+            console.log(`🎤 Voice message sent to ${chatId}`);
             res.json({ success: true, message: 'Voice message sent successfully' });
         } else {
             // Mock mode - simulate voice sending
-            console.log(`🎤 Mock sending voice message to ${chatId}: ${audioFile.originalname}`);
-            fs.unlinkSync(audioFile.path); // Clean up
+            console.log(`🎤 Mock sending voice message to ${chatId}: ${audioFile.originalname} (${audioFile.size} bytes)`);
             res.json({ success: true, message: 'Voice message simulated' });
         }
     } catch (error) {
         console.error('❌ Send voice error:', error);
-        if (fs.existsSync(audioFile.path)) {
+        res.status(500).json({ error: error.message });
+    } finally {
+        // Clean up uploaded file
+        if (audioFile && audioFile.path && fs.existsSync(audioFile.path)) {
             fs.unlinkSync(audioFile.path);
         }
+    }
+});
+
+// Add media download endpoint for voice messages
+app.get('/api/media/:messageId', async (req, res) => {
+    const { messageId } = req.params;
+    
+    try {
+        if (ENABLE_REAL_WHATSAPP && whatsappClient) {
+            // Find the message and download media
+            const message = await whatsappClient.getMessageById(messageId);
+            if (message && message.hasMedia) {
+                const media = await message.downloadMedia();
+                
+                res.set({
+                    'Content-Type': media.mimetype,
+                    'Content-Disposition': 'attachment; filename="voice.ogg"'
+                });
+                
+                const buffer = Buffer.from(media.data, 'base64');
+                res.send(buffer);
+            } else {
+                res.status(404).json({ error: 'Media not found' });
+            }
+        } else {
+            // Mock mode - return mock audio data
+            res.status(200).json({ message: 'Mock media download - no actual file' });
+        }
+    } catch (error) {
+        console.error('❌ Media download error:', error);
         res.status(500).json({ error: error.message });
     }
 });
