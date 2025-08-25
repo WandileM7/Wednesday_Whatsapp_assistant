@@ -177,10 +177,13 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
     try:
         # Configure streaming synthesis with Sulafat voice (Female)
         # Based on Google Cloud TTS, try Sulafat voice name directly as specified
-        streaming_config = texttospeech.StreamingSynthesizeConfig(
-            voice=texttospeech.VoiceSelectionParams(
-                name="Sulafat",  # Use Sulafat voice as requested (Female)
                 language_code=language_code,
+            ),
+            audio_config=texttospeech.AudioConfig(
+                audio_encoding=texttospeech.AudioEncoding.MP3,
+                speaking_rate=1.0,  # Default speaking rate; adjust as needed
+                pitch=0.0,          # Default pitch; adjust as needed
+                volume_gain_db=0.0  # Default volume; adjust as needed
             )
         )
         
