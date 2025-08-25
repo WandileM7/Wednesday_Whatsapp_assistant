@@ -184,7 +184,12 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
             pitch=0.0,          # Default pitch; adjust as needed
             volume_gain_db=0.0  # Default volume; adjust as needed
         )
-        
+        streaming_config = texttospeech.StreamingSynthesizeConfig(
+            voice=texttospeech.VoiceSelectionParams(
+                name="en-US-Chirp3-HD-Sulafat",
+                language_code="en-US",
+            )
+        )
         # Set the config for the stream - first request must contain config
         config_request = texttospeech.StreamingSynthesizeRequest(
             streaming_config=streaming_config
