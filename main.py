@@ -1520,11 +1520,9 @@ def send_message(phone, text):
         logger.error(f"WAHA send_message error: {e}")
         return False
 
-def send_voice_message(phone, text):
-    """Send voice message using TTS"""
-    audio_file = None
 def send_voice_message(phone: str, text: str) -> bool:
     """Send voice message using text-to-speech"""
+    audio_file = None
     try:
         # Generate audio file from text (now in MP3 format)
         audio_file = text_to_speech(text)
@@ -1549,9 +1547,9 @@ def send_voice_message(phone: str, text: str) -> bool:
         
         voice_url = f"{base_url}/api/sendVoice"
         
-        # Prepare form data
+        # Prepare form data with correct MP3 format
         with open(audio_file, 'rb') as f:
-            files = {'audio': ('voice.ogg', f, 'audio/ogg')}
+            files = {'audio': ('voice.mp3', f, 'audio/mpeg')}
             data = {'chatId': phone}
             headers = {}
             
@@ -1569,24 +1567,21 @@ def send_voice_message(phone: str, text: str) -> bool:
                 timeout=30
             )
         
-        # Clean up temp file
-        cleanup_temp_file(audio_file)
-        
         if response.status_code == 200:
             logger.info(f"✅ Voice message (MP3) sent successfully to {phone}")
             logger.info(f"🎤 Voice message sent to {phone}")
+            cleanup_temp_file(audio_file)
             return True
         else:
             logger.error(f"❌ Voice send failed with status {response.status_code}: {response.text}")
             # Try to send as a regular MP3 file attachment instead of voice message
-            return send_audio_file(phone, audio_file, text)
-            logger.error(f"Voice send failed: {response.status_code} - {response.text}")
-            # Fallback to text message
-            return send_message(phone, text)
+            fallback_result = send_audio_file(phone, audio_file, text)
+            cleanup_temp_file(audio_file)
+            return fallback_result
             
     except Exception as e:
         logger.error(f"Voice message error: {e}")
-        if 'audio_file' in locals():
+        if audio_file:
             cleanup_temp_file(audio_file)
         # Fallback to text message
         return send_message(phone, text)
