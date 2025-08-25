@@ -179,7 +179,7 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
         # Based on Google Cloud TTS, try Sulafat voice name directly as specified
         language_code=language_code,
         audio_config=texttospeech.AudioConfig(
-            audio_encoding=texttospeech.AudioEncoding.MP3,
+            audio_encoding=texttospeech.AudioEncoding.OGG_OPUS,
             speaking_rate=1.0,  # Default speaking rate; adjust as needed
             pitch=0.0,          # Default pitch; adjust as needed
             volume_gain_db=0.0  # Default volume; adjust as needed
