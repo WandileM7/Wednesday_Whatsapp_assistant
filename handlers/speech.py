@@ -93,8 +93,19 @@ def download_voice_message(voice_url: str, session: str) -> Optional[str]:
         response = requests.get(voice_url, headers=headers, timeout=30)
         response.raise_for_status()
         
+        # Determine file extension based on content type or URL
+        content_type = response.headers.get('content-type', '').lower()
+        if 'mp3' in content_type or voice_url.lower().endswith('.mp3'):
+            suffix = '.mp3'
+        elif 'ogg' in content_type or voice_url.lower().endswith('.ogg'):
+            suffix = '.ogg'
+        elif 'opus' in content_type:
+            suffix = '.ogg'  # OGG Opus format
+        else:
+            suffix = '.ogg'  # Default fallback for WhatsApp voice messages
+        
         # Create temporary file for audio
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.ogg') as temp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
             temp_file.write(response.content)
             return temp_file.name
             
@@ -114,10 +125,19 @@ def speech_to_text(audio_file_path: str) -> Optional[str]:
         with open(audio_file_path, 'rb') as audio_file:
             content = audio_file.read()
         
+        # Determine encoding based on file extension
+        if audio_file_path.lower().endswith('.mp3'):
+            encoding = speech.RecognitionConfig.AudioEncoding.MP3
+        elif audio_file_path.lower().endswith('.ogg'):
+            encoding = speech.RecognitionConfig.AudioEncoding.OGG_OPUS
+        else:
+            # Default to OGG_OPUS for WhatsApp voice messages
+            encoding = speech.RecognitionConfig.AudioEncoding.OGG_OPUS
+        
         # Configure recognition
         audio = speech.RecognitionAudio(content=content)
         config = speech.RecognitionConfig(
-            encoding=speech.RecognitionConfig.AudioEncoding.OGG_OPUS,
+            encoding=encoding,
             sample_rate_hertz=16000,  # WhatsApp voice messages are typically 16kHz
             language_code="en-US",
             alternative_language_codes=["en-GB", "es-ES", "fr-FR"],  # Multi-language support
@@ -165,9 +185,9 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
             name=f"{language_code}-Standard-C"  # Use a pleasant female voice
         )
         
-        # Configure audio output
+        # Configure audio output - using MP3 format for better WhatsApp compatibility
         audio_config = texttospeech.AudioConfig(
-            audio_encoding=texttospeech.AudioEncoding.OGG_OPUS,
+            audio_encoding=texttospeech.AudioEncoding.MP3,
             speaking_rate=1.0,
             pitch=0.0,
             volume_gain_db=0.0
@@ -180,10 +200,10 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
             audio_config=audio_config
         )
         
-        # Save audio to temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.ogg') as temp_file:
+        # Save audio to temporary file with MP3 extension
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as temp_file:
             temp_file.write(response.audio_content)
-            logger.info(f"Generated speech audio file: {temp_file.name}")
+            logger.info(f"Generated speech audio file (MP3): {temp_file.name}")
             return temp_file.name
             
     except Exception as e:
