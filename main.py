@@ -1520,19 +1520,17 @@ def send_message(phone, text):
         logger.error(f"WAHA send_message error: {e}")
         return False
 
-def send_voice_message(phone, text):
-    """Send voice message using TTS"""
-    audio_file = None
 def send_voice_message(phone: str, text: str) -> bool:
     """Send voice message using text-to-speech"""
+    audio_file = None
     try:
-        # Generate audio file from text (now in MP3 format)
+        # Generate audio file from text (now in OGG_OPUS format)
         audio_file = text_to_speech(text)
         if not audio_file:
             logger.warning("TTS failed, falling back to text message")
             return send_message(phone, text)
         
-        logger.info(f"Generated MP3 audio file: {audio_file}")
+        logger.info(f"Generated OGG_OPUS audio file: {audio_file}")
         
         # Send via WAHA voice endpoint
         waha_url = os.getenv("WAHA_URL")
@@ -1549,7 +1547,7 @@ def send_voice_message(phone: str, text: str) -> bool:
         
         voice_url = f"{base_url}/api/sendVoice"
         
-        # Prepare form data
+        # Prepare form data with correct OGG_OPUS format
         with open(audio_file, 'rb') as f:
             files = {'audio': ('voice.ogg', f, 'audio/ogg')}
             data = {'chatId': phone}
@@ -1560,7 +1558,7 @@ def send_voice_message(phone: str, text: str) -> bool:
             if waha_api_key:
                 headers['X-Api-Key'] = waha_api_key
             
-            logger.info(f"Attempting to send MP3 voice message to {phone} via {voice_url}")
+            logger.info(f"Attempting to send OGG_OPUS voice message to {phone} via {voice_url}")
             response = requests.post(
                 voice_url, 
                 files=files, 
@@ -1569,24 +1567,21 @@ def send_voice_message(phone: str, text: str) -> bool:
                 timeout=30
             )
         
-        # Clean up temp file
-        cleanup_temp_file(audio_file)
-        
         if response.status_code == 200:
-            logger.info(f"✅ Voice message (MP3) sent successfully to {phone}")
+            logger.info(f"✅ Voice message (OGG_OPUS) sent successfully to {phone}")
             logger.info(f"🎤 Voice message sent to {phone}")
+            cleanup_temp_file(audio_file)
             return True
         else:
             logger.error(f"❌ Voice send failed with status {response.status_code}: {response.text}")
-            # Try to send as a regular MP3 file attachment instead of voice message
-            return send_audio_file(phone, audio_file, text)
-            logger.error(f"Voice send failed: {response.status_code} - {response.text}")
-            # Fallback to text message
-            return send_message(phone, text)
+            # Try to send as a regular OGG file attachment instead of voice message
+            fallback_result = send_audio_file(phone, audio_file, text)
+            cleanup_temp_file(audio_file)
+            return fallback_result
             
     except Exception as e:
         logger.error(f"Voice message error: {e}")
-        if 'audio_file' in locals():
+        if audio_file:
             cleanup_temp_file(audio_file)
         # Fallback to text message
         return send_message(phone, text)
@@ -1612,7 +1607,7 @@ def send_audio_file(phone, audio_file_path, original_text):
             }
             headers = _waha_headers(is_json=False)
             
-            logger.info(f"Attempting to send MP3 file attachment to {phone}")
+            logger.info(f"Attempting to send OGG file attachment to {phone}")
             response = requests.post(media_url, files=files, data=data, headers=headers, timeout=30)
         
         if response.status_code == 200:

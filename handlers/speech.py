@@ -176,9 +176,7 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
     
     try:
         # Configure streaming synthesis with Sulafat voice (Female)
-        # Based on Google Cloud TTS, try Sulafat voice name directly as specified
-        language_code=language_code,
-        audio_config=texttospeech.AudioConfig(
+        audio_config = texttospeech.AudioConfig(
             audio_encoding=texttospeech.AudioEncoding.OGG_OPUS,
             speaking_rate=1.0,  # Default speaking rate; adjust as needed
             pitch=0.0,          # Default pitch; adjust as needed
@@ -187,8 +185,9 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
         streaming_config = texttospeech.StreamingSynthesizeConfig(
             voice=texttospeech.VoiceSelectionParams(
                 name="en-US-Chirp3-HD-Sulafat",
-                language_code="en-US",
-            )
+                language_code=language_code,
+            ),
+            audio_config=audio_config
         )
         # Set the config for the stream - first request must contain config
         config_request = texttospeech.StreamingSynthesizeRequest(
@@ -220,8 +219,8 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
             logger.error("No audio content received from streaming synthesis")
             return None
         
-        # Save audio to temporary file with MP3 extension
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as temp_file:
+        # Save audio to temporary file with OGG extension
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.ogg') as temp_file:
             temp_file.write(audio_content)
             logger.info(f"Generated streaming speech audio with Sulafat voice: {temp_file.name}, size: {len(audio_content)} bytes, chunks: {chunk_count}")
             return temp_file.name
