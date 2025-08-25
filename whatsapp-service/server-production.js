@@ -33,85 +33,7 @@ async function initializeClient() {
     if (ENABLE_REAL_WHATSAPP) {
         // Production mode with real WhatsApp Web.js
         try {
-            const { Client, LocalAuth } = require('whatsapp-web.js');
-            const qrcode = require('qrcode-terminal');
-            
-            whatsappClient = new Client({
-                authStrategy: new LocalAuth({
-                    dataPath: SESSION_PATH
-                }),
-                puppeteer: {
-                    headless: process.env.PUPPETEER_HEADLESS !== 'false',
-                    args: (process.env.PUPPETEER_ARGS || '--no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage').split(',')
-                }
-            });
-
-            // QR Code generation
-            whatsappClient.on('qr', (qr) => {
-                console.log('📱 QR Code received for WhatsApp authentication');
-                qrCodeData = qr;
-                lastQRTime = new Date();
-                
-                if (process.env.SHOW_QR !== 'false') {
-                    qrcode.generate(qr, { small: true });
-                }
-            });
-
-            // Client ready
-            whatsappClient.on('ready', () => {
-                console.log('✅ WhatsApp client is ready!');
-                isClientReady = true;
-                qrCodeData = null;
-            });
-
-            // Authentication success
-            whatsappClient.on('authenticated', () => {
-                console.log('🔐 Authenticated successfully');
-            });
-
-            // Authentication failure
-            whatsappClient.on('auth_failure', (msg) => {
-                console.error('❌ Authentication failed:', msg);
-                isClientReady = false;
-            });
-
-            // Client disconnected
-            whatsappClient.on('disconnected', (reason) => {
-                console.log('📴 Client disconnected:', reason);
-                isClientReady = false;
-                qrCodeData = null;
-                
-                // Restart client after disconnection
-                setTimeout(() => {
-                    console.log('🔄 Restarting client...');
-                    initializeClient();
-                }, 5000);
-            });
-
-            // Message received
-            whatsappClient.on('message', async (message) => {
-                if (WEBHOOK_EVENTS.includes('message') && WEBHOOK_URL) {
-                    await forwardToWebhook({
-                        id: message.id._serialized,
-                        from: message.from,
-                        to: message.to,
-                        body: message.body,
-                        type: message.type,
-                        timestamp: message.timestamp,
-                        fromMe: message.fromMe,
-                        hasMedia: message.hasMedia
-                    });
-                }
-            });
-
-            // Initialize the client with error handling
-            try {
-                await whatsappClient.initialize();
-            } catch (initError) {
-                console.error('❌ Failed to initialize client:', initError.message);
-                throw initError;
-            }
-            
+            await initializeRealClient();
         } catch (error) {
             console.error('❌ Failed to initialize WhatsApp client:', error.message);
             console.log('🔄 Falling back to mock mode...');
@@ -175,36 +97,138 @@ async function forwardToWebhook(message) {
     if (!WEBHOOK_URL) return;
 
     try {
-        // Enhanced message object for voice messages
-        const webhookData = {
-            event: 'message',
-            session: 'default',
+        // Ensure message object has required properties with fallbacks
+        const webhookPayload = {
             payload: {
-                id: message.id._serialized || message.id,
-                from: message.from,
-                to: message.to,
-                body: message.body,
-                type: message.type,
-                timestamp: message.timestamp,
-                // Voice message specific fields
-                hasMedia: message.hasMedia,
-                mediaUrl: message.hasMedia ? `/api/media/${message.id._serialized}` : null,
-                mimetype: message.hasMedia ? message._data.mimetype : null
+                id: message.id || 'unknown',
+                from: message.from || '',
+                to: message.to || '',
+                body: message.body || '',
+                type: message.type || 'text',
+                timestamp: message.timestamp || Date.now(),
+                fromMe: message.fromMe || false,
+                hasMedia: message.hasMedia || false,
+                // Add media properties with safe defaults
+                mediaKey: message.mediaKey || null,
+                mimetype: message.mimetype || null,
+                data: message.data || null,
+                filename: message.filename || null,
+                caption: message.caption || null
             }
         };
 
         const response = await fetch(WEBHOOK_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(webhookData)
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(webhookPayload)
         });
 
-        if (!response.ok) {
-            console.error(`❌ Webhook failed: ${response.status}`);
+        if (response.ok) {
+            console.log(`✅ Message forwarded to webhook: ${message.id}`);
+        } else {
+            console.error(`❌ Webhook forward failed: ${response.status} ${response.statusText}`);
         }
     } catch (error) {
-        console.error('❌ Webhook error:', error);
+        console.error('❌ Webhook forward error:', error.message);
     }
+}
+
+// Initialize WhatsApp client with improved message handling
+async function initializeRealClient() {
+    const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+    
+    whatsappClient = new Client({
+        authStrategy: new LocalAuth({ dataPath: SESSION_PATH }),
+        puppeteer: {
+            headless: true,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--no-zygote',
+                '--disable-gpu'
+            ]
+        }
+    });
+
+    whatsappClient.on('qr', (qr) => {
+        qrCodeData = qr;
+        lastQRTime = new Date();
+        isClientReady = false;
+        console.log('📱 QR Code received');
+        
+        if (process.env.SHOW_QR !== 'false') {
+            const qrTerminal = require('qrcode-terminal');
+            qrTerminal.generate(qr, { small: true });
+        }
+    });
+
+    whatsappClient.on('ready', () => {
+        console.log('✅ WhatsApp client is ready!');
+        isClientReady = true;
+        qrCodeData = null;
+    });
+
+    whatsappClient.on('authenticated', () => {
+        console.log('🔐 WhatsApp client authenticated');
+    });
+
+    whatsappClient.on('auth_failure', (msg) => {
+        console.error('❌ Authentication failed:', msg);
+        isClientReady = false;
+    });
+
+    whatsappClient.on('disconnected', (reason) => {
+        console.log('⚠️ WhatsApp client disconnected:', reason);
+        isClientReady = false;
+        qrCodeData = null;
+    });
+
+    // Enhanced message handler with proper error handling
+    whatsappClient.on('message', async (message) => {
+        try {
+            // Skip messages from self
+            if (message.fromMe) return;
+
+            console.log(`📨 Received message from ${message.from}: ${message.body || '[Media]'}`);
+            
+            // Create safe message object for webhook
+            const safeMessage = {
+                id: message.id._serialized || message.id,
+                from: message.from,
+                to: message.to,
+                body: message.body || '',
+                type: message.type || 'text',
+                timestamp: message.timestamp,
+                fromMe: message.fromMe,
+                hasMedia: message.hasMedia || false
+            };
+
+            // Add media properties safely
+            if (message.hasMedia) {
+                try {
+                    safeMessage.mediaKey = message.mediaKey || null;
+                    safeMessage.mimetype = message._data?.mimetype || null;
+                    safeMessage.filename = message._data?.filename || null;
+                    safeMessage.caption = message._data?.caption || message.body || null;
+                } catch (mediaError) {
+                    console.log('⚠️ Media property extraction failed:', mediaError.message);
+                    // Continue without media properties
+                }
+            }
+
+            await forwardToWebhook(safeMessage);
+            
+        } catch (error) {
+            console.error('❌ Message handler error:', error);
+        }
+    });
+
+    await whatsappClient.initialize();
 }
 
 // API Routes

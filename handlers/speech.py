@@ -176,19 +176,20 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
     
     try:
         # Configure streaming synthesis with Sulafat voice (Female)
-        audio_config = texttospeech.AudioConfig(
-            audio_encoding=texttospeech.AudioEncoding.OGG_OPUS,
-            speaking_rate=1.0,  # Default speaking rate; adjust as needed
-            pitch=0.0,          # Default pitch; adjust as needed
-            volume_gain_db=0.0  # Default volume; adjust as needed
-        )
+        # Note: audio_config must be inside StreamingSynthesizeConfig, not separate
         streaming_config = texttospeech.StreamingSynthesizeConfig(
             voice=texttospeech.VoiceSelectionParams(
                 name="en-US-Chirp3-HD-Sulafat",
                 language_code=language_code,
             ),
-            audio_config=audio_config
+            audio_config=texttospeech.AudioConfig(
+                audio_encoding=texttospeech.AudioEncoding.OGG_OPUS,
+                speaking_rate=1.0,
+                pitch=0.0,
+                volume_gain_db=0.0
+            )
         )
+        
         # Set the config for the stream - first request must contain config
         config_request = texttospeech.StreamingSynthesizeRequest(
             streaming_config=streaming_config
@@ -198,7 +199,6 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
         def request_generator():
             yield config_request
             # Send text as streaming input
-            # For longer texts, this could be split into chunks for better streaming
             yield texttospeech.StreamingSynthesizeRequest(
                 input=texttospeech.StreamingSynthesisInput(text=text)
             )
@@ -219,14 +219,54 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
             logger.error("No audio content received from streaming synthesis")
             return None
         
-        # Save audio to temporary file with OGG extension
+        # Save audio to temporary file with OGG extension to match encoding
         with tempfile.NamedTemporaryFile(delete=False, suffix='.ogg') as temp_file:
             temp_file.write(audio_content)
-            logger.info(f"Generated streaming speech audio with Sulafat voice: {temp_file.name}, size: {len(audio_content)} bytes, chunks: {chunk_count}")
+            logger.info(f"Generated streaming speech audio: {temp_file.name}, size: {len(audio_content)} bytes, chunks: {chunk_count}")
             return temp_file.name
             
     except Exception as e:
-        logger.error(f"Error in streaming text-to-speech conversion with Sulafat voice: {e}")
+        logger.error(f"Error in streaming text-to-speech conversion: {e}")
+        # Fallback to regular (non-streaming) synthesis
+        try:
+            logger.info("Falling back to regular TTS synthesis")
+            return text_to_speech_fallback(text, language_code)
+        except Exception as fallback_e:
+            logger.error(f"Fallback TTS also failed: {fallback_e}")
+            return None
+
+def text_to_speech_fallback(text: str, language_code: str = "en-US") -> Optional[str]:
+    """Fallback to regular text-to-speech synthesis"""
+    client = get_tts_client()
+    if not client:
+        return None
+    
+    try:
+        # Configure regular synthesis
+        synthesis_input = texttospeech.SynthesisInput(text=text)
+        voice = texttospeech.VoiceSelectionParams(
+            language_code=language_code,
+            ssml_gender=texttospeech.SsmlVoiceGender.FEMALE
+        )
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.OGG_OPUS
+        )
+        
+        # Perform synthesis
+        response = client.synthesize_speech(
+            input=synthesis_input,
+            voice=voice,
+            audio_config=audio_config
+        )
+        
+        # Save audio to temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.ogg') as temp_file:
+            temp_file.write(response.audio_content)
+            logger.info(f"Generated fallback speech audio: {temp_file.name}")
+            return temp_file.name
+            
+    except Exception as e:
+        logger.error(f"Error in fallback text-to-speech conversion: {e}")
         return None
 
 def should_respond_with_voice(user_sent_voice: bool, text_length: int = 0) -> bool:
