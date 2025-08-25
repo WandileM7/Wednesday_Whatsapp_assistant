@@ -177,7 +177,7 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
     try:
         # Configure streaming synthesis with Sulafat voice (Female)
         audio_config = texttospeech.AudioConfig(
-            audio_encoding=texttospeech.AudioEncoding.MP3,
+            audio_encoding=texttospeech.AudioEncoding.OGG_OPUS,
             speaking_rate=1.0,  # Default speaking rate; adjust as needed
             pitch=0.0,          # Default pitch; adjust as needed
             volume_gain_db=0.0  # Default volume; adjust as needed
@@ -219,8 +219,8 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
             logger.error("No audio content received from streaming synthesis")
             return None
         
-        # Save audio to temporary file with MP3 extension
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as temp_file:
+        # Save audio to temporary file with OGG extension
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.ogg') as temp_file:
             temp_file.write(audio_content)
             logger.info(f"Generated streaming speech audio with Sulafat voice: {temp_file.name}, size: {len(audio_content)} bytes, chunks: {chunk_count}")
             return temp_file.name
