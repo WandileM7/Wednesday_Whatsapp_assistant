@@ -592,25 +592,27 @@ def webhook():
         # Handle both text and voice messages
         message_type = payload.get('type', 'text')
 
-        if message_type == 'voice' or payload.get('hasMedia'):
-            # Handle voice message
-            voice_url = payload.get('mediaUrl') or payload.get('media', {}).get('url')
+        if message_type == 'voice' or (hasattr(payload, 'hasMedia') and payload.get('hasMedia')):
+            voice_url = payload.get('mediaUrl') or payload.get('url')
             if voice_url:
-                # Download and transcribe
-                audio_path = download_voice_message(voice_url, WAHA_SESSION)
-                if audio_path:
-                    user_msg = speech_to_text(audio_path)
-                    user_sent_voice = True
-                    cleanup_temp_file(audio_path)
+                logger.info(f"🎤 Processing voice message from {phone}")
+                
+                # Download and transcribe voice message
+                audio_file = download_voice_message(voice_url, WAHA_SESSION)
+                if audio_file:
+                    transcribed_text = speech_to_text(audio_file)
+                    cleanup_temp_file(audio_file)
+                    
+                    if transcribed_text:
+                        user_msg = transcribed_text
+                        logger.info(f"🎤 Transcribed: {transcribed_text[:100]}...")
+                    else:
+                        user_msg = "I received your voice message but couldn't transcribe it."
                 else:
-                    user_msg = "Voice message received but could not be processed"
-                    user_sent_voice = False
+                    user_msg = "I received your voice message but couldn't download it."
             else:
-                user_msg = payload.get('body', 'Voice message')
-                user_sent_voice = True
-        else:
-            user_msg = payload.get('body') or payload.get('text')
-            user_sent_voice = False
+                user_msg = "I received a voice message but no media URL was provided."
+        
 
         phone = payload.get('chatId') or payload.get('from')
 
@@ -1520,106 +1522,67 @@ def send_message(phone, text):
         logger.error(f"WAHA send_message error: {e}")
         return False
 
-def send_voice_message(phone: str, text: str) -> bool:
-    """Send voice message using text-to-speech"""
-    audio_file = None
+def send_voice_message(phone, voice_file_path, fallback_text):
+    """Send voice message with multiple fallback options"""
+    if not waha_url or not voice_file_path:
+        logger.warning("Cannot send voice - missing URL or file")
+        return send_message(phone, fallback_text)
+    
     try:
-        # Generate audio file from text (now in OGG_OPUS format)
-        audio_file = text_to_speech(text)
-        if not audio_file:
-            logger.warning("TTS failed, falling back to text message")
-            return send_message(phone, text)
+        # Ensure phone format
+        if "@c.us" not in phone:
+            phone = f"{phone}@c.us"
         
-        logger.info(f"Generated OGG_OPUS audio file: {audio_file}")
+        # Try to send as voice message first
+        voice_url = f"{_waha_base()}/api/sendVoice"
         
-        # Send via WAHA voice endpoint
-        waha_url = os.getenv("WAHA_URL")
-        if not waha_url:
-            logger.warning("WAHA URL not configured")
-            cleanup_temp_file(audio_file)
-            return False
-        
-        # Extract base URL for voice endpoint
-        if "/api/" in waha_url:
-            base_url = waha_url.split("/api/")[0]
-        else:
-            base_url = waha_url.rstrip("/")
-        
-        voice_url = f"{base_url}/api/sendVoice"
-        
-        # Prepare form data with correct OGG_OPUS format
-        with open(audio_file, 'rb') as f:
-            files = {'audio': ('voice.ogg', f, 'audio/ogg')}
+        with open(voice_file_path, 'rb') as audio_file:
+            files = {'audio': audio_file}
             data = {'chatId': phone}
-            headers = {}
             
-            # Add API key if configured
-            waha_api_key = os.getenv("WAHA_API_KEY")
-            if waha_api_key:
-                headers['X-Api-Key'] = waha_api_key
-            
-            logger.info(f"Attempting to send OGG_OPUS voice message to {phone} via {voice_url}")
             response = requests.post(
                 voice_url, 
                 files=files, 
                 data=data, 
-                headers=headers, 
+                headers=_waha_headers(is_json=False),
                 timeout=30
             )
-        
-        if response.status_code == 200:
-            logger.info(f"✅ Voice message (OGG_OPUS) sent successfully to {phone}")
-            logger.info(f"🎤 Voice message sent to {phone}")
-            cleanup_temp_file(audio_file)
-            return True
-        else:
-            logger.error(f"❌ Voice send failed with status {response.status_code}: {response.text}")
-            # Try to send as a regular OGG file attachment instead of voice message
-            fallback_result = send_audio_file(phone, audio_file, text)
-            cleanup_temp_file(audio_file)
-            return fallback_result
             
-    except Exception as e:
-        logger.error(f"Voice message error: {e}")
-        if audio_file:
-            cleanup_temp_file(audio_file)
-        # Fallback to text message
-        return send_message(phone, text)
-
-def send_audio_file(phone, audio_file_path, original_text):
-    """Send audio file as regular attachment if voice message fails"""
-    try:
-        if not audio_file_path or not os.path.exists(audio_file_path):
-            logger.warning("Audio file not available for file attachment fallback")
-            return send_message(phone, original_text)
-            
-        # Try to send as a document/media file instead of voice message
-        base_url = _waha_base()
+            if response.status_code == 200:
+                logger.info(f"✅ Voice message sent to {phone}")
+                return True
         
-        # Check if WAHA has sendMedia endpoint for sending files
-        media_url = f"{base_url}/api/sendMedia"
+        # Fallback 1: Try sending as media/file attachment
+        logger.info("Voice message failed, trying as media attachment...")
+        media_url = f"{_waha_base()}/api/sendMedia"
         
-        with open(audio_file_path, 'rb') as f:
-            files = {'media': f}
+        with open(voice_file_path, 'rb') as audio_file:
+            files = {'media': audio_file}
             data = {
                 'chatId': phone,
-                'caption': f'🎵 Audio message: {original_text[:100]}...' if len(original_text) > 100 else f'🎵 Audio message: {original_text}'
+                'caption': 'Voice message',
+                'filename': 'voice.mp3'
             }
-            headers = _waha_headers(is_json=False)
             
-            logger.info(f"Attempting to send OGG file attachment to {phone}")
-            response = requests.post(media_url, files=files, data=data, headers=headers, timeout=30)
+            response = requests.post(
+                media_url,
+                files=files,
+                data=data,
+                headers=_waha_headers(is_json=False),
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"✅ Voice sent as media attachment to {phone}")
+                return True
         
-        if response.status_code == 200:
-            logger.info(f"✅ Audio file sent successfully to {phone}")
-            return True
-        else:
-            logger.warning(f"Audio file send failed: {response.status_code}, falling back to text")
-            return send_message(phone, original_text)
-            
+        # Fallback 2: Send as text message
+        logger.warning("Voice and media failed, sending as text")
+        return send_message(phone, fallback_text)
+        
     except Exception as e:
-        logger.error(f"Audio file send error: {e}")
-        return send_message(phone, original_text)
+        logger.error(f"Voice message error: {e}")
+        return send_message(phone, fallback_text)
 
 @app.route("/save-current-google-tokens")
 def save_current_google_tokens():

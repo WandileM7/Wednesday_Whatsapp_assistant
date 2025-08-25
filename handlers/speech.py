@@ -168,18 +168,18 @@ def speech_to_text(audio_file_path: str) -> Optional[str]:
             pass
 
 def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
-    """Convert text to speech using streaming synthesis with Sulafat voice"""
+    """Convert text to speech using streaming synthesis with Chirp3-HD Sulafat voice"""
     client = get_tts_client()
     if not client:
         logger.error("TTS client not available")
         return None
     
     try:
-        # Configure streaming synthesis with Sulafat voice (Female)
-        # Note: audio_config must be inside StreamingSynthesizeConfig, not separate
+        # Configure streaming synthesis with Chirp3-HD Sulafat voice
+        # Use the correct Chirp3-HD voice name format
         streaming_config = texttospeech.StreamingSynthesizeConfig(
             voice=texttospeech.VoiceSelectionParams(
-                name="en-US-Chirp3-HD-Sulafat",
+                name="en-US-Chirp3-HD-Sulafat",  # Chirp3-HD Sulafat voice
                 language_code=language_code,
             ),
             audio_config=texttospeech.AudioConfig(
@@ -190,15 +190,13 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
             )
         )
         
-        # Set the config for the stream - first request must contain config
-        config_request = texttospeech.StreamingSynthesizeRequest(
-            streaming_config=streaming_config
-        )
-        
         # Create request generator for streaming synthesis
         def request_generator():
-            yield config_request
-            # Send text as streaming input
+            # First request contains the configuration
+            yield texttospeech.StreamingSynthesizeRequest(
+                streaming_config=streaming_config
+            )
+            # Second request contains the text input
             yield texttospeech.StreamingSynthesizeRequest(
                 input=texttospeech.StreamingSynthesisInput(text=text)
             )
@@ -222,47 +220,87 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
         # Save audio to temporary file with OGG extension to match encoding
         with tempfile.NamedTemporaryFile(delete=False, suffix='.ogg') as temp_file:
             temp_file.write(audio_content)
-            logger.info(f"Generated streaming speech audio: {temp_file.name}, size: {len(audio_content)} bytes, chunks: {chunk_count}")
+            logger.info(f"Generated Chirp3-HD streaming speech audio: {temp_file.name}, size: {len(audio_content)} bytes, chunks: {chunk_count}")
             return temp_file.name
             
     except Exception as e:
-        logger.error(f"Error in streaming text-to-speech conversion: {e}")
-        # Fallback to regular (non-streaming) synthesis
+        logger.error(f"Error in Chirp3-HD streaming text-to-speech conversion: {e}")
+        # Fallback to regular (non-streaming) synthesis with Chirp3-HD
         try:
-            logger.info("Falling back to regular TTS synthesis")
+            logger.info("Falling back to regular Chirp3-HD TTS synthesis")
             return text_to_speech_fallback(text, language_code)
         except Exception as fallback_e:
             logger.error(f"Fallback TTS also failed: {fallback_e}")
             return None
 
 def text_to_speech_fallback(text: str, language_code: str = "en-US") -> Optional[str]:
-    """Fallback to regular text-to-speech synthesis"""
+    """Fallback to regular text-to-speech synthesis with Chirp3-HD voices"""
     client = get_tts_client()
     if not client:
         return None
     
     try:
-        # Configure regular synthesis
+        # Configure regular synthesis with Chirp3-HD Sulafat voice
         synthesis_input = texttospeech.SynthesisInput(text=text)
+        
+        # Try Chirp3-HD Sulafat first, then fallback to other Chirp3-HD voices
+        chirp3_voices = [
+            "en-US-Chirp3-HD-Sulafat",  # Primary choice - Sulafat
+            "en-US-Chirp3-HD-Aliya",    # Fallback 1 - Aliya
+            "en-US-Chirp3-HD-Arya",     # Fallback 2 - Arya
+            "en-US-Chirp3-HD-Clara",    # Fallback 3 - Clara
+        ]
+        
+        for voice_name in chirp3_voices:
+            try:
+                voice = texttospeech.VoiceSelectionParams(
+                    name=voice_name,
+                    language_code=language_code,
+                )
+                audio_config = texttospeech.AudioConfig(
+                    audio_encoding=texttospeech.AudioEncoding.OGG_OPUS,
+                    speaking_rate=1.0,
+                    pitch=0.0,
+                    volume_gain_db=0.0
+                )
+                
+                # Perform synthesis
+                response = client.synthesize_speech(
+                    input=synthesis_input,
+                    voice=voice,
+                    audio_config=audio_config
+                )
+                
+                # Save audio to temporary file
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.ogg') as temp_file:
+                    temp_file.write(response.audio_content)
+                    logger.info(f"Generated fallback speech audio with {voice_name}: {temp_file.name}")
+                    return temp_file.name
+                    
+            except Exception as voice_e:
+                logger.warning(f"Voice {voice_name} failed: {voice_e}")
+                continue
+        
+        # If all Chirp3-HD voices fail, try standard Neural2 voices
+        logger.info("All Chirp3-HD voices failed, trying Neural2 fallback")
         voice = texttospeech.VoiceSelectionParams(
             language_code=language_code,
+            name="en-US-Neural2-F",  # Neural2 Female voice as final fallback
             ssml_gender=texttospeech.SsmlVoiceGender.FEMALE
         )
         audio_config = texttospeech.AudioConfig(
             audio_encoding=texttospeech.AudioEncoding.OGG_OPUS
         )
         
-        # Perform synthesis
         response = client.synthesize_speech(
             input=synthesis_input,
             voice=voice,
             audio_config=audio_config
         )
         
-        # Save audio to temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix='.ogg') as temp_file:
             temp_file.write(response.audio_content)
-            logger.info(f"Generated fallback speech audio: {temp_file.name}")
+            logger.info(f"Generated Neural2 fallback speech audio: {temp_file.name}")
             return temp_file.name
             
     except Exception as e:
