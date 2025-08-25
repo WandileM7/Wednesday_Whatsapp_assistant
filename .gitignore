@@ -40,6 +40,7 @@ whatsapp-session/
 # WhatsApp Service
 whatsapp-service/node_modules/
 whatsapp-service/session/
+whatsapp-service/uploads/
 
 # Render/Deployment
 secrets/
