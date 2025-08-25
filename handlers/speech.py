@@ -168,46 +168,63 @@ def speech_to_text(audio_file_path: str) -> Optional[str]:
             pass
 
 def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
-    """Convert text to speech and return path to audio file"""
+    """Convert text to speech using streaming synthesis with Sulafat voice"""
     client = get_tts_client()
     if not client:
         logger.error("TTS client not available")
         return None
     
     try:
-        # Set up the text input
-        synthesis_input = texttospeech.SynthesisInput(text=text)
-        
-        # Configure voice parameters
-        voice = texttospeech.VoiceSelectionParams(
-            language_code=language_code,
-            ssml_gender=texttospeech.SsmlVoiceGender.FEMALE,
-            name=f"{language_code}-Standard-C"  # Use a pleasant female voice
+        # Configure streaming synthesis with Sulafat voice (Female)
+        # Based on Google Cloud TTS, try Sulafat voice name directly as specified
+                language_code=language_code,
+            ),
+            audio_config=texttospeech.AudioConfig(
+                audio_encoding=texttospeech.AudioEncoding.MP3,
+                speaking_rate=1.0,  # Default speaking rate; adjust as needed
+                pitch=0.0,          # Default pitch; adjust as needed
+                volume_gain_db=0.0  # Default volume; adjust as needed
+            )
         )
         
-        # Configure audio output - using MP3 format for better WhatsApp compatibility
-        audio_config = texttospeech.AudioConfig(
-            audio_encoding=texttospeech.AudioEncoding.MP3,
-            speaking_rate=1.0,
-            pitch=0.0,
-            volume_gain_db=0.0
+        # Set the config for the stream - first request must contain config
+        config_request = texttospeech.StreamingSynthesizeRequest(
+            streaming_config=streaming_config
         )
         
-        # Perform text-to-speech
-        response = client.synthesize_speech(
-            input=synthesis_input,
-            voice=voice,
-            audio_config=audio_config
-        )
+        # Create request generator for streaming synthesis
+        def request_generator():
+            yield config_request
+            # Send text as streaming input
+            # For longer texts, this could be split into chunks for better streaming
+            yield texttospeech.StreamingSynthesizeRequest(
+                input=texttospeech.StreamingSynthesisInput(text=text)
+            )
+        
+        # Perform streaming synthesis
+        streaming_responses = client.streaming_synthesize(request_generator())
+        
+        # Collect all audio content from streaming responses
+        audio_content = b""
+        chunk_count = 0
+        for response in streaming_responses:
+            if response.audio_content:
+                audio_content += response.audio_content
+                chunk_count += 1
+                logger.debug(f"Received audio chunk {chunk_count}: {len(response.audio_content)} bytes")
+        
+        if not audio_content:
+            logger.error("No audio content received from streaming synthesis")
+            return None
         
         # Save audio to temporary file with MP3 extension
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as temp_file:
-            temp_file.write(response.audio_content)
-            logger.info(f"Generated speech audio file (MP3): {temp_file.name}")
+            temp_file.write(audio_content)
+            logger.info(f"Generated streaming speech audio with Sulafat voice: {temp_file.name}, size: {len(audio_content)} bytes, chunks: {chunk_count}")
             return temp_file.name
             
     except Exception as e:
-        logger.error(f"Error in text-to-speech conversion: {e}")
+        logger.error(f"Error in streaming text-to-speech conversion with Sulafat voice: {e}")
         return None
 
 def should_respond_with_voice(user_sent_voice: bool, text_length: int = 0) -> bool:
