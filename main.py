@@ -579,6 +579,9 @@ def webhook():
         return jsonify({"status": "online", "memory_optimized": True})
 
     start_time = time.time()
+    user_msg = ""  # Initialize user_msg at the start
+    phone = ""     # Initialize phone at the start
+    user_sent_voice = False  # Initialize voice flag
     try:
         # Quick validation to prevent processing invalid requests
         data = request.get_json() or {}
@@ -590,9 +593,18 @@ def webhook():
             return jsonify({'status': 'ignored', 'reason': 'no_payload'}), 200
         
         # Handle both text and voice messages
+        phone = payload.get('chatId') or payload.get('from', '')
         message_type = payload.get('type', 'text')
+        
+        # Skip messages from self early
+        if payload.get('fromMe'):
+            return jsonify({'status': 'ignored', 'reason': 'from_me'}), 200
+            
+        if not phone:
+            return jsonify({'status': 'ignored', 'reason': 'no_phone'}), 200
 
         if message_type == 'voice' or (hasattr(payload, 'hasMedia') and payload.get('hasMedia')):
+            user_sent_voice = True
             voice_url = payload.get('mediaUrl') or payload.get('url')
             if voice_url:
                 logger.info(f"🎤 Processing voice message from {phone}")
@@ -612,15 +624,11 @@ def webhook():
                     user_msg = "I received your voice message but couldn't download it."
             else:
                 user_msg = "I received a voice message but no media URL was provided."
-        
+        else:    
+            user_msg = payload.get('body') or payload.get('text') or payload.get('message', '')
 
-        phone = payload.get('chatId') or payload.get('from')
-
-        if not user_msg or not phone:
-            return jsonify({'status': 'ignored', 'reason': 'missing_data'}), 200
-
-        if payload.get('fromMe'):
-            return jsonify({'status': 'ignored', 'reason': 'from_me'}), 200
+        if not user_msg or user_msg.strip() == "[Media]":
+            return jsonify({'status': 'ignored', 'reason': 'empty_message'}), 200
             
         # Rate limiting check
         if not check_rate_limit(phone):
@@ -628,6 +636,9 @@ def webhook():
             return jsonify({'status': 'rate_limited', 'message': 'Too many requests'}), 200
 
         logger.info(f"Processing {'voice' if user_sent_voice else 'text'} message from {phone}: {user_msg[:30]}...")
+        
+        # Cache user session
+        cache_user_session(phone)
         
         # Memory-efficient conversation management
         if phone not in user_conversations:
@@ -685,14 +696,23 @@ def webhook():
 
         # Decide whether to send voice or text response
         if should_respond_with_voice(user_sent_voice, len(reply)):
-            success = send_voice_message(phone, reply)
-            if not success:
-                # Fallback to text if voice fails
-                logger.warning("Voice response failed, falling back to text")
+            # Generate voice response
+            voice_file = text_to_speech(reply)
+            if voice_file:
+                success = send_voice_message(phone, voice_file, reply)
+                cleanup_temp_file(voice_file)
+                if success:
+                    logger.info(f"🎤 Voice message sent to {phone}")
+                else:
+                    logger.warning("Voice message failed, sent text instead")
+            else:
+                logger.warning("Voice generation failed, sending text")
                 send_message(phone, reply)
         else:
             send_message(phone, reply)
-            
+        
+        success = send_voice_response(phone, reply, user_sent_voice)
+
         # Log processing time for monitoring
         processing_time = time.time() - start_time
         logger.debug(f"Webhook processed in {processing_time:.2f}s")
@@ -700,7 +720,9 @@ def webhook():
         return jsonify({
             'status': 'ok', 
             'memory_optimized': True,
-            'processing_time_ms': int(processing_time * 1000)
+            'processing_time_ms': int(processing_time * 1000),
+            'voice_response': should_respond_with_voice(user_sent_voice, len(reply)),
+            'message_sent': success
         })
 
     except MemoryError:
@@ -1534,6 +1556,10 @@ def send_voice_message(phone, voice_file_path, fallback_text):
             phone = f"{phone}@c.us"
         
         # Try to send as voice message first
+        file_format = "OGG_OPUS" if voice_file_path.endswith('.ogg') else "MP3"
+        logger.info(f"Attempting to send {file_format} voice message to {phone} via {_waha_base()}/api/sendVoice")
+        
+        # Try to send as voice message first
         voice_url = f"{_waha_base()}/api/sendVoice"
         
         with open(voice_file_path, 'rb') as audio_file:
@@ -1549,7 +1575,7 @@ def send_voice_message(phone, voice_file_path, fallback_text):
             )
             
             if response.status_code == 200:
-                logger.info(f"✅ Voice message sent to {phone}")
+                logger.info(f"✅ Voice message ({file_format}) sent successfully to {phone}")
                 return True
         
         # Fallback 1: Try sending as media/file attachment
@@ -1561,7 +1587,7 @@ def send_voice_message(phone, voice_file_path, fallback_text):
             data = {
                 'chatId': phone,
                 'caption': 'Voice message',
-                'filename': 'voice.mp3'
+                'filename': f'voice.{file_format.lower().replace("_", ".")}'
             }
             
             response = requests.post(
@@ -1583,6 +1609,27 @@ def send_voice_message(phone, voice_file_path, fallback_text):
     except Exception as e:
         logger.error(f"Voice message error: {e}")
         return send_message(phone, fallback_text)
+
+def send_voice_response(phone, reply_text, user_sent_voice):
+    """Send voice response with proper fallback handling"""
+    try:
+        # Check if we should respond with voice
+        if should_respond_with_voice(user_sent_voice, len(reply_text)):
+            # Generate voice file
+            voice_file = text_to_speech(reply_text)
+            if voice_file:
+                success = send_voice_message(phone, voice_file, reply_text)
+                cleanup_temp_file(voice_file)
+                return success
+            else:
+                logger.warning("Voice generation failed, sending text")
+                return send_message(phone, reply_text)
+        else:
+            # Send as text
+            return send_message(phone, reply_text)
+    except Exception as e:
+        logger.error(f"Error in send_voice_response: {e}")
+        return send_message(phone, reply_text)
 
 @app.route("/save-current-google-tokens")
 def save_current_google_tokens():
