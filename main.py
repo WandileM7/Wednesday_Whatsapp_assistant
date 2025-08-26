@@ -572,18 +572,105 @@ def clear_spotify_tokens():
     
     return "✅ All Spotify tokens cleared. Please visit /login to re-authenticate."
 
+
+
+@app.route('/voice-preprocessor', methods=['POST'])
+def voice_preprocessor():
+    """Pre-process voice messages and convert them to text before sending to main webhook"""
+    try:
+        data = request.get_json() or {}
+        payload = data.get('payload', data)
+        
+        if not payload:
+            return jsonify({'status': 'ignored', 'reason': 'no_payload'}), 200
+        
+        message_type = payload.get('type', 'text')
+        
+        # Only process voice messages
+        if message_type != 'voice' and not payload.get('hasMedia'):
+            # Forward text messages directly to main webhook
+            return forward_to_main_webhook(data)
+        
+        # Process voice message
+        voice_url = payload.get('mediaUrl') or payload.get('url')
+        phone = payload.get('chatId') or payload.get('from', '')
+        
+        if not voice_url or not phone:
+            return jsonify({'status': 'error', 'reason': 'missing_voice_data'}), 400
+        
+        logger.info(f"🎤 Pre-processing voice message from {phone}")
+        
+        # Download and transcribe
+        audio_file = download_voice_message(voice_url, WAHA_SESSION)
+        if audio_file:
+            transcribed_text = speech_to_text(audio_file)
+            cleanup_temp_file(audio_file)
+            
+            if transcribed_text:
+                logger.info(f"🎤 Voice transcribed: {transcribed_text[:100]}...")
+                
+                # Create new payload with transcribed text
+                new_payload = {
+                    'chatId': phone,
+                    'from': phone,
+                    'body': transcribed_text,
+                    'text': transcribed_text,
+                    'message': transcribed_text,
+                    'type': 'text',  # Convert to text type
+                    'fromMe': payload.get('fromMe', False),
+                    'original_type': 'voice',  # Keep track that this was originally voice
+                    'transcribed': True
+                }
+                
+                # Forward transcribed message to main webhook
+                return forward_to_main_webhook({'payload': new_payload})
+            else:
+                # Send error message
+                error_payload = {
+                    'chatId': phone,
+                    'from': phone,
+                    'body': "I received your voice message but couldn't transcribe it.",
+                    'text': "I received your voice message but couldn't transcribe it.",
+                    'type': 'text',
+                    'fromMe': payload.get('fromMe', False)
+                }
+                return forward_to_main_webhook({'payload': error_payload})
+        else:
+            # Send error message
+            error_payload = {
+                'chatId': phone,
+                'from': phone,
+                'body': "I received your voice message but couldn't download it.",
+                'text': "I received your voice message but couldn't download it.",
+                'type': 'text',
+                'fromMe': payload.get('fromMe', False)
+            }
+            return forward_to_main_webhook({'payload': error_payload})
+            
+    except Exception as e:
+        logger.error(f"Voice preprocessor error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+def forward_to_main_webhook(data):
+    """Forward processed message to main webhook"""
+    try:
+        # Internal call to main webhook
+        from flask import current_app
+        with current_app.test_request_context('/webhook', method='POST', json=data):
+            return webhook()
+    except Exception as e:
+        logger.error(f"Error forwarding to main webhook: {e}")
+        return jsonify({'status': 'error', 'message': 'Forward failed'}), 500
 @app.route('/webhook', methods=['POST', 'GET'])
 def webhook():
-    """Enhanced webhook with robust error handling to prevent 503 errors"""
+    """Simplified webhook that only processes text messages (voice already transcribed)"""
     if request.method == 'GET':
         return jsonify({"status": "online", "memory_optimized": True})
 
     start_time = time.time()
-    user_msg = ""  # Initialize user_msg at the start
-    phone = ""     # Initialize phone at the start
-    user_sent_voice = False  # Initialize voice flag
+    
     try:
-        # Quick validation to prevent processing invalid requests
+        # Quick validation
         data = request.get_json() or {}
         if not data:
             return jsonify({'status': 'ignored', 'reason': 'no_data'}), 200
@@ -592,50 +679,24 @@ def webhook():
         if not payload:
             return jsonify({'status': 'ignored', 'reason': 'no_payload'}), 200
         
-        # Handle both text and voice messages
+        # Extract message info
         phone = payload.get('chatId') or payload.get('from', '')
-        message_type = payload.get('type', 'text')
+        user_msg = payload.get('body') or payload.get('text') or payload.get('message', '')
+        was_originally_voice = payload.get('original_type') == 'voice'
         
-        # Skip messages from self early
+        # Skip messages from self
         if payload.get('fromMe'):
             return jsonify({'status': 'ignored', 'reason': 'from_me'}), 200
             
-        if not phone:
-            return jsonify({'status': 'ignored', 'reason': 'no_phone'}), 200
-
-        if message_type == 'voice' or (hasattr(payload, 'hasMedia') and payload.get('hasMedia')):
-            user_sent_voice = True
-            voice_url = payload.get('mediaUrl') or payload.get('url')
-            if voice_url:
-                logger.info(f"🎤 Processing voice message from {phone}")
-                
-                # Download and transcribe voice message
-                audio_file = download_voice_message(voice_url, WAHA_SESSION)
-                if audio_file:
-                    transcribed_text = speech_to_text(audio_file)
-                    cleanup_temp_file(audio_file)
-                    
-                    if transcribed_text:
-                        user_msg = transcribed_text
-                        logger.info(f"🎤 Transcribed: {transcribed_text[:100]}...")
-                    else:
-                        user_msg = "I received your voice message but couldn't transcribe it."
-                else:
-                    user_msg = "I received your voice message but couldn't download it."
-            else:
-                user_msg = "I received a voice message but no media URL was provided."
-        else:    
-            user_msg = payload.get('body') or payload.get('text') or payload.get('message', '')
-
-        if not user_msg or user_msg.strip() == "[Media]":
-            return jsonify({'status': 'ignored', 'reason': 'empty_message'}), 200
+        if not phone or not user_msg:
+            return jsonify({'status': 'ignored', 'reason': 'missing_data'}), 200
             
         # Rate limiting check
         if not check_rate_limit(phone):
             logger.warning(f"Rate limit exceeded for {phone}")
-            return jsonify({'status': 'rate_limited', 'message': 'Too many requests'}), 200
+            return jsonify({'status': 'rate_limited'}), 200
 
-        logger.info(f"Processing {'voice' if user_sent_voice else 'text'} message from {phone}: {user_msg[:30]}...")
+        logger.info(f"Processing {'voice→text' if was_originally_voice else 'text'} message from {phone}: {user_msg[:50]}...")
         
         # Cache user session
         cache_user_session(phone)
@@ -651,7 +712,8 @@ def webhook():
         conversation['messages'].append({
             'role': 'user',
             'content': user_msg,
-            'timestamp': time.time()
+            'timestamp': time.time(),
+            'was_voice': was_originally_voice
         })
         
         conversation['messages'] = conversation['messages'][-MAX_MESSAGES_PER_USER:]
@@ -660,33 +722,22 @@ def webhook():
         if len(user_conversations) % 10 == 0:
             cleanup_conversations()
 
-        # Process with Gemini with timeout protection
+        # Process with Gemini
         try:
-            # Check if API key looks valid (not a test key)
             if GEMINI_API_KEY and not GEMINI_API_KEY.startswith('test_'):
                 call = chat_with_functions(user_msg, phone)
-                logger.debug(f"Gemini function response: {call}")
-
+                
                 if call.get("name"):
                     reply = execute_function(call)
                 else:
                     reply = call.get("content", "Sorry, no idea what that was.")
             else:
-                # Fallback mode for invalid/test API keys
-                logger.warning("Using fallback mode: Gemini API key not properly configured")
-                reply = f"Echo (fallback mode): {user_msg}. Please configure a valid Gemini API key for full functionality."
+                reply = f"Echo: {user_msg}"
         except Exception as e:
             logger.error(f"Gemini processing error: {e}")
             reply = "I'm having trouble processing your message right now. Please try again later."
 
-        # Save to ChromaDB if enabled
-        if CHROMADB_AVAILABLE and os.getenv("ENABLE_CHROMADB", "false").lower() == "true":
-            try:
-                add_to_conversation_history(phone, "user", user_msg)
-                add_to_conversation_history(phone, "assistant", reply)
-            except Exception as e:
-                logger.warning(f"ChromaDB save error: {e}")
-
+        # Save conversation
         conversation['messages'].append({
             'role': 'assistant',
             'content': reply,
@@ -694,55 +745,30 @@ def webhook():
         })
         conversation['messages'] = conversation['messages'][-MAX_MESSAGES_PER_USER:]
 
-        # Decide whether to send voice or text response
-        if should_respond_with_voice(user_sent_voice, len(reply)):
-            # Generate voice response
-            voice_file = text_to_speech(reply)
-            if voice_file:
-                success = send_voice_message(phone, voice_file, reply)
-                cleanup_temp_file(voice_file)
-                if success:
-                    logger.info(f"🎤 Voice message sent to {phone}")
-                else:
-                    logger.warning("Voice message failed, sent text instead")
-            else:
-                logger.warning("Voice generation failed, sending text")
-                send_message(phone, reply)
-        else:
-            send_message(phone, reply)
+        # Send text response
+        success = send_message(phone, reply)
         
-        success = send_voice_response(phone, reply, user_sent_voice)
-
-        # Log processing time for monitoring
         processing_time = time.time() - start_time
-        logger.debug(f"Webhook processed in {processing_time:.2f}s")
         
         return jsonify({
             'status': 'ok', 
-            'memory_optimized': True,
             'processing_time_ms': int(processing_time * 1000),
-            'voice_response': should_respond_with_voice(user_sent_voice, len(reply)),
-            'message_sent': success
+            'message_sent': success,
+            'was_voice_input': was_originally_voice
         })
 
-    except MemoryError:
-        logger.error("Memory error in webhook processing")
-        return jsonify({'status': 'error', 'message': 'Memory limit exceeded'}), 503
-    except TimeoutException:
-        logger.error("Timeout in webhook processing")  
-        return jsonify({'status': 'error', 'message': 'Request timeout'}), 503
     except Exception as e:
         processing_time = time.time() - start_time
-        logger.error(f"Error during chat processing after {processing_time:.2f}s: {e}")
+        logger.error(f"Webhook error: {e}")
         
-        # Return 200 instead of 500 to prevent webhook retries from WAHA
         return jsonify({
             'status': 'error', 
             'message': 'Processing failed', 
             'error_type': type(e).__name__,
             'processing_time_ms': int(processing_time * 1000)
-        }), 200  # Changed from 500 to 200
-
+        }), 200
+        
+        
 @app.route('/send', methods=['POST'])
 def send_initial_message():
     data = request.json
