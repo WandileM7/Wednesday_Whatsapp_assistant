@@ -2,10 +2,62 @@ import os
 import logging
 import tempfile
 import requests
+import json
 from typing import Optional, Tuple
+from pathlib import Path
 from google.cloud import speech, texttospeech
 from google.oauth2 import service_account
 from handlers.google_auth import load_credentials
+
+logger = logging.getLogger(__name__)
+
+# User voice preferences storage
+VOICE_PREFS_FILE = Path("voice_preferences.json")
+
+def load_voice_preferences() -> dict:
+    """Load user voice preferences from file"""
+    try:
+        if VOICE_PREFS_FILE.exists():
+            with open(VOICE_PREFS_FILE, 'r') as f:
+                return json.load(f)
+        return {}
+    except Exception as e:
+        logger.error(f"Error loading voice preferences: {e}")
+        return {}
+
+def save_voice_preferences(preferences: dict):
+    """Save user voice preferences to file"""
+    try:
+        with open(VOICE_PREFS_FILE, 'w') as f:
+            json.dump(preferences, f, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving voice preferences: {e}")
+
+def get_user_voice_preference(phone: str) -> bool:
+    """Get user's voice response preference (default: True)"""
+    if not phone:
+        return True
+    
+    preferences = load_voice_preferences()
+    return preferences.get(phone, True)  # Default to enabled
+
+def set_user_voice_preference(phone: str, enabled: bool) -> str:
+    """Set user's voice response preference"""
+    if not phone:
+        return "❌ Unable to save preference - no phone number provided"
+    
+    preferences = load_voice_preferences()
+    preferences[phone] = enabled
+    save_voice_preferences(preferences)
+    
+    status = "enabled" if enabled else "disabled"
+    return f"✅ Voice responses {status} for your number"
+
+def toggle_user_voice_preference(phone: str) -> str:
+    """Toggle user's voice response preference"""
+    current = get_user_voice_preference(phone)
+    new_setting = not current
+    return set_user_voice_preference(phone, new_setting)
 
 logger = logging.getLogger(__name__)
 
@@ -307,17 +359,19 @@ def text_to_speech_fallback(text: str, language_code: str = "en-US") -> Optional
         logger.error(f"Error in fallback text-to-speech conversion: {e}")
         return None
 
-def should_respond_with_voice(user_sent_voice: bool, text_length: int = 0) -> bool:
-    """Determine if response should be voice based on context"""
-    # Respond with voice if:
-    # 1. User sent a voice message, OR
-    # 2. Response is short enough for voice (under 200 characters)
-    # 3. Voice responses are enabled via environment variable
-    
-    voice_enabled = os.getenv("ENABLE_VOICE_RESPONSES", "true").lower() == "true"
-    if not voice_enabled:
+def should_respond_with_voice(user_sent_voice: bool, text_length: int = 0, phone: str = "") -> bool:
+    """Determine if response should be voice based on context and user preferences"""
+    # Check if voice responses are globally enabled
+    global_voice_enabled = os.getenv("ENABLE_VOICE_RESPONSES", "true").lower() == "true"
+    if not global_voice_enabled:
         return False
     
+    # Check user-specific voice preference
+    user_voice_enabled = get_user_voice_preference(phone)
+    if not user_voice_enabled:
+        return False
+    
+    # If user sent voice, respond with voice (respecting user preference)
     if user_sent_voice:
         return True
     

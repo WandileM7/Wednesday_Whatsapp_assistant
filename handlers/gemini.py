@@ -299,6 +299,26 @@ FUNCTIONS = [
             "properties": {},
             "required": []
         }
+    },
+    {
+        "name": "toggle_voice_responses",
+        "description": "Toggle voice responses on or off for the user",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "set_voice_responses",
+        "description": "Enable or disable voice responses for the user",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "enabled": {"type": "boolean", "description": "Whether to enable or disable voice responses"}
+            },
+            "required": ["enabled"]
+        }
     }
 
 ]
@@ -409,7 +429,7 @@ User: {user_message}
     add_to_conversation_history(phone, "assistant", "Sorry, I couldn't understand or generate a response.")
     return {"name": None, "content": "Sorry, I couldn't understand or generate a response."}
 
-def execute_function(call: dict) -> str:
+def execute_function(call: dict, phone: str = "") -> str:
     name = call.get("name")
     params = call.get("parameters", {})
     try:
@@ -532,6 +552,16 @@ def execute_function(call: dict) -> str:
         if name == "get_smart_email_brief":
             from handlers.gmail import get_smart_email_brief
             return get_smart_email_brief()
+        
+        # Voice control functions
+        if name == "toggle_voice_responses":
+            from handlers.speech import toggle_user_voice_preference
+            return toggle_user_voice_preference(phone)
+        
+        if name == "set_voice_responses":
+            from handlers.speech import set_user_voice_preference
+            enabled = params.get("enabled", True)
+            return set_user_voice_preference(phone, enabled)
 
         return "I couldn't handle that function call."
     except Exception as e:

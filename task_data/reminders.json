@@ -1,0 +1,10 @@
+{
+  "7af5f23d": {
+    "id": "7af5f23d",
+    "message": "Test reminder",
+    "remind_at": "2025-08-26 15:00",
+    "created_at": "2025-08-26T08:13:03.843252",
+    "notified": false,
+    "phone": ""
+  }
+}
