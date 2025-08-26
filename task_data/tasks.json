@@ -31,5 +31,27 @@
     "created_at": "2025-08-21T18:01:09.129431",
     "completed_at": null,
     "tags": []
+  },
+  "b2c43a44": {
+    "id": "b2c43a44",
+    "title": "Test new task",
+    "description": "This is a test task",
+    "due_date": null,
+    "priority": "medium",
+    "completed": false,
+    "created_at": "2025-08-26T08:13:03.842979",
+    "completed_at": null,
+    "tags": []
+  },
+  "4fb9645e": {
+    "id": "4fb9645e",
+    "title": "Test API Task",
+    "description": "Created via API",
+    "due_date": null,
+    "priority": "medium",
+    "completed": false,
+    "created_at": "2025-08-26T08:13:41.529200",
+    "completed_at": null,
+    "tags": []
   }
 }

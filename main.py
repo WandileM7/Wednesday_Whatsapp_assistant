@@ -42,7 +42,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Import handlers
 from handlers.google_auth import auth_bp
-from handlers.speech import speech_to_text, text_to_speech, download_voice_message, should_respond_with_voice, cleanup_temp_file
+from handlers.speech import speech_to_text, text_to_speech, download_voice_message, should_respond_with_voice, cleanup_temp_file, set_user_voice_preference, toggle_user_voice_preference
 from handlers.auth_manager import auth_manager
 from handlers.weather import weather_service
 from handlers.news import news_service
@@ -149,7 +149,7 @@ except Exception as e:
         # Simple echo-style fallback
         return {"content": f"I'm running in fallback mode. You said: {user_message}"}
 
-    def execute_function(call):
+    def execute_function(call, phone=""):
         # No function calling in fallback
         return call.get("content") or "Function calling is disabled in fallback mode."
 
@@ -683,6 +683,23 @@ def webhook():
         phone = payload.get('chatId') or payload.get('from', '')
         user_msg = payload.get('body') or payload.get('text') or payload.get('message', '')
         was_originally_voice = payload.get('original_type') == 'voice'
+        message_type = payload.get('type', 'text')
+        
+        # If this is a voice message that hasn't been transcribed yet, redirect to preprocessor
+        if message_type == 'voice' and not was_originally_voice:
+            logger.info(f"🎤 Redirecting voice message from {phone} to preprocessor")
+            try:
+                import requests
+                # Forward to voice preprocessor
+                preprocessor_response = requests.post(
+                    'http://localhost:5000/voice-preprocessor',
+                    json=data,
+                    timeout=30
+                )
+                return preprocessor_response.json(), preprocessor_response.status_code
+            except Exception as e:
+                logger.error(f"Error redirecting to voice preprocessor: {e}")
+                return jsonify({'status': 'error', 'reason': 'voice_preprocessing_failed'}), 500
         
         # Skip messages from self
         if payload.get('fromMe'):
@@ -728,7 +745,7 @@ def webhook():
                 call = chat_with_functions(user_msg, phone)
                 
                 if call.get("name"):
-                    reply = execute_function(call)
+                    reply = execute_function(call, phone)
                 else:
                     reply = call.get("content", "Sorry, no idea what that was.")
             else:
@@ -745,8 +762,8 @@ def webhook():
         })
         conversation['messages'] = conversation['messages'][-MAX_MESSAGES_PER_USER:]
 
-        # Send text response
-        success = send_message(phone, reply)
+        # Send response (voice if appropriate, otherwise text)
+        success = send_voice_response(phone, reply, was_originally_voice)
         
         processing_time = time.time() - start_time
         
@@ -1640,7 +1657,7 @@ def send_voice_response(phone, reply_text, user_sent_voice):
     """Send voice response with proper fallback handling"""
     try:
         # Check if we should respond with voice
-        if should_respond_with_voice(user_sent_voice, len(reply_text)):
+        if should_respond_with_voice(user_sent_voice, len(reply_text), phone):
             # Generate voice file
             voice_file = text_to_speech(reply_text)
             if voice_file:
