@@ -436,7 +436,7 @@ async function initializeRealClient() {
         } else if (error.message.includes('Target closed') || error.message.includes('Session closed')) {
             console.error('🔍 Detected browser target/session closure');
             console.error('💡 Browser was closed before initialization completed');
-        } else if (error.message.includes('timeout')) {
+        } else if (error.message.includes('timeout') || error.message.includes('Timeout')) {
             console.error('🔍 Detected timeout during initialization');
             console.error('💡 Browser took too long to start or respond');
         }
