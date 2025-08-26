@@ -233,20 +233,23 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
             voice=texttospeech.VoiceSelectionParams(
                 name="en-US-Chirp3-HD-Sulafat",  # Chirp3-HD Sulafat voice
                 language_code=language_code,
-            ),
-            audio_config=texttospeech.AudioConfig(
-                audio_encoding=texttospeech.AudioEncoding.OGG_OPUS,
-                speaking_rate=1.0,
-                pitch=0.0,
-                volume_gain_db=0.0
             )
+        )
+        
+        # Audio config goes in the request, not the config
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.OGG_OPUS,
+            speaking_rate=1.0,
+            pitch=0.0,
+            volume_gain_db=0.0
         )
         
         # Create request generator for streaming synthesis
         def request_generator():
-            # First request contains the configuration
+            # First request contains the configuration and audio config
             yield texttospeech.StreamingSynthesizeRequest(
-                streaming_config=streaming_config
+                streaming_config=streaming_config,
+                audio_config=audio_config
             )
             # Second request contains the text input
             yield texttospeech.StreamingSynthesizeRequest(
@@ -366,18 +369,18 @@ def should_respond_with_voice(user_sent_voice: bool, text_length: int = 0, phone
     if not global_voice_enabled:
         return False
     
-    # Check user-specific voice preference
+    # Check user-specific voice preference (default is True now)
     user_voice_enabled = get_user_voice_preference(phone)
     if not user_voice_enabled:
         return False
     
-    # If user sent voice, respond with voice (respecting user preference)
+    # If user sent voice, always respond with voice (respecting user preference)
     if user_sent_voice:
         return True
     
-    # For text messages, only use voice for short responses
-    max_voice_length = int(os.getenv("MAX_VOICE_RESPONSE_LENGTH", "200"))
-    return text_length <= max_voice_length
+    # If user has voice enabled, respond with voice regardless of length
+    # (user requested this behavior change)
+    return True
 
 def cleanup_temp_file(file_path: str):
     """Clean up temporary audio file"""

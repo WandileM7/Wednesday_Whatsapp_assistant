@@ -15,6 +15,11 @@ let whatsappClient = null;
 let isClientReady = false;
 let qrCodeData = null;
 let lastQRTime = null;
+let reconnectAttempts = 0;
+let maxReconnectAttempts = parseInt(process.env.MAX_RECONNECT_ATTEMPTS) || 5;
+let reconnectDelay = parseInt(process.env.INITIAL_RECONNECT_DELAY) || 1000; // Start with 1 second
+let isReconnecting = false;
+let connectionHealthCheck = null;
 
 // Configuration
 const WEBHOOK_URL = process.env.WHATSAPP_HOOK_URL;
@@ -36,13 +41,106 @@ async function initializeClient() {
             await initializeRealClient();
         } catch (error) {
             console.error('❌ Failed to initialize WhatsApp client:', error.message);
-            console.log('🔄 Falling back to mock mode...');
-            whatsappClient = null; // Clear the failed client
-            initializeMockClient();
+            
+            // Only fall back to mock if we've exhausted reconnection attempts
+            if (reconnectAttempts >= maxReconnectAttempts) {
+                console.log('🔄 Max reconnection attempts reached, falling back to mock mode...');
+                whatsappClient = null; // Clear the failed client
+                stopConnectionHealthCheck();
+                initializeMockClient();
+            } else {
+                console.log('🔄 Will attempt reconnection...');
+                scheduleReconnection();
+            }
         }
     } else {
         // Mock mode for testing
         initializeMockClient();
+    }
+}
+
+// Reconnection logic with exponential backoff
+function scheduleReconnection() {
+    if (isReconnecting || reconnectAttempts >= maxReconnectAttempts) {
+        return;
+    }
+    
+    isReconnecting = true;
+    reconnectAttempts++;
+    
+    console.log(`🔄 Scheduling reconnection attempt ${reconnectAttempts}/${maxReconnectAttempts} in ${reconnectDelay}ms...`);
+    
+    setTimeout(async () => {
+        try {
+            console.log(`🔄 Reconnection attempt ${reconnectAttempts}/${maxReconnectAttempts}`);
+            
+            // Cleanup existing client
+            if (whatsappClient) {
+                try {
+                    await whatsappClient.destroy();
+                } catch (destroyError) {
+                    console.log('⚠️ Error destroying old client:', destroyError.message);
+                }
+            }
+            whatsappClient = null;
+            
+            // Reinitialize
+            await initializeRealClient();
+            
+        } catch (error) {
+            console.error(`❌ Reconnection attempt ${reconnectAttempts} failed:`, error.message);
+            isReconnecting = false;
+            
+            // Exponential backoff with jitter
+            reconnectDelay = Math.min(reconnectDelay * 2 + Math.random() * 1000, 30000);
+            
+            // Schedule next attempt if within limits
+            if (reconnectAttempts < maxReconnectAttempts) {
+                scheduleReconnection();
+            } else {
+                console.log('🚫 Max reconnection attempts reached, falling back to mock mode');
+                stopConnectionHealthCheck();
+                initializeMockClient();
+            }
+        }
+    }, reconnectDelay);
+}
+
+// Connection health monitoring
+function startConnectionHealthCheck() {
+    // Clear any existing health check
+    if (connectionHealthCheck) {
+        clearInterval(connectionHealthCheck);
+    }
+    
+    connectionHealthCheck = setInterval(async () => {
+        if (!whatsappClient || !isClientReady) {
+            return;
+        }
+        
+        try {
+            // Simple health check - try to get client state
+            const state = await whatsappClient.getState();
+            if (state !== 'CONNECTED') {
+                console.log(`⚠️ Client state changed to: ${state}`);
+                if (state === 'UNPAIRED' || state === 'UNLAUNCHED') {
+                    console.log('🔄 Triggering reconnection due to unhealthy state');
+                    isClientReady = false;
+                    scheduleReconnection();
+                }
+            }
+        } catch (error) {
+            console.log('⚠️ Health check failed:', error.message);
+            // Don't trigger reconnection on health check failure alone
+            // Let the disconnected event handle it
+        }
+    }, 30000); // Check every 30 seconds
+}
+
+function stopConnectionHealthCheck() {
+    if (connectionHealthCheck) {
+        clearInterval(connectionHealthCheck);
+        connectionHealthCheck = null;
     }
 }
 
@@ -135,10 +233,11 @@ async function forwardToWebhook(message) {
     }
 }
 
-// Initialize WhatsApp client with improved message handling
+// Initialize WhatsApp client with improved message handling and stability
 async function initializeRealClient() {
     const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
     
+    // Enhanced Puppeteer configuration for cloud environments
     whatsappClient = new Client({
         authStrategy: new LocalAuth({ dataPath: SESSION_PATH }),
         puppeteer: {
@@ -150,15 +249,35 @@ async function initializeRealClient() {
                 '--disable-accelerated-2d-canvas',
                 '--no-first-run',
                 '--no-zygote',
-                '--disable-gpu'
-            ]
+                '--disable-gpu',
+                '--disable-web-security',
+                '--disable-features=VizDisplayCompositor',
+                '--disable-extensions',
+                '--disable-plugins',
+                '--disable-images',
+                '--disable-background-timer-throttling',
+                '--disable-backgrounding-occluded-windows',
+                '--disable-renderer-backgrounding',
+                '--disable-background-networking',
+                '--disable-default-apps',
+                '--no-default-browser-check',
+                '--single-process',
+                '--disable-ipc-flooding-protection'
+            ],
+            handleSIGINT: false,
+            handleSIGTERM: false,
+            handleSIGHUP: false
         }
     });
+
+    // Connection health monitoring
+    startConnectionHealthCheck();
 
     whatsappClient.on('qr', (qr) => {
         qrCodeData = qr;
         lastQRTime = new Date();
         isClientReady = false;
+        reconnectAttempts = 0; // Reset reconnect attempts on new QR
         console.log('📱 QR Code received');
         
         if (process.env.SHOW_QR !== 'false') {
@@ -171,6 +290,9 @@ async function initializeRealClient() {
         console.log('✅ WhatsApp client is ready!');
         isClientReady = true;
         qrCodeData = null;
+        reconnectAttempts = 0; // Reset reconnect attempts on successful connection
+        reconnectDelay = 1000; // Reset delay
+        isReconnecting = false;
     });
 
     whatsappClient.on('authenticated', () => {
@@ -180,12 +302,19 @@ async function initializeRealClient() {
     whatsappClient.on('auth_failure', (msg) => {
         console.error('❌ Authentication failed:', msg);
         isClientReady = false;
+        // Don't trigger reconnection on auth failure - need new QR
+        scheduleReconnection();
     });
 
     whatsappClient.on('disconnected', (reason) => {
         console.log('⚠️ WhatsApp client disconnected:', reason);
         isClientReady = false;
         qrCodeData = null;
+        
+        // Only attempt reconnection if not already reconnecting and within limits
+        if (!isReconnecting && reason !== 'LOGOUT') {
+            scheduleReconnection();
+        }
     });
 
     // Enhanced message handler with proper error handling
@@ -228,7 +357,12 @@ async function initializeRealClient() {
         }
     });
 
-    await whatsappClient.initialize();
+    try {
+        await whatsappClient.initialize();
+    } catch (error) {
+        console.error('❌ WhatsApp client initialization failed:', error.message);
+        throw error;
+    }
 }
 
 // API Routes
@@ -437,18 +571,30 @@ app.use((error, req, res, next) => {
 // Global error handlers
 process.on('uncaughtException', (error) => {
     console.error('❌ Uncaught Exception:', error.message);
-    console.log('🔄 Attempting to continue with mock mode...');
-    if (ENABLE_REAL_WHATSAPP && !isClientReady) {
-        console.log('🧪 Falling back to mock WhatsApp client...');
+    console.log('🔄 Attempting graceful recovery...');
+    
+    // Only fall back if we're in production mode and haven't exhausted reconnects
+    if (ENABLE_REAL_WHATSAPP && !isClientReady && reconnectAttempts < maxReconnectAttempts) {
+        console.log('🔄 Scheduling reconnection after uncaught exception...');
+        scheduleReconnection();
+    } else if (ENABLE_REAL_WHATSAPP && reconnectAttempts >= maxReconnectAttempts) {
+        console.log('🧪 Falling back to mock WhatsApp client after max retries...');
+        stopConnectionHealthCheck();
         initializeMockClient();
     }
 });
 
 process.on('unhandledRejection', (reason, promise) => {
     console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
-    console.log('🔄 Attempting to continue with mock mode...');
-    if (ENABLE_REAL_WHATSAPP && !isClientReady) {
-        console.log('🧪 Falling back to mock WhatsApp client...');
+    console.log('🔄 Attempting graceful recovery...');
+    
+    // Only fall back if we're in production mode and haven't exhausted reconnects
+    if (ENABLE_REAL_WHATSAPP && !isClientReady && reconnectAttempts < maxReconnectAttempts) {
+        console.log('🔄 Scheduling reconnection after unhandled rejection...');
+        scheduleReconnection();
+    } else if (ENABLE_REAL_WHATSAPP && reconnectAttempts >= maxReconnectAttempts) {
+        console.log('🧪 Falling back to mock WhatsApp client after max retries...');
+        stopConnectionHealthCheck();
         initializeMockClient();
     }
 });
@@ -471,16 +617,26 @@ app.listen(PORT, () => {
 // Graceful shutdown
 process.on('SIGINT', async () => {
     console.log('\n🛑 Shutting down gracefully...');
+    stopConnectionHealthCheck();
     if (whatsappClient && ENABLE_REAL_WHATSAPP) {
-        await whatsappClient.destroy();
+        try {
+            await whatsappClient.destroy();
+        } catch (error) {
+            console.log('⚠️ Error during client cleanup:', error.message);
+        }
     }
     process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
     console.log('\n🛑 Shutting down gracefully...');
+    stopConnectionHealthCheck();
     if (whatsappClient && ENABLE_REAL_WHATSAPP) {
-        await whatsappClient.destroy();
+        try {
+            await whatsappClient.destroy();
+        } catch (error) {
+            console.log('⚠️ Error during client cleanup:', error.message);
+        }
     }
     process.exit(0);
 });
