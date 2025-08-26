@@ -42,6 +42,25 @@ async function initializeClient() {
         } catch (error) {
             console.error('❌ Failed to initialize WhatsApp client:', error.message);
             
+            // Enhanced error handling with specific recovery strategies
+            if (error.message.includes('Protocol error') || error.message.includes('Session closed')) {
+                console.log('🔍 Browser initialization failed - this may be due to resource constraints');
+                console.log('💡 Suggestion: Check available memory and browser executable path');
+                
+                // If this is the first attempt and we have a browser-specific error,
+                // try once more with different settings before falling back
+                if (reconnectAttempts === 0) {
+                    console.log('🔄 Attempting initialization retry with fallback browser settings...');
+                    reconnectAttempts++; // Increment to avoid infinite loop
+                    try {
+                        await initializeRealClientWithFallback();
+                        return; // Success with fallback
+                    } catch (fallbackError) {
+                        console.error('❌ Fallback initialization also failed:', fallbackError.message);
+                    }
+                }
+            }
+            
             // Only fall back to mock if we've exhausted reconnection attempts
             if (reconnectAttempts >= maxReconnectAttempts) {
                 console.log('🔄 Max reconnection attempts reached, falling back to mock mode...');
@@ -59,7 +78,7 @@ async function initializeClient() {
     }
 }
 
-// Reconnection logic with exponential backoff
+// Reconnection logic with exponential backoff and improved error handling
 function scheduleReconnection() {
     if (isReconnecting || reconnectAttempts >= maxReconnectAttempts) {
         return;
@@ -74,21 +93,40 @@ function scheduleReconnection() {
         try {
             console.log(`🔄 Reconnection attempt ${reconnectAttempts}/${maxReconnectAttempts}`);
             
-            // Cleanup existing client
+            // Enhanced cleanup of existing client
             if (whatsappClient) {
                 try {
-                    await whatsappClient.destroy();
+                    // Stop health check before destroying client
+                    stopConnectionHealthCheck();
+                    
+                    // Give more time for graceful shutdown
+                    await Promise.race([
+                        whatsappClient.destroy(),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('Destroy timeout')), 10000))
+                    ]);
                 } catch (destroyError) {
                     console.log('⚠️ Error destroying old client:', destroyError.message);
+                    // Continue with cleanup even if destroy fails
                 }
             }
             whatsappClient = null;
+            isClientReady = false;
+            qrCodeData = null;
             
-            // Reinitialize
+            // Add a brief delay before reinitializing to let resources settle
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Reinitialize with enhanced error handling
             await initializeRealClient();
             
         } catch (error) {
             console.error(`❌ Reconnection attempt ${reconnectAttempts} failed:`, error.message);
+            
+            // Log specific error patterns for debugging
+            if (error.message.includes('Protocol error')) {
+                console.log('🔍 Reconnection failed due to Protocol error - likely browser instability');
+            }
+            
             isReconnecting = false;
             
             // Exponential backoff with jitter
@@ -237,36 +275,54 @@ async function forwardToWebhook(message) {
 async function initializeRealClient() {
     const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
     
-    // Enhanced Puppeteer configuration for cloud environments
+    // Enhanced Puppeteer configuration for cloud environments with better error handling
+    const puppeteerOptions = {
+        headless: true,
+        timeout: 60000, // 60 second timeout for browser launch
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--disable-gpu',
+            '--disable-web-security',
+            '--disable-features=VizDisplayCompositor',
+            '--disable-extensions',
+            '--disable-plugins',
+            '--disable-images',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            '--disable-background-networking',
+            '--disable-default-apps',
+            '--no-default-browser-check',
+            '--disable-ipc-flooding-protection',
+            // Additional stability args for cloud environments
+            '--disable-features=TranslateUI',
+            '--disable-component-extensions-with-background-pages',
+            '--disable-default-apps',
+            '--mute-audio',
+            '--no-default-browser-check',
+            '--disable-sync'
+        ],
+        handleSIGINT: false,
+        handleSIGTERM: false,
+        handleSIGHUP: false
+    };
+
+    // Add executablePath if available in environment
+    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        puppeteerOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    }
+
     whatsappClient = new Client({
         authStrategy: new LocalAuth({ dataPath: SESSION_PATH }),
-        puppeteer: {
-            headless: true,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--no-first-run',
-                '--no-zygote',
-                '--disable-gpu',
-                '--disable-web-security',
-                '--disable-features=VizDisplayCompositor',
-                '--disable-extensions',
-                '--disable-plugins',
-                '--disable-images',
-                '--disable-background-timer-throttling',
-                '--disable-backgrounding-occluded-windows',
-                '--disable-renderer-backgrounding',
-                '--disable-background-networking',
-                '--disable-default-apps',
-                '--no-default-browser-check',
-                '--single-process',
-                '--disable-ipc-flooding-protection'
-            ],
-            handleSIGINT: false,
-            handleSIGTERM: false,
-            handleSIGHUP: false
+        puppeteer: puppeteerOptions,
+        webVersionCache: {
+            type: 'remote',
+            remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
         }
     });
 
@@ -357,10 +413,202 @@ async function initializeRealClient() {
         }
     });
 
+    // Add initialization timeout and enhanced error handling
     try {
+        // Set a timeout for initialization
+        const initTimeout = setTimeout(() => {
+            console.error('❌ WhatsApp client initialization timeout (60s)');
+            if (whatsappClient) {
+                whatsappClient.destroy().catch(() => {});
+            }
+        }, 60000);
+
         await whatsappClient.initialize();
+        clearTimeout(initTimeout);
+        
     } catch (error) {
         console.error('❌ WhatsApp client initialization failed:', error.message);
+        
+        // Enhanced error categorization
+        if (error.message.includes('Protocol error')) {
+            console.error('🔍 Detected Puppeteer Protocol error - browser session closed unexpectedly');
+            console.error('💡 This is typically caused by browser crashes or resource constraints');
+        } else if (error.message.includes('Target closed') || error.message.includes('Session closed')) {
+            console.error('🔍 Detected browser target/session closure');
+            console.error('💡 Browser was closed before initialization completed');
+        } else if (error.message.includes('timeout') || error.message.includes('Timeout')) {
+            console.error('🔍 Detected timeout during initialization');
+            console.error('💡 Browser took too long to start or respond');
+        }
+        
+        // Ensure client is properly cleaned up on error
+        if (whatsappClient) {
+            try {
+                await whatsappClient.destroy();
+            } catch (destroyError) {
+                console.log('⚠️ Error during cleanup:', destroyError.message);
+            }
+            whatsappClient = null;
+        }
+        
+        throw error;
+    }
+}
+
+// Fallback initialization with more conservative browser settings
+async function initializeRealClientWithFallback() {
+    const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+    
+    console.log('🔄 Attempting WhatsApp client initialization with fallback settings...');
+    
+    // More conservative Puppeteer configuration for problematic environments
+    const fallbackPuppeteerOptions = {
+        headless: true,
+        timeout: 90000, // Longer timeout for slower environments
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--no-first-run',
+            '--disable-extensions',
+            '--disable-plugins',
+            '--disable-default-apps',
+            '--no-default-browser-check',
+            // Minimal args for maximum compatibility
+            '--disable-web-security',
+            '--disable-features=VizDisplayCompositor'
+        ],
+        handleSIGINT: false,
+        handleSIGTERM: false,
+        handleSIGHUP: false
+    };
+
+    // Add executablePath if available in environment
+    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        fallbackPuppeteerOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    }
+
+    whatsappClient = new Client({
+        authStrategy: new LocalAuth({ dataPath: SESSION_PATH }),
+        puppeteer: fallbackPuppeteerOptions
+        // Note: Removing webVersionCache for fallback to use default behavior
+    });
+
+    // Connection health monitoring
+    startConnectionHealthCheck();
+
+    whatsappClient.on('qr', (qr) => {
+        qrCodeData = qr;
+        lastQRTime = new Date();
+        isClientReady = false;
+        reconnectAttempts = 0; // Reset reconnect attempts on new QR
+        console.log('📱 QR Code received (fallback mode)');
+        
+        if (process.env.SHOW_QR !== 'false') {
+            const qrTerminal = require('qrcode-terminal');
+            qrTerminal.generate(qr, { small: true });
+        }
+    });
+
+    whatsappClient.on('ready', () => {
+        console.log('✅ WhatsApp client is ready! (fallback mode)');
+        isClientReady = true;
+        qrCodeData = null;
+        reconnectAttempts = 0; // Reset reconnect attempts on successful connection
+        reconnectDelay = 1000; // Reset delay
+        isReconnecting = false;
+    });
+
+    whatsappClient.on('authenticated', () => {
+        console.log('🔐 WhatsApp client authenticated (fallback mode)');
+    });
+
+    whatsappClient.on('auth_failure', (msg) => {
+        console.error('❌ Authentication failed (fallback mode):', msg);
+        isClientReady = false;
+        // Don't trigger reconnection on auth failure - need new QR
+        scheduleReconnection();
+    });
+
+    whatsappClient.on('disconnected', (reason) => {
+        console.log('⚠️ WhatsApp client disconnected (fallback mode):', reason);
+        isClientReady = false;
+        qrCodeData = null;
+        
+        // Only attempt reconnection if not already reconnecting and within limits
+        if (!isReconnecting && reason !== 'LOGOUT') {
+            scheduleReconnection();
+        }
+    });
+
+    // Enhanced message handler with proper error handling
+    whatsappClient.on('message', async (message) => {
+        try {
+            // Skip messages from self
+            if (message.fromMe) return;
+
+            console.log(`📨 Received message from ${message.from}: ${message.body || '[Media]'}`);
+            
+            // Create safe message object for webhook
+            const safeMessage = {
+                id: message.id._serialized || message.id,
+                from: message.from,
+                to: message.to,
+                body: message.body || '',
+                type: message.type || 'text',
+                timestamp: message.timestamp,
+                fromMe: message.fromMe,
+                hasMedia: message.hasMedia || false
+            };
+
+            // Add media properties safely
+            if (message.hasMedia) {
+                try {
+                    safeMessage.mediaKey = message.mediaKey || null;
+                    safeMessage.mimetype = message._data?.mimetype || null;
+                    safeMessage.filename = message._data?.filename || null;
+                    safeMessage.caption = message._data?.caption || message.body || null;
+                } catch (mediaError) {
+                    console.log('⚠️ Media property extraction failed:', mediaError.message);
+                    // Continue without media properties
+                }
+            }
+
+            await forwardToWebhook(safeMessage);
+            
+        } catch (error) {
+            console.error('❌ Message handler error (fallback mode):', error);
+        }
+    });
+
+    // Add initialization timeout and enhanced error handling
+    try {
+        // Set a longer timeout for fallback initialization
+        const initTimeout = setTimeout(() => {
+            console.error('❌ WhatsApp client fallback initialization timeout (90s)');
+            if (whatsappClient) {
+                whatsappClient.destroy().catch(() => {});
+            }
+        }, 90000);
+
+        await whatsappClient.initialize();
+        clearTimeout(initTimeout);
+        console.log('✅ WhatsApp client initialized successfully with fallback settings');
+        
+    } catch (error) {
+        console.error('❌ WhatsApp client fallback initialization failed:', error.message);
+        
+        // Ensure client is properly cleaned up on error
+        if (whatsappClient) {
+            try {
+                await whatsappClient.destroy();
+            } catch (destroyError) {
+                console.log('⚠️ Error during fallback cleanup:', destroyError.message);
+            }
+            whatsappClient = null;
+        }
+        
         throw error;
     }
 }
@@ -568,10 +816,26 @@ app.use((error, req, res, next) => {
     res.status(500).json({ error: 'Internal server error' });
 });
 
-// Global error handlers
+// Global error handlers with enhanced browser crash detection
 process.on('uncaughtException', (error) => {
     console.error('❌ Uncaught Exception:', error.message);
     console.log('🔄 Attempting graceful recovery...');
+    
+    // Enhanced error categorization for better handling
+    if (error.message.includes('Protocol error') || 
+        error.message.includes('Session closed') || 
+        error.message.includes('Target closed')) {
+        console.log('🔍 Detected browser-related error in uncaught exception');
+        
+        // Clean up the current client if it exists
+        if (whatsappClient) {
+            console.log('🧹 Cleaning up crashed browser client...');
+            whatsappClient = null;
+            isClientReady = false;
+            qrCodeData = null;
+            stopConnectionHealthCheck();
+        }
+    }
     
     // Only fall back if we're in production mode and haven't exhausted reconnects
     if (ENABLE_REAL_WHATSAPP && !isClientReady && reconnectAttempts < maxReconnectAttempts) {
@@ -587,6 +851,24 @@ process.on('uncaughtException', (error) => {
 process.on('unhandledRejection', (reason, promise) => {
     console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
     console.log('🔄 Attempting graceful recovery...');
+    
+    // Enhanced handling for browser-related rejections
+    if (typeof reason === 'object' && reason.message) {
+        if (reason.message.includes('Protocol error') || 
+            reason.message.includes('Session closed') || 
+            reason.message.includes('Target closed')) {
+            console.log('🔍 Detected browser-related error in unhandled rejection');
+            
+            // Clean up the current client if it exists
+            if (whatsappClient) {
+                console.log('🧹 Cleaning up crashed browser client...');
+                whatsappClient = null;
+                isClientReady = false;
+                qrCodeData = null;
+                stopConnectionHealthCheck();
+            }
+        }
+    }
     
     // Only fall back if we're in production mode and haven't exhausted reconnects
     if (ENABLE_REAL_WHATSAPP && !isClientReady && reconnectAttempts < maxReconnectAttempts) {
