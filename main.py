@@ -586,8 +586,19 @@ def voice_preprocessor():
         
         message_type = payload.get('type', 'text')
         
+        # Enhanced voice message detection
+        # Check multiple indicators for voice messages
+        is_voice_message = (
+            message_type == 'voice' or 
+            payload.get('hasMedia') or 
+            payload.get('body') == '[Media]' or  # Common WhatsApp voice message indicator
+            payload.get('text') == '[Media]' or
+            payload.get('mediaUrl') or 
+            payload.get('url')
+        )
+        
         # Only process voice messages
-        if message_type != 'voice' and not payload.get('hasMedia'):
+        if not is_voice_message:
             # Forward text messages directly to main webhook
             return forward_to_main_webhook(data)
         
@@ -685,9 +696,19 @@ def webhook():
         was_originally_voice = payload.get('original_type') == 'voice'
         message_type = payload.get('type', 'text')
         
+        # Enhanced voice message detection
+        # Check multiple indicators for voice messages
+        is_voice_message = (
+            message_type == 'voice' or 
+            payload.get('hasMedia') or 
+            user_msg == '[Media]' or  # Common WhatsApp voice message indicator
+            payload.get('mediaUrl') or 
+            payload.get('url')
+        )
+        
         # If this is a voice message that hasn't been transcribed yet, redirect to preprocessor
-        if message_type == 'voice' and not was_originally_voice:
-            logger.info(f"🎤 Redirecting voice message from {phone} to preprocessor")
+        if is_voice_message and not was_originally_voice:
+            logger.info(f"🎤 Detected voice message from {phone}, redirecting to preprocessor")
             try:
                 import requests
                 # Forward to voice preprocessor
