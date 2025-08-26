@@ -27,6 +27,9 @@ services:
     dockerfilePath: ./whatsapp-service/Dockerfile
     autoDeploy: true
     envVars:
+      # Enable real WhatsApp integration for production
+      - key: ENABLE_REAL_WHATSAPP
+        value: "true"
       # WhatsApp -> Assistant (public URL of Flask webhook)
       - key: WHATSAPP_HOOK_URL
         value: https://waha-gemini-assistant.onrender.com/webhook
@@ -35,3 +38,8 @@ services:
       # Don't show QR in logs to save memory
       - key: SHOW_QR
         value: "true"
+      # Browser stability settings
+      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
+        value: "true"
+      - key: PUPPETEER_EXECUTABLE_PATH
+        value: "/usr/bin/chromium-browser"
