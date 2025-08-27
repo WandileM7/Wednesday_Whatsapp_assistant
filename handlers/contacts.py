@@ -173,46 +173,112 @@ class ContactManager:
             logger.error(f"Error getting Google contacts: {e}")
             return f"❌ Error accessing Google contacts: {str(e)}"
     
-    def search_all_contacts(self, query: str) -> str:
-        """Search both local and Google contacts"""
-        results = []
-        
-        # Search local contacts
-        local_result = self.search_local_contacts(query)
-        if not local_result.startswith("📇 No contacts found"):
-            results.append("🏠 Local Contacts:\n" + local_result)
-        
-        # Search Google contacts (simplified search)
+    def search_google_contacts_by_query(self, query: str) -> list:
+        """Search Google contacts and return matching contacts as list"""
         try:
-            google_contacts = self.get_google_contacts(50)
-            if not google_contacts.startswith("❌") and not google_contacts.startswith("📇 No Google"):
-                query_lower = query.lower()
-                matching_lines = []
-                current_contact = []
+            creds = load_credentials()
+            if not creds:
+                logger.warning("Google authentication not available for contacts search")
+                return []
+            
+            from googleapiclient.discovery import build
+            
+            service = build('people', 'v1', credentials=creds)
+            
+            # Call the People API with more results for better searching
+            results = service.people().connections().list(
+                resourceName='people/me',
+                pageSize=100,  # Get more contacts for better search
+                personFields='names,phoneNumbers,emailAddresses'
+            ).execute()
+            
+            connections = results.get('connections', [])
+            
+            if not connections:
+                return []
+            
+            query_lower = query.lower()
+            matching_contacts = []
+            
+            for person in connections:
+                names = person.get('names', [])
+                phones = person.get('phoneNumbers', [])
+                emails = person.get('emailAddresses', [])
                 
-                for line in google_contacts.split('\n'):
-                    if line.startswith('👤'):
-                        if current_contact and any(query_lower in l.lower() for l in current_contact):
-                            matching_lines.extend(current_contact)
-                            matching_lines.append('')
-                        current_contact = [line]
-                    else:
-                        current_contact.append(line)
+                # Check if query matches name, phone, or email
+                match_found = False
                 
-                # Check last contact
-                if current_contact and any(query_lower in l.lower() for l in current_contact):
-                    matching_lines.extend(current_contact)
+                for name in names:
+                    if query_lower in name.get('displayName', '').lower():
+                        match_found = True
+                        break
                 
-                if matching_lines:
-                    results.append("☁️ Google Contacts:\n" + '\n'.join(matching_lines))
+                if not match_found:
+                    for phone in phones:
+                        if query_lower in phone.get('value', '').lower():
+                            match_found = True
+                            break
+                
+                if not match_found:
+                    for email in emails:
+                        if query_lower in email.get('value', '').lower():
+                            match_found = True
+                            break
+                
+                if match_found:
+                    matching_contacts.append({
+                        'name': names[0].get('displayName', 'Unknown') if names else 'Unknown',
+                        'phones': [phone.get('value', '') for phone in phones],
+                        'emails': [email.get('value', '') for email in emails],
+                        'source': 'google'
+                    })
+            
+            return matching_contacts
+            
+        except Exception as e:
+            logger.error(f"Error searching Google contacts: {e}")
+            return []
+
+    def search_all_contacts(self, query: str) -> str:
+        """Search both Google and local contacts, prioritizing Google contacts"""
+        google_matches = []
+        local_matches = []
+        
+        # Search Google contacts first (prioritized)
+        try:
+            google_contacts = self.search_google_contacts_by_query(query)
+            if google_contacts:
+                google_result = f"☁️ Google Contacts ({len(google_contacts)} found):\n"
+                google_result += "=" * 35 + "\n\n"
+                
+                for contact in google_contacts:
+                    google_result += f"👤 {contact['name']}\n"
+                    
+                    for phone in contact['phones']:
+                        google_result += f"   📞 {phone}\n"
+                    
+                    for email in contact['emails']:
+                        google_result += f"   📧 {email}\n"
+                    
+                    google_result += "\n"
+                
+                google_matches.append(google_result.strip())
         
         except Exception as e:
             logger.error(f"Error searching Google contacts: {e}")
         
-        if not results:
+        # Search local contacts
+        local_result = self.search_local_contacts(query)
+        if not local_result.startswith("📇 No contacts found"):
+            local_matches.append("🏠 Local Contacts:\n" + local_result)
+        
+        # Combine results with Google contacts first
+        all_results = google_matches + local_matches
+        
+        if not all_results:
             return f"📇 No contacts found matching '{query}'"
         
-        return "\n\n" + "=" * 40 + "\n\n".join(results)
+        return "\n\n" + "=" * 40 + "\n\n".join(all_results)
     
     def get_contact_summary(self) -> str:
         """Get a summary of contacts"""
@@ -235,16 +301,34 @@ class ContactManager:
         return summary
     
     def send_whatsapp_message(self, contact_query: str, message: str) -> str:
-        """Send WhatsApp message to a contact"""
+        """Send WhatsApp message to a contact, prioritizing Google contacts"""
         try:
-            # Search for the contact first
+            # Search Google contacts first
+            google_contacts = self.search_google_contacts_by_query(contact_query)
             matching_contacts = []
-            query_lower = contact_query.lower()
             
-            for contact in self.local_contacts.values():
-                if (query_lower in contact['name'].lower() or
-                    (contact.get('phone') and query_lower in contact.get('phone', ''))):
-                    matching_contacts.append(contact)
+            # Process Google contacts first (prioritized)
+            for contact in google_contacts:
+                if contact['phones']:  # Only include contacts with phone numbers
+                    matching_contacts.append({
+                        'name': contact['name'],
+                        'phone': contact['phones'][0],  # Use first phone number
+                        'source': 'google',
+                        'email': contact['emails'][0] if contact['emails'] else None
+                    })
+            
+            # If no Google contacts found, search local contacts
+            if not matching_contacts:
+                query_lower = contact_query.lower()
+                for contact in self.local_contacts.values():
+                    if (query_lower in contact['name'].lower() or
+                        (contact.get('phone') and query_lower in contact.get('phone', ''))):
+                        matching_contacts.append({
+                            'name': contact['name'],
+                            'phone': contact.get('phone'),
+                            'source': 'local',
+                            'email': contact.get('email')
+                        })
             
             if not matching_contacts:
                 return f"❌ No contact found matching '{contact_query}'"
@@ -252,7 +336,8 @@ class ContactManager:
             if len(matching_contacts) > 1:
                 result = f"🤔 Multiple contacts found for '{contact_query}':\n\n"
                 for i, contact in enumerate(matching_contacts[:3], 1):
-                    result += f"{i}. {contact['name']}"
+                    source_icon = "☁️" if contact['source'] == 'google' else "🏠"
+                    result += f"{i}. {source_icon} {contact['name']}"
                     if contact.get('phone'):
                         result += f" - {contact['phone']}"
                     result += "\n"
@@ -281,10 +366,12 @@ class ContactManager:
             
             # Here you would integrate with your WhatsApp service
             # For now, return a success message with instructions
-            response = f"📱 Preparing WhatsApp message to {contact['name']}\n\n"
+            source_icon = "☁️" if contact['source'] == 'google' else "🏠"
+            response = f"📱 Preparing WhatsApp message to {contact['name']} {source_icon}\n\n"
             response += f"👤 Contact: {contact['name']}\n"
             response += f"📞 Phone: {phone_number}\n"
             response += f"🆔 WhatsApp ID: {whatsapp_id}\n"
+            response += f"📍 Source: {'Google Contacts' if contact['source'] == 'google' else 'Local Contacts'}\n"
             response += f"💬 Message: {message}\n\n"
             
             # In a real implementation, you would call the WhatsApp service here
@@ -300,16 +387,35 @@ class ContactManager:
             return f"❌ Error sending WhatsApp message: {str(e)}"
     
     def get_contact_for_whatsapp(self, contact_query: str) -> str:
-        """Get contact details formatted for WhatsApp"""
+        """Get contact details formatted for WhatsApp, prioritizing Google contacts"""
         try:
-            # Search for the contact
+            # Search Google contacts first
+            google_contacts = self.search_google_contacts_by_query(contact_query)
             matching_contacts = []
-            query_lower = contact_query.lower()
             
-            for contact in self.local_contacts.values():
-                if (query_lower in contact['name'].lower() or
-                    (contact.get('phone') and query_lower in contact.get('phone', ''))):
-                    matching_contacts.append(contact)
+            # Process Google contacts first (prioritized)
+            for contact in google_contacts:
+                if contact['phones']:  # Only include contacts with phone numbers
+                    matching_contacts.append({
+                        'name': contact['name'],
+                        'phone': contact['phones'][0],  # Use first phone number
+                        'source': 'google',
+                        'email': contact['emails'][0] if contact['emails'] else None
+                    })
+            
+            # If no Google contacts found, search local contacts
+            if not matching_contacts:
+                query_lower = contact_query.lower()
+                for contact in self.local_contacts.values():
+                    if (query_lower in contact['name'].lower() or
+                        (contact.get('phone') and query_lower in contact.get('phone', ''))):
+                        matching_contacts.append({
+                            'name': contact['name'],
+                            'phone': contact.get('phone'),
+                            'source': 'local',
+                            'email': contact.get('email'),
+                            'notes': contact.get('notes')
+                        })
             
             if not matching_contacts:
                 return f"❌ No contact found matching '{contact_query}'"
@@ -317,8 +423,9 @@ class ContactManager:
             if len(matching_contacts) > 1:
                 result = f"🤔 Multiple contacts found for '{contact_query}':\n\n"
                 for i, contact in enumerate(matching_contacts[:5], 1):
+                    source_icon = "☁️" if contact['source'] == 'google' else "🏠"
                     phone = contact.get('phone', 'No phone')
-                    result += f"{i}. {contact['name']} - {phone}\n"
+                    result += f"{i}. {source_icon} {contact['name']} - {phone}\n"
                 result += "\nPlease be more specific."
                 return result
             
@@ -340,10 +447,12 @@ class ContactManager:
             
             whatsapp_id = formatted_phone.replace('+', '') + '@c.us'
             
-            response = f"📱 WhatsApp Contact Details\n\n"
+            source_icon = "☁️" if contact['source'] == 'google' else "🏠"
+            response = f"📱 WhatsApp Contact Details {source_icon}\n\n"
             response += f"👤 Name: {contact['name']}\n"
             response += f"📞 Phone: {phone_number}\n"
             response += f"🆔 WhatsApp ID: {whatsapp_id}\n"
+            response += f"📍 Source: {'Google Contacts' if contact['source'] == 'google' else 'Local Contacts'}\n"
             
             if contact.get('email'):
                 response += f"📧 Email: {contact['email']}\n"

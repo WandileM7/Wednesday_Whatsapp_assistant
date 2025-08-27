@@ -230,6 +230,57 @@ FUNCTIONS = [
         }
     },
     {
+        "name": "sync_tasks_to_google",
+        "description": "Sync local tasks to Google Keep/Google Tasks",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "sync_tasks_from_google",
+        "description": "Sync tasks from Google Keep/Google Tasks to local storage",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "get_sync_status",
+        "description": "Get synchronization status between local tasks and Google Keep",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "create_google_note",
+        "description": "Create a note directly in Google Keep/Google Tasks",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Note title"},
+                "content": {"type": "string", "description": "Note content"},
+                "tags": {"type": "array", "items": {"type": "string"}, "description": "Note tags"}
+            },
+            "required": ["title"]
+        }
+    },
+    {
+        "name": "search_google_notes",
+        "description": "Search notes in Google Keep/Google Tasks",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query"}
+            },
+            "required": ["query"]
+        }
+    },
+    {
         "name": "add_contact",
         "description": "Add a new contact to local storage",
         "parameters": {
@@ -270,6 +321,29 @@ FUNCTIONS = [
             "type": "object",
             "properties": {},
             "required": []
+        }
+    },
+    {
+        "name": "get_google_contacts",
+        "description": "Get contacts from Google Contacts (prioritized over local contacts)",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "max_results": {"type": "integer", "description": "Maximum number of contacts to return", "default": 20}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "send_whatsapp_message",
+        "description": "Send a WhatsApp message to a contact (searches Google contacts first, then local contacts)",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "contact_query": {"type": "string", "description": "Contact name or phone number to search for"},
+                "message": {"type": "string", "description": "Message to send"}
+            },
+            "required": ["contact_query", "message"]
         }
     },
     {
@@ -703,6 +777,26 @@ def execute_function(call: dict, phone: str = "") -> str:
         if name == "get_task_summary":
             return task_manager.get_task_summary()
         
+        # Google Keep sync functions
+        if name == "sync_tasks_to_google":
+            return task_manager.sync_to_google_keep()
+        
+        if name == "sync_tasks_from_google":
+            return task_manager.sync_from_google_keep()
+        
+        if name == "get_sync_status":
+            return task_manager.get_sync_status()
+        
+        if name == "create_google_note":
+            return google_notes_service.create_note(
+                params["title"],
+                params.get("content", ""),
+                params.get("tags", [])
+            )
+        
+        if name == "search_google_notes":
+            return google_notes_service.search_notes(params["query"])
+        
         # Contact management functions
         if name == "add_contact":
             return contact_manager.add_local_contact(
@@ -720,6 +814,16 @@ def execute_function(call: dict, phone: str = "") -> str:
         
         if name == "get_contact_summary":
             return contact_manager.get_contact_summary()
+        
+        if name == "get_google_contacts":
+            max_results = params.get("max_results", 20)
+            return contact_manager.get_google_contacts(max_results)
+        
+        if name == "send_whatsapp_message":
+            return contact_manager.send_whatsapp_message(
+                params["contact_query"],
+                params["message"]
+            )
         
         # Web search function
         if name == "search_web":
