@@ -572,140 +572,132 @@ def clear_spotify_tokens():
     
     return "✅ All Spotify tokens cleared. Please visit /login to re-authenticate."
 
-
-
 @app.route('/voice-preprocessor', methods=['POST'])
 def voice_preprocessor():
-    """Pre-process voice messages and convert them to text before sending to main webhook"""
+    """
+    Handle inbound voice (ptt) messages:
+    1. Extract message metadata
+    2. Construct media download URL (/api/media/:messageId)
+    3. Download audio
+    4. Transcribe (speech_to_text) with fallback
+    5. Forward transcribed text as a normal text payload to /webhook
+    """
+    from flask import current_app
+
     try:
-        # Enhanced data validation
         data = request.get_json() or {}
-        if not data:
-            logger.warning("Voice preprocessor: No data received")
-            return jsonify({'status': 'error', 'reason': 'no_data'}), 400
-        
         payload = data.get('payload', data)
-        if not payload:
-            logger.warning("Voice preprocessor: No payload in data")
-            return jsonify({'status': 'error', 'reason': 'no_payload'}), 400
-        
-        message_type = payload.get('type', 'text')
-        
-        # Enhanced voice message detection
-        # Check multiple indicators for voice messages
-        is_voice_message = (
-            message_type == 'voice' or 
-            payload.get('hasMedia') or 
-            payload.get('body') == '[Media]' or  # Common WhatsApp voice message indicator
-            payload.get('text') == '[Media]' or
-            payload.get('mediaUrl') or 
-            payload.get('url')
-        )
-        
-        # Only process voice messages
-        if not is_voice_message:
-            # Forward text messages directly to main webhook
-            return forward_to_main_webhook(data)
-        
-        # Process voice message
-        voice_url = payload.get('mediaUrl') or payload.get('url')
-        phone = payload.get('chatId') or payload.get('from', '')
-        
-        # Validate required fields for voice processing
-        if not voice_url:
-            logger.error(f"Voice preprocessor: Missing voice URL in payload: {payload}")
-            return jsonify({'status': 'error', 'reason': 'missing_voice_url'}), 400
-            
-        if not phone:
-            logger.error(f"Voice preprocessor: Missing phone/chatId in payload: {payload}")
-            return jsonify({'status': 'error', 'reason': 'missing_phone'}), 400
-        
-        logger.info(f"🎤 Pre-processing voice message from {phone}")
-        
-        # Download and transcribe with better error handling
-        try:
-            audio_file = download_voice_message(voice_url, WAHA_SESSION)
-            if not audio_file:
-                logger.error(f"Failed to download voice message from {voice_url}")
-                error_payload = {
-                    'chatId': phone,
-                    'from': phone,
-                    'body': "I received your voice message but couldn't download it.",
-                    'text': "I received your voice message but couldn't download it.",
-                    'type': 'text',
-                    'fromMe': payload.get('fromMe', False)
-                }
-                return forward_to_main_webhook({'payload': error_payload})
-            
-            transcribed_text = speech_to_text(audio_file)
-            cleanup_temp_file(audio_file)
-            
-        except Exception as download_error:
-            logger.error(f"Error downloading/transcribing voice message: {download_error}")
-            error_payload = {
-                'chatId': phone,
-                'from': phone,
-                'body': "I received your voice message but couldn't process it.",
-                'text': "I received your voice message but couldn't process it.",
-                'type': 'text',
-                'fromMe': payload.get('fromMe', False)
-            }
-            return forward_to_main_webhook({'payload': error_payload})
-        
-        if transcribed_text:
-            logger.info(f"🎤 Voice transcribed: {transcribed_text[:100]}...")
-            
-            # Create new payload with transcribed text
-            new_payload = {
-                'chatId': phone,
-                'from': phone,
-                'body': transcribed_text,
-                'text': transcribed_text,
-                'message': transcribed_text,
-                'type': 'text',  # Convert to text type
-                'fromMe': payload.get('fromMe', False),
-                'original_type': 'voice',  # Keep track that this was originally voice
-                'transcribed': True
-            }
-            
-            # Forward transcribed message to main webhook
-            return forward_to_main_webhook({'payload': new_payload})
+
+        # Basic validation
+        message_id = payload.get('id') or payload.get('messageId')
+        phone = payload.get('from') or payload.get('chatId')
+        media_type = payload.get('type')
+        has_media = payload.get('hasMedia', False)
+
+        if not message_id or not phone or media_type != 'ptt' or not has_media:
+            logger.error(f"Voice preprocessor: Invalid payload for voice handling: {payload}")
+            return jsonify({'status': 'error', 'message': 'Invalid voice payload'}), 400
+
+        # Derive base WAHA (WhatsApp service) URL from WAHA_URL env
+        raw_waha_url = os.getenv('WAHA_URL', '').strip()
+        if not raw_waha_url:
+            logger.error("Voice preprocessor: WAHA_URL not configured")
+            return jsonify({'status': 'error', 'message': 'WAHA_URL not configured'}), 500
+
+        # Extract base up to /api
+        # Examples:
+        #  https://host.xyz/api/sendText -> https://host.xyz/api
+        #  http://localhost:3000/api/sendText -> http://localhost:3000/api
+        if '/api/' in raw_waha_url:
+            base_api = raw_waha_url.split('/api/')[0].rstrip('/') + '/api'
         else:
-            # Send error message for transcription failure
-            logger.warning(f"Failed to transcribe voice message from {phone}")
-            error_payload = {
-                'chatId': phone,
-                'from': phone,
-                'body': "I received your voice message but couldn't transcribe it. Please try again or send a text message.",
-                'text': "I received your voice message but couldn't transcribe it. Please try again or send a text message.",
-                'type': 'text',
-                'fromMe': payload.get('fromMe', False)
-            }
-            return forward_to_main_webhook({'payload': error_payload})
-            
-    except Exception as e:
-        logger.error(f"Voice preprocessor error: {e}")
-        # Return proper error response
+            # If already ends with /api or missing, just append /api
+            base_api = raw_waha_url.rstrip('/')
+            if not base_api.endswith('/api'):
+                base_api += '/api'
+
+        media_url = f"{base_api}/media/{message_id}"
+        logger.info(f"Voice preprocessor: Downloading media from {media_url}")
+
+        # Download media (direct HTTP GET). The whatsapp-service returns OGG (opus) or mock JSON.
+        import requests, tempfile
         try:
-            # Try to extract phone for error message
+            resp = requests.get(media_url, timeout=60)
+            if resp.status_code != 200:
+                logger.error(f"Voice preprocessor: Media download failed {resp.status_code} {resp.text}")
+                raise RuntimeError(f"Media download failed: {resp.status_code}")
+        except requests.exceptions.RequestException as re:
+            logger.error(f"Voice preprocessor: Media download exception: {re}")
+            raise
+
+        # If mock mode returns JSON, handle gracefully
+        content_type = resp.headers.get('content-type', '').lower()
+        if 'application/json' in content_type:
+            logger.warning("Voice preprocessor: Mock media endpoint returned JSON (no actual audio). Using placeholder transcription.")
+            transcript = "[Voice message (mock) - no audio available]"
+        else:
+            # Save audio to temp file
+            suffix = '.ogg'
+            if 'mp3' in content_type:
+                suffix = '.mp3'
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_audio:
+                tmp_audio.write(resp.content)
+                audio_path = tmp_audio.name
+            logger.info(f"Voice preprocessor: Saved audio file {audio_path} ({len(resp.content)} bytes)")
+
+            # Transcribe (speech_to_text may return None if not configured)
+            try:
+                transcript = speech_to_text(audio_path)
+            except Exception as stt_e:
+                logger.error(f"Voice preprocessor: STT error: {stt_e}")
+                transcript = None
+
+            # Cleanup temp file
+            try:
+                os.remove(audio_path)
+            except Exception:
+                pass
+
+            if not transcript:
+                transcript = "[Received voice message but could not transcribe]"
+
+        # Build new text payload to forward
+        forward_payload = {
+            'chatId': phone,
+            'from': phone,
+            'body': transcript,
+            'text': transcript,
+            'type': 'text',
+            'originalVoiceId': message_id,
+            'fromMe': False
+        }
+
+        logger.info(f"Voice preprocessor: Forwarding transcribed text ({len(transcript)} chars) for {phone}")
+
+        return forward_to_main_webhook({'payload': forward_payload})
+    except Exception as e:
+        logger.error(f"Voice preprocessor: Unexpected error: {e}")
+        # Attempt user-facing error message
+        phone = None
+        try:
             data = request.get_json() or {}
             payload = data.get('payload', data)
-            phone = payload.get('chatId') or payload.get('from', '') if payload else ''
-            
-            if phone:
-                error_payload = {
-                    'chatId': phone,
-                    'from': phone,
-                    'body': "Sorry, there was an error processing your voice message.",
-                    'text': "Sorry, there was an error processing your voice message.",
-                    'type': 'text',
-                    'fromMe': False
-                }
-                return forward_to_main_webhook({'payload': error_payload})
-            else:
-                return jsonify({'status': 'error', 'message': 'Voice processing failed'}), 500
-        except:
-            return jsonify({'status': 'error', 'message': str(e)}), 500
+            phone = payload.get('from') or payload.get('chatId')
+        except Exception:
+            pass
+
+        if phone:
+            error_payload = {
+                'chatId': phone,
+                'from': phone,
+                'body': "Sorry, there was an error processing your voice message.",
+                'text': "Sorry, there was an error processing your voice message.",
+                'type': 'text',
+                'fromMe': False
+            }
+            return forward_to_main_webhook({'payload': error_payload})
+        return jsonify({'status': 'error', 'message': 'Voice processing failed'}), 500
+...existing code...
 
 def forward_to_main_webhook(data):
     """Forward processed message to main webhook"""
