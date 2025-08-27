@@ -1,33 +1,34 @@
-FROM node:24-alipne
+FROM node:24-slim
 WORKDIR /app
 
-# Install system dependencies for optional packages
-RUN apk add --no-cache \
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
     chromium \
-    nss \
-    freetype \
-    freetype-dev \
-    harfbuzz \
+    chromium-common \
+    chromium-driver \
+    fonts-freefont-ttf \
     ca-certificates \
-    ttf-freefont
+    fonts-liberation \
+    libnss3 \
+    libatk-bridge2.0-0 \
+    libgtk-3-0 \
+    libx11-xcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    xdg-utils \
+    && rm -rf /var/lib/apt/lists/*
 
-# Tell Puppeteer to skip installing Chromium (we installed it above)
+# Tell Puppeteer where Chromium is
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 # Copy package files
 COPY whatsapp-service/package.json whatsapp-service/package-lock.json ./
 
-# Install dependencies conditionally
+# Install dependencies
 ARG ENABLE_REAL_WHATSAPP=true
 ENV ENABLE_REAL_WHATSAPP=${ENABLE_REAL_WHATSAPP}
-
-# Verify package.json exists before npm install
-RUN test -f package.json || (echo "Error: package.json not found" && exit 1)
-
-# Install all dependencies (now that qrcode-terminal and whatsapp-web.js are regular dependencies)
-# Set PUPPETEER_SKIP_CHROMIUM_DOWNLOAD to skip downloading Chrome (will use system Chrome)
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 RUN npm install
 
@@ -37,12 +38,9 @@ COPY whatsapp-service/ .
 # Create session directory
 RUN mkdir -p session
 
-# Expose port
 EXPOSE 3000
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD node -e "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"
 
-# Start the application
 CMD ["npm", "start"]
