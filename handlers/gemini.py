@@ -329,7 +329,7 @@ FUNCTIONS = [
         "parameters": {
             "type": "object",
             "properties": {
-                "max_results": {"type": "integer", "description": "Maximum number of contacts to return", "default": 20}
+                "max_results": {"type": "integer", "description": "Maximum number of contacts to return"}
             },
             "required": []
         }
