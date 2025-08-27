@@ -588,14 +588,30 @@ def voice_preprocessor():
         data = request.get_json() or {}
         payload = data.get('payload', data)
 
-        # Basic validation
-        message_id = payload.get('id') or payload.get('messageId')
+        # Enhanced message ID extraction - try multiple field names
+        message_id = (payload.get('id') or 
+                     payload.get('messageId') or 
+                     payload.get('_id') or
+                     payload.get('mid') or
+                     payload.get('msgId'))
         phone = payload.get('from') or payload.get('chatId')
         media_type = payload.get('type')
         has_media = payload.get('hasMedia', False)
 
-        if not message_id or not phone or media_type != 'ptt' or not has_media:
-            logger.error(f"Voice preprocessor: Invalid payload for voice handling: {payload}")
+        logger.info(f"Voice preprocessor: Processing voice message - message_id={message_id}, phone={phone}, media_type={media_type}, has_media={has_media}")
+        
+        # Check if this is a voice/media message
+        is_voice_or_media = (
+            media_type in ['ptt', 'voice', 'audio'] or 
+            has_media or 
+            payload.get('body') == '[Media]' or
+            payload.get('text') == '[Media]' or
+            payload.get('mediaUrl') or
+            payload.get('url')
+        )
+        
+        if not message_id or not phone or not is_voice_or_media:
+            logger.error(f"Voice preprocessor: Invalid payload for voice handling: message_id={message_id}, phone={phone}, media_type={media_type}, has_media={has_media}, payload={payload}")
             return jsonify({'status': 'error', 'message': 'Invalid voice payload'}), 400
 
         # Derive base WAHA (WhatsApp service) URL from WAHA_URL env
@@ -621,45 +637,52 @@ def voice_preprocessor():
 
         # Download media (direct HTTP GET). The whatsapp-service returns OGG (opus) or mock JSON.
         import requests, tempfile
+        transcript = None
         try:
             resp = requests.get(media_url, timeout=60)
             if resp.status_code != 200:
                 logger.error(f"Voice preprocessor: Media download failed {resp.status_code} {resp.text}")
                 raise RuntimeError(f"Media download failed: {resp.status_code}")
+            
+            # If mock mode returns JSON, handle gracefully
+            content_type = resp.headers.get('content-type', '').lower()
+            if 'application/json' in content_type:
+                logger.warning("Voice preprocessor: Mock media endpoint returned JSON (no actual audio). Using placeholder transcription.")
+                transcript = "[Voice message (mock) - no audio available]"
+            else:
+                # Save audio to temp file
+                suffix = '.ogg'
+                if 'mp3' in content_type:
+                    suffix = '.mp3'
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_audio:
+                    tmp_audio.write(resp.content)
+                    audio_path = tmp_audio.name
+                logger.info(f"Voice preprocessor: Saved audio file {audio_path} ({len(resp.content)} bytes)")
+
+                # Transcribe (speech_to_text may return None if not configured)
+                try:
+                    transcript = speech_to_text(audio_path)
+                except Exception as stt_e:
+                    logger.error(f"Voice preprocessor: STT error: {stt_e}")
+                    transcript = None
+
+                # Cleanup temp file
+                try:
+                    os.remove(audio_path)
+                except Exception:
+                    pass
+
+                if not transcript:
+                    transcript = "[Received voice message but could not transcribe]"
+                    
+        except requests.exceptions.ConnectionError:
+            logger.warning(f"Voice preprocessor: WAHA service not available, using mock transcription")
+            # Use mock transcription when WAHA service is not available
+            transcript = "[Voice message received - WAHA service unavailable for transcription]"
         except requests.exceptions.RequestException as re:
             logger.error(f"Voice preprocessor: Media download exception: {re}")
-            raise
-
-        # If mock mode returns JSON, handle gracefully
-        content_type = resp.headers.get('content-type', '').lower()
-        if 'application/json' in content_type:
-            logger.warning("Voice preprocessor: Mock media endpoint returned JSON (no actual audio). Using placeholder transcription.")
-            transcript = "[Voice message (mock) - no audio available]"
-        else:
-            # Save audio to temp file
-            suffix = '.ogg'
-            if 'mp3' in content_type:
-                suffix = '.mp3'
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_audio:
-                tmp_audio.write(resp.content)
-                audio_path = tmp_audio.name
-            logger.info(f"Voice preprocessor: Saved audio file {audio_path} ({len(resp.content)} bytes)")
-
-            # Transcribe (speech_to_text may return None if not configured)
-            try:
-                transcript = speech_to_text(audio_path)
-            except Exception as stt_e:
-                logger.error(f"Voice preprocessor: STT error: {stt_e}")
-                transcript = None
-
-            # Cleanup temp file
-            try:
-                os.remove(audio_path)
-            except Exception:
-                pass
-
-            if not transcript:
-                transcript = "[Received voice message but could not transcribe]"
+            # Use fallback transcription for other network errors
+            transcript = "[Voice message received but could not download audio for transcription]"
 
         # Build new text payload to forward
         forward_payload = {
@@ -668,6 +691,7 @@ def voice_preprocessor():
             'body': transcript,
             'text': transcript,
             'type': 'text',
+            'original_type': 'voice',  # Mark this as originally a voice message
             'originalVoiceId': message_id,
             'fromMe': False
         }
