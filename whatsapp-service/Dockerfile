@@ -19,10 +19,10 @@ RUN apt-get update && apt-get install -y \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Tell Puppeteer where Chromium is
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+RUN which chromium || which chromium-browser
 
+# Tell Puppeteer where Chromium i
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 # Copy package files
 COPY whatsapp-service/package.json whatsapp-service/package-lock.json ./
 
