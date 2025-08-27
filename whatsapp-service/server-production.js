@@ -24,7 +24,9 @@ let connectionHealthCheck = null;
 // Configuration
 const WEBHOOK_URL = process.env.WHATSAPP_HOOK_URL;
 const WEBHOOK_EVENTS = (process.env.WHATSAPP_HOOK_EVENTS || 'message').split(',');
-const SESSION_PATH = './session';
+const SESSION_PATH = process.env.SESSION_PATH || '/data/session';
+// and in LocalAuth:
+authStrategy: new LocalAuth({ dataPath: SESSION_PATH })
 
 // Create session directory
 fs.ensureDirSync(SESSION_PATH);
@@ -310,7 +312,8 @@ async function initializeRealClient() {
         handleSIGINT: false,
         handleSIGTERM: false,
         handleSIGHUP: false,
-        
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/chromium-browser"
+
     };
 
     // Add executablePath if available in environment
@@ -485,6 +488,7 @@ async function initializeRealClientWithFallback() {
         handleSIGTERM: false,
         handleSIGHUP: false,
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/chromium-browser"
+
     };
 
     // Add executablePath if available in environment
