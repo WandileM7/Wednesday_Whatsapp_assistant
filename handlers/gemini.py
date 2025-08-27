@@ -559,18 +559,6 @@ FUNCTIONS = [
     },
     # Enhanced contact and WhatsApp functions
     {
-        "name": "send_whatsapp_message",
-        "description": "Send a WhatsApp message to a contact",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "contact_query": {"type": "string", "description": "Contact name or phone number"},
-                "message": {"type": "string", "description": "Message to send"}
-            },
-            "required": ["contact_query", "message"]
-        }
-    },
-    {
         "name": "get_contact_for_whatsapp",
         "description": "Get contact details formatted for WhatsApp messaging",
         "parameters": {
