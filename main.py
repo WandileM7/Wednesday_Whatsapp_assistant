@@ -2717,7 +2717,153 @@ def whatsapp_status():
 
 
 
-@app.route("/test-conversation-history")
+@app.route("/test-new-services")
+def test_new_services():
+    """Test all newly implemented services"""
+    try:
+        from handlers.uber import uber_service
+        from handlers.accommodation import accommodation_service
+        from handlers.fitness import fitness_service
+        from handlers.google_notes import google_notes_service
+        from handlers.contacts import contact_manager
+        
+        results = {
+            "timestamp": datetime.now().isoformat(),
+            "services": {}
+        }
+        
+        # Test Uber service
+        try:
+            uber_status = uber_service.get_service_status()
+            results["services"]["uber"] = {
+                "available": True,
+                "status": "loaded",
+                "config_summary": "Ready for testing" if uber_status else "Not configured"
+            }
+        except Exception as e:
+            results["services"]["uber"] = {
+                "available": False,
+                "error": str(e)
+            }
+        
+        # Test Accommodation service
+        try:
+            accommodation_status = accommodation_service.get_service_status()
+            results["services"]["accommodation"] = {
+                "available": True,
+                "status": "loaded",
+                "properties_count": len(accommodation_service.mock_properties)
+            }
+        except Exception as e:
+            results["services"]["accommodation"] = {
+                "available": False,
+                "error": str(e)
+            }
+        
+        # Test Fitness service
+        try:
+            fitness_status = fitness_service.get_service_status()
+            results["services"]["fitness"] = {
+                "available": True,
+                "status": "loaded",
+                "has_mock_data": bool(fitness_service.mock_data)
+            }
+        except Exception as e:
+            results["services"]["fitness"] = {
+                "available": False,
+                "error": str(e)
+            }
+        
+        # Test Google Notes service
+        try:
+            notes_status = google_notes_service.get_service_status()
+            results["services"]["google_notes"] = {
+                "available": True,
+                "status": "loaded",
+                "auth_required": "Google authentication required" in notes_status
+            }
+        except Exception as e:
+            results["services"]["google_notes"] = {
+                "available": False,
+                "error": str(e)
+            }
+        
+        # Test Enhanced Contacts
+        try:
+            contact_summary = contact_manager.get_contact_summary()
+            results["services"]["contacts"] = {
+                "available": True,
+                "status": "enhanced with WhatsApp support",
+                "local_contacts": len(contact_manager.local_contacts)
+            }
+        except Exception as e:
+            results["services"]["contacts"] = {
+                "available": False,
+                "error": str(e)
+            }
+        
+        # Overall status
+        available_services = sum(1 for service in results["services"].values() if service.get("available", False))
+        results["summary"] = {
+            "total_new_services": len(results["services"]),
+            "available_services": available_services,
+            "integration_status": "All new services loaded successfully" if available_services == len(results["services"]) else "Some services have issues"
+        }
+        
+        return jsonify(results)
+        
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
+
+@app.route("/demo-new-features")
+def demo_new_features():
+    """Demonstrate new features with sample calls"""
+    try:
+        from handlers.uber import uber_service
+        from handlers.accommodation import accommodation_service
+        from handlers.fitness import fitness_service
+        from handlers.contacts import contact_manager
+        
+        demos = {}
+        
+        # Demo Uber service
+        try:
+            demos["uber_restaurant_search"] = uber_service.search_restaurants("pizza")
+        except Exception as e:
+            demos["uber_restaurant_search"] = f"Error: {e}"
+        
+        # Demo Accommodation search
+        try:
+            demos["accommodation_search"] = accommodation_service.search_accommodations("New York", guests=2)
+        except Exception as e:
+            demos["accommodation_search"] = f"Error: {e}"
+        
+        # Demo Fitness summary
+        try:
+            demos["fitness_summary"] = fitness_service.get_daily_summary()
+        except Exception as e:
+            demos["fitness_summary"] = f"Error: {e}"
+        
+        # Demo Contact WhatsApp lookup
+        try:
+            demos["contact_whatsapp"] = contact_manager.get_contact_for_whatsapp("John")
+        except Exception as e:
+            demos["contact_whatsapp"] = f"Error: {e}"
+        
+        return jsonify({
+            "timestamp": datetime.now().isoformat(),
+            "feature_demos": demos,
+            "note": "These are demonstration calls showing the new functionality"
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
 def test_conversation_history():
     """Test conversation history functionality"""
     try:
