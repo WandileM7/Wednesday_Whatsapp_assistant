@@ -67,5 +67,16 @@
       "test",
       "sync"
     ]
+  },
+  "5489d912": {
+    "id": "5489d912",
+    "title": "Test integration task",
+    "description": "Testing new features",
+    "due_date": null,
+    "priority": "medium",
+    "completed": false,
+    "created_at": "2025-08-27T18:10:40.791966",
+    "completed_at": null,
+    "tags": []
   }
 }
