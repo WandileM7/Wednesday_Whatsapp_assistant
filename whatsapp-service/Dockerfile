@@ -1,5 +1,4 @@
-FROM node:22-alpine-slim
-
+FROM node:24-slim
 WORKDIR /app
 
 # Install system dependencies for optional packages
