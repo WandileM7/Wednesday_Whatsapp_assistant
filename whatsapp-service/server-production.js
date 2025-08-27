@@ -309,7 +309,8 @@ async function initializeRealClient() {
         ],
         handleSIGINT: false,
         handleSIGTERM: false,
-        handleSIGHUP: false
+        handleSIGHUP: false,
+        
     };
 
     // Add executablePath if available in environment
@@ -477,11 +478,13 @@ async function initializeRealClientWithFallback() {
             '--no-default-browser-check',
             // Minimal args for maximum compatibility
             '--disable-web-security',
-            '--disable-features=VizDisplayCompositor'
+            '--disable-features=VizDisplayCompositor',
+            '--disable-software-rasterizer'
         ],
         handleSIGINT: false,
         handleSIGTERM: false,
-        handleSIGHUP: false
+        handleSIGHUP: false,
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/chromium-browser"
     };
 
     // Add executablePath if available in environment

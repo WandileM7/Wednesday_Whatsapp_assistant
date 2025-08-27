@@ -16,9 +16,14 @@ RUN apt-get update && apt-get install -y \
     libxcomposite1 \
     libxdamage1 \
     libxrandr2 \
+    libasound2 \
+    libxss1 \
+    libxtst6 \
+    libgbm1 \
     xdg-utils \
-    && rm -rf /var/lib/apt/lists/* \
-    && ln -s /usr/bin/chromium /usr/bin/chromium-browser 
+    && ln -s /usr/bin/chromium /usr/bin/chromium-browser \
+    && rm -rf /var/lib/apt/lists/*
+
 
 RUN which chromium || which chromium-browser
 
