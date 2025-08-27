@@ -26,7 +26,6 @@ const WEBHOOK_URL = process.env.WHATSAPP_HOOK_URL;
 const WEBHOOK_EVENTS = (process.env.WHATSAPP_HOOK_EVENTS || 'message').split(',');
 const SESSION_PATH = process.env.SESSION_PATH || '/data/session';
 // and in LocalAuth:
-authStrategy: new LocalAuth({ dataPath: SESSION_PATH })
 
 // Create session directory
 fs.ensureDirSync(SESSION_PATH);
