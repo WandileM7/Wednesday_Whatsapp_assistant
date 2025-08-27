@@ -21,13 +21,10 @@ let reconnectDelay = parseInt(process.env.INITIAL_RECONNECT_DELAY) || 1000; // S
 let isReconnecting = false;
 let connectionHealthCheck = null;
 
-// Configuration
 const WEBHOOK_URL = process.env.WHATSAPP_HOOK_URL;
 const WEBHOOK_EVENTS = (process.env.WHATSAPP_HOOK_EVENTS || 'message').split(',');
 const SESSION_PATH = process.env.SESSION_PATH || '/data/session';
-// and in LocalAuth:
 
-// Create session directory
 fs.ensureDirSync(SESSION_PATH);
 
 console.log(`🔧 WhatsApp Service Mode: ${ENABLE_REAL_WHATSAPP ? 'PRODUCTION (Real WhatsApp)' : 'MOCK (Testing)'}`);
