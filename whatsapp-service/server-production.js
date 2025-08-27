@@ -32,7 +32,8 @@ console.log(`🔧 WhatsApp Service Mode: ${ENABLE_REAL_WHATSAPP ? 'PRODUCTION (R
 // Initialize WhatsApp client
 async function initializeClient() {
     console.log('🚀 Initializing WhatsApp client...');
-    
+      const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/chromium-browser";
+
     if (ENABLE_REAL_WHATSAPP) {
         // Production mode with real WhatsApp Web.js
         try {
@@ -274,57 +275,37 @@ async function initializeRealClient() {
     const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
     
     // Enhanced Puppeteer configuration for cloud environments with better error handling
-    const puppeteerOptions = {
-        headless: true,
-        timeout: 60000, // 60 second timeout for browser launch
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--disable-gpu',
-            '--disable-web-security',
-            '--disable-features=VizDisplayCompositor',
-            '--disable-extensions',
-            '--disable-plugins',
-            '--disable-images',
-            '--disable-background-timer-throttling',
-            '--disable-backgrounding-occluded-windows',
-            '--disable-renderer-backgrounding',
-            '--disable-background-networking',
-            '--disable-default-apps',
-            '--no-default-browser-check',
-            '--disable-ipc-flooding-protection',
-            // Additional stability args for cloud environments
-            '--disable-features=TranslateUI',
-            '--disable-component-extensions-with-background-pages',
-            '--disable-default-apps',
-            '--mute-audio',
-            '--no-default-browser-check',
-            '--disable-sync'
-        ],
-        handleSIGINT: false,
-        handleSIGTERM: false,
-        handleSIGHUP: false,
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/chromium-browser"
+    const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/chromium-browser";
 
-    };
+  const puppeteerOptions = {
+    headless: true,
+    timeout: 60000,
+    executablePath,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--no-zygote',
+      '--disable-gpu',
+      '--disable-software-rasterizer',
+      '--mute-audio'
+    ],
+    handleSIGINT: false,
+    handleSIGTERM: false,
+    handleSIGHUP: false
+  };
+
+  whatsappClient = new Client({
+    authStrategy: new LocalAuth({ dataPath: SESSION_PATH }),
+    puppeteer: puppeteerOptions,
+    webVersionCache: {
+      type: 'remote',
+      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+    }
+  });
 
     // Add executablePath if available in environment
-    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-        puppeteerOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-    }
-
-    whatsappClient = new Client({
-        authStrategy: new LocalAuth({ dataPath: SESSION_PATH }),
-        puppeteer: puppeteerOptions,
-        webVersionCache: {
-            type: 'remote',
-            remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
-        }
-    });
+    
 
     // Connection health monitoring
     startConnectionHealthCheck();
