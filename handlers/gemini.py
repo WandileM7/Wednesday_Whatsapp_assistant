@@ -324,16 +324,17 @@ FUNCTIONS = [
         }
     },
     {
-        "name": "get_google_contacts",
-        "description": "Get contacts from Google Contacts (prioritized over local contacts)",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "max_results": {"type": "integer", "description": "Maximum number of contacts to return"}
-            },
-            "required": []
-        }
-    },
+    "name": "get_google_contacts",
+    "description": "Get contacts from Google Contacts (prioritized over local contacts)",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "max_results": {"type": "integer", "description": "Maximum number of contacts to return (defaults to 20 if not specified)"}
+        },
+        "required": []
+    }
+},
+
     {
         "name": "send_whatsapp_message",
         "description": "Send a WhatsApp message to a contact (searches Google contacts first, then local contacts)",
