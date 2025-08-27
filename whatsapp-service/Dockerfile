@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y \
 RUN which chromium || which chromium-browser
 
 # Tell Puppeteer where Chromium i
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 # Copy package files
 COPY whatsapp-service/package.json whatsapp-service/package-lock.json ./
 
