@@ -273,6 +273,29 @@ FUNCTIONS = [
         }
     },
     {
+        "name": "get_google_contacts",
+        "description": "Get contacts from Google Contacts (prioritized over local contacts)",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "max_results": {"type": "integer", "description": "Maximum number of contacts to return", "default": 20}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "send_whatsapp_message",
+        "description": "Send a WhatsApp message to a contact (searches Google contacts first, then local contacts)",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "contact_query": {"type": "string", "description": "Contact name or phone number to search for"},
+                "message": {"type": "string", "description": "Message to send"}
+            },
+            "required": ["contact_query", "message"]
+        }
+    },
+    {
         "name": "search_web",
         "description": "Search the internet for current information on any topic",
         "parameters": {
@@ -720,6 +743,16 @@ def execute_function(call: dict, phone: str = "") -> str:
         
         if name == "get_contact_summary":
             return contact_manager.get_contact_summary()
+        
+        if name == "get_google_contacts":
+            max_results = params.get("max_results", 20)
+            return contact_manager.get_google_contacts(max_results)
+        
+        if name == "send_whatsapp_message":
+            return contact_manager.send_whatsapp_message(
+                params["contact_query"],
+                params["message"]
+            )
         
         # Web search function
         if name == "search_web":
