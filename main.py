@@ -697,7 +697,6 @@ def voice_preprocessor():
             }
             return forward_to_main_webhook({'payload': error_payload})
         return jsonify({'status': 'error', 'message': 'Voice processing failed'}), 500
-...existing code...
 
 def forward_to_main_webhook(data):
     """Forward processed message to main webhook"""
