@@ -1668,72 +1668,99 @@ def send_message(phone, text):
         logger.error(f"WAHA send_message error: {e}")
         return False
 
-def send_voice_message(phone, voice_file_path, fallback_text):
-    """Send voice message with multiple fallback options"""
-    if not waha_url or not voice_file_path:
-        logger.warning("Cannot send voice - missing URL or file")
-        return send_message(phone, fallback_text)
-    
+def send_voice_message(phone, audio_file, fallback_text=""):
+    """Send voice message with improved fallback handling"""
+    if not waha_url:
+        logger.warning("WAHA URL not configured")
+        return False
+        
     try:
-        # Ensure phone format
-        if "@c.us" not in phone:
-            phone = f"{phone}@c.us"
-        
-        # Try to send as voice message first
-        file_format = "OGG_OPUS" if voice_file_path.endswith('.ogg') else "MP3"
-        logger.info(f"Attempting to send {file_format} voice message to {phone} via {_waha_base()}/api/sendVoice")
-        
-        # Try to send as voice message first
+        # First try to send as voice message
         voice_url = f"{_waha_base()}/api/sendVoice"
         
-        with open(voice_file_path, 'rb') as audio_file:
-            files = {'audio': audio_file}
+        with open(audio_file, 'rb') as f:
+            files = {'audio': ('voice.ogg', f, 'audio/ogg')}
             data = {'chatId': phone}
+            headers = {}
             
-            response = requests.post(
-                voice_url, 
-                files=files, 
-                data=data, 
-                headers=_waha_headers(is_json=False),
-                timeout=60  # Increased timeout for production environments
-            )
+            if WAHA_API_KEY:
+                headers['X-API-KEY'] = WAHA_API_KEY
             
-            if response.status_code == 200:
-                logger.info(f"✅ Voice message ({file_format}) sent successfully to {phone}")
+            logger.info(f"Attempting to send voice message to {phone} via {voice_url}")
+            voice_response = requests.post(voice_url, files=files, data=data, headers=headers, timeout=30)
+            
+            if voice_response.status_code == 200:
+                logger.info("Voice message sent successfully")
                 return True
+            else:
+                logger.warning(f"Voice message failed with status {voice_response.status_code}: {voice_response.text}")
         
-        # Fallback 1: Try sending as media/file attachment
+        # If voice fails, try as media attachment
         logger.info("Voice message failed, trying as media attachment...")
         media_url = f"{_waha_base()}/api/sendMedia"
         
-        with open(voice_file_path, 'rb') as audio_file:
-            files = {'media': audio_file}
+        with open(audio_file, 'rb') as f:
+            files = {'media': ('voice.ogg', f, 'audio/ogg')}
             data = {
                 'chatId': phone,
-                'caption': 'Voice message',
-                'filename': f'voice.{file_format.lower().replace("_", ".")}'
+                'caption': '🎤 Voice message'
             }
             
-            response = requests.post(
-                media_url,
-                files=files,
-                data=data,
-                headers=_waha_headers(is_json=False),
-                timeout=60  # Increased timeout for production environments
-            )
+            media_response = requests.post(media_url, files=files, data=data, headers=headers, timeout=30)
             
-            if response.status_code == 200:
-                logger.info(f"✅ Voice sent as media attachment to {phone}")
+            if media_response.status_code == 200:
+                logger.info("Media attachment sent successfully")
                 return True
+            else:
+                logger.warning(f"Media attachment failed with status {media_response.status_code}: {media_response.text}")
         
-        # Fallback 2: Send as text message
-        logger.warning("Voice and media failed, sending as text")
-        return send_message(phone, fallback_text)
+        # If both fail, send as text
+        if fallback_text:
+            logger.warning("Voice and media failed, sending as text")
+            return send_message(phone, fallback_text)
+        
+        return False
         
     except Exception as e:
-        logger.error(f"Voice message error: {e}")
-        return send_message(phone, fallback_text)
+        logger.error(f"Error in voice message sending: {e}")
+        if fallback_text:
+            logger.info("Falling back to text message")
+            return send_message(phone, fallback_text)
+        return False
+    finally:
+        # Clean up audio file
+        cleanup_temp_file(audio_file)
 
+def send_message(phone, text):
+    """Send text message with improved error handling"""
+    if not waha_url:
+        logger.warning("WAHA URL not configured")
+        return False
+        
+    try:
+        headers = _waha_headers()
+        payload = {"chatId": phone, "text": text}
+        
+        # Check if WAHA is ready first
+        health_check = waha_health_check()
+        if not health_check:
+            logger.warning("WAHA not ready; message not sent")
+            return False
+        
+        response = requests.post(waha_url, json=payload, headers=headers, timeout=30)
+        
+        if response.status_code == 200:
+            logger.info(f"Text message sent successfully to {phone}")
+            return True
+        else:
+            logger.error(f"Failed to send message. Status: {response.status_code}, Response: {response.text}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error sending message: {e}")
+        return False
+    
+    
 def send_voice_response(phone, reply_text, user_sent_voice):
     """Send voice response with proper fallback handling"""
     try:

@@ -231,82 +231,63 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
     """Convert text to speech using streaming synthesis with Chirp3-HD Sulafat voice"""
     client = get_tts_client()
     if not client:
-        logger.error("TTS client not available")
         return None
     
     # Prepare text for TTS by removing emojis and problematic characters
     try:
         from helpers.text_utils import prepare_text_for_tts
-        processed_text = prepare_text_for_tts(text)
-        logger.debug(f"TTS text processing: '{text[:50]}...' -> '{processed_text[:50]}...'")
+        clean_text = prepare_text_for_tts(text)
     except ImportError:
-        logger.warning("Text utils not available, using original text for TTS")
-        processed_text = text
+        clean_text = text
     except Exception as e:
-        logger.warning(f"Error processing text for TTS: {e}, using original text")
-        processed_text = text
+        logger.warning(f"Error cleaning text for TTS: {e}")
+        clean_text = text
     
     try:
-        # Configure streaming synthesis with Chirp3-HD Sulafat voice
-        # Use the correct Chirp3-HD voice name format
-        streaming_config = texttospeech.StreamingSynthesizeConfig(
-            voice=texttospeech.VoiceSelectionParams(
-                name="en-US-Chirp3-HD-Sulafat",  # Chirp3-HD Sulafat voice
-                language_code=language_code,
-            )
-        )
-        
-        # Audio config goes in the request, not the config
-        audio_config = texttospeech.AudioConfig(
-            audio_encoding=texttospeech.AudioEncoding.OGG_OPUS,
-            speaking_rate=1.0,
-            pitch=0.0,
-            volume_gain_db=0.0
-        )
-        
-        # Create request generator for streaming synthesis
         def request_generator():
-            # First request contains only the configuration
-            yield texttospeech.StreamingSynthesizeRequest(
-                streaming_config=streaming_config
+            # First request with synthesis input and voice configuration
+            synthesis_input = texttospeech.SynthesisInput(text=clean_text)
+            voice = texttospeech.VoiceSelectionParams(
+                language_code=language_code,
+                name="en-US-Chirp3-HD-Sulafat",  # High-quality voice
+                ssml_gender=texttospeech.SsmlVoiceGender.FEMALE
             )
-            # Second request contains the text input and audio config
-            yield texttospeech.StreamingSynthesizeRequest(
-                input=texttospeech.StreamingSynthesisInput(text=processed_text),
-                audio_config=audio_config
+            
+            # FIXED: Use correct parameter name for streaming API
+            streaming_config = texttospeech.StreamingSynthesizeConfig(
+                voice=voice
             )
+            
+            yield texttospeech.StreamingSynthesizeRequest(
+                input=synthesis_input,
+                config=streaming_config  # Changed from audio_config to config
+            )
+
+        # Make the streaming request
+        response_stream = client.streaming_synthesize(request_generator())
         
-        # Perform streaming synthesis
-        streaming_responses = client.streaming_synthesize(request_generator())
-        
-        # Collect all audio content from streaming responses
+        # Collect audio chunks
         audio_content = b""
-        chunk_count = 0
-        for response in streaming_responses:
-            if response.audio_content:
+        for response in response_stream:
+            if hasattr(response, 'audio_content') and response.audio_content:
                 audio_content += response.audio_content
-                chunk_count += 1
-                logger.debug(f"Received audio chunk {chunk_count}: {len(response.audio_content)} bytes")
         
         if not audio_content:
-            logger.error("No audio content received from streaming synthesis")
-            return None
+            logger.warning("No audio content received from streaming synthesis")
+            return text_to_speech_fallback(text, language_code)
         
-        # Save audio to temporary file with OGG extension to match encoding
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.ogg') as temp_file:
-            temp_file.write(audio_content)
-            logger.info(f"Generated Chirp3-HD streaming speech audio: {temp_file.name}, size: {len(audio_content)} bytes, chunks: {chunk_count}")
-            return temp_file.name
-            
+        # Save to temporary file
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".ogg")
+        temp_file.write(audio_content)
+        temp_file.close()
+        
+        logger.info(f"Generated streaming speech audio with {voice.name}: {temp_file.name}")
+        return temp_file.name
+        
     except Exception as e:
         logger.error(f"Error in Chirp3-HD streaming text-to-speech conversion: {e}")
-        # Fallback to regular (non-streaming) synthesis with Chirp3-HD
-        try:
-            logger.info("Falling back to regular Chirp3-HD TTS synthesis")
-            return text_to_speech_fallback(text, language_code)
-        except Exception as fallback_e:
-            logger.error(f"Fallback TTS also failed: {fallback_e}")
-            return None
+        logger.info("Falling back to regular Chirp3-HD TTS synthesis")
+        return text_to_speech_fallback(text, language_code)
 
 def text_to_speech_fallback(text: str, language_code: str = "en-US") -> Optional[str]:
     """Fallback to regular text-to-speech synthesis with Chirp3-HD voices"""

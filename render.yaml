@@ -37,7 +37,7 @@ services:
         value: message
       # Don't show QR in logs to save memory
       - key: SHOW_QR
-        value: "true"
+        value: "false"
       # Browser stability settings
       - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
         value: "true"
