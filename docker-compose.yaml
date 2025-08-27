@@ -5,7 +5,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - WHATSAPP_HOOK_URL=https://whatsapp-service-xumb.onrender.com/webhook
+      - WHATSAPP_HOOK_URL=https://whatsapp-service-8vgb.onrender.com
       - WHATSAPP_HOOK_EVENTS=message
       - SHOW_QR=false
     volumes:
@@ -18,7 +18,7 @@ services:
       - "5000:5000"
     env_file: .env
     environment:
-      - WAHA_URL=https://whatsapp-service-xumb.onrender.com/api/sendText
+      - WAHA_URL=https://whatsapp-service-8vgb.onrender.com/api/sendText
       - WAHA_KEEPALIVE_INTERVAL=600
     depends_on:
       - whatsapp-service
