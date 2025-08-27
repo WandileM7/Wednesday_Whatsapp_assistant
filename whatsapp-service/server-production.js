@@ -445,7 +445,7 @@ async function initializeRealClientWithFallback() {
     // More conservative Puppeteer configuration for problematic environments
     const fallbackPuppeteerOptions = {
         headless: true,
-        timeout: 90000, // Longer timeout for slower environments
+        timeout: 120000, // Extended timeout for resource-constrained environments
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -456,16 +456,20 @@ async function initializeRealClientWithFallback() {
             '--disable-plugins',
             '--disable-default-apps',
             '--no-default-browser-check',
-            // Minimal args for maximum compatibility
             '--disable-web-security',
             '--disable-features=VizDisplayCompositor',
-            '--disable-software-rasterizer'
+            '--disable-software-rasterizer',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            '--memory-pressure-off',
+            '--max_old_space_size=4096',
+            '--disable-ipc-flooding-protection'
         ],
         handleSIGINT: false,
         handleSIGTERM: false,
         handleSIGHUP: false,
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/chromium-browser"
-
     };
 
     // Add executablePath if available in environment
@@ -948,6 +952,68 @@ app.post('/api/sendVoice', upload.single('audio'), async (req, res) => {
         // Clean up uploaded file
         if (audioFile && audioFile.path && fs.existsSync(audioFile.path)) {
             fs.unlinkSync(audioFile.path);
+        }
+    }
+});
+
+// Send image/video message endpoint
+app.post('/api/sendMedia', upload.single('media'), async (req, res) => {
+    if (!isClientReady) {
+        return res.status(503).json({ error: 'WhatsApp client not ready' });
+    }
+
+    const { chatId, caption } = req.body;
+    const mediaFile = req.file;
+
+    if (!chatId || !mediaFile) {
+        return res.status(400).json({ error: 'chatId and media file are required' });
+    }
+
+    try {
+        if (ENABLE_REAL_WHATSAPP && whatsappClient) {
+            // Production mode - send real media
+            const media = MessageMedia.fromFilePath(mediaFile.path);
+            
+            // Set proper mimetype based on file type
+            if (mediaFile.mimetype.startsWith('image/')) {
+                media.mimetype = mediaFile.mimetype;
+            } else if (mediaFile.mimetype.startsWith('video/')) {
+                media.mimetype = mediaFile.mimetype;
+            } else {
+                media.mimetype = 'application/octet-stream';
+            }
+            
+            const options = {};
+            if (caption) {
+                options.caption = caption;
+            }
+            
+            await whatsappClient.sendMessage(chatId, media, options);
+            
+            console.log(`📷 Media sent to ${chatId}: ${mediaFile.originalname}`);
+            res.json({ 
+                success: true, 
+                message: 'Media sent successfully',
+                filename: mediaFile.originalname,
+                type: mediaFile.mimetype
+            });
+        } else {
+            // Mock mode - simulate media sending
+            console.log(`📷 Mock sending media to ${chatId}: ${mediaFile.originalname} (${mediaFile.size} bytes)`);
+            res.json({ 
+                success: true, 
+                message: 'Media simulated',
+                filename: mediaFile.originalname,
+                type: mediaFile.mimetype
+            });
+        }
+    } catch (error) {
+        console.error('❌ Send media error:', error);
+        res.status(500).json({ error: error.message });
+    } finally {
+        // Clean up uploaded file
+        if (mediaFile && mediaFile.path && fs.existsSync(mediaFile.path)) {
+            fs.unlinkSync(mediaFile.path);
         }
     }
 });

@@ -9,6 +9,10 @@ from handlers.weather import weather_service
 from handlers.news import news_service
 from handlers.tasks import task_manager
 from handlers.contacts import contact_manager
+from handlers.uber import uber_service
+from handlers.accommodation import accommodation_service
+from handlers.fitness import fitness_service
+from handlers.google_notes import google_notes_service
 import logging
 from chromedb import *
 
@@ -319,6 +323,188 @@ FUNCTIONS = [
             },
             "required": ["enabled"]
         }
+    },
+    # Uber and transportation functions
+    {
+        "name": "get_ride_estimates",
+        "description": "Get Uber ride estimates between locations",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "start_lat": {"type": "number", "description": "Starting latitude"},
+                "start_lng": {"type": "number", "description": "Starting longitude"},
+                "end_lat": {"type": "number", "description": "Destination latitude"},
+                "end_lng": {"type": "number", "description": "Destination longitude"}
+            },
+            "required": ["end_lat", "end_lng"]
+        }
+    },
+    {
+        "name": "book_uber_ride",
+        "description": "Book an Uber ride",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "product_id": {"type": "string", "description": "Uber product ID"},
+                "end_lat": {"type": "number", "description": "Destination latitude"},
+                "end_lng": {"type": "number", "description": "Destination longitude"},
+                "start_lat": {"type": "number", "description": "Starting latitude (optional)"},
+                "start_lng": {"type": "number", "description": "Starting longitude (optional)"}
+            },
+            "required": ["product_id", "end_lat", "end_lng"]
+        }
+    },
+    {
+        "name": "search_restaurants",
+        "description": "Search for restaurants on Uber Eats",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Restaurant or food type to search for"},
+                "lat": {"type": "number", "description": "Latitude (optional)"},
+                "lng": {"type": "number", "description": "Longitude (optional)"}
+            },
+            "required": []
+        }
+    },
+    # Accommodation functions
+    {
+        "name": "search_accommodations",
+        "description": "Search for accommodations (hotels, Airbnb, etc.)",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "Location to search in"},
+                "check_in": {"type": "string", "description": "Check-in date (YYYY-MM-DD)"},
+                "check_out": {"type": "string", "description": "Check-out date (YYYY-MM-DD)"},
+                "guests": {"type": "integer", "description": "Number of guests"},
+                "max_price": {"type": "number", "description": "Maximum price per night"}
+            },
+            "required": ["location"]
+        }
+    },
+    {
+        "name": "book_accommodation",
+        "description": "Book an accommodation",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "property_id": {"type": "string", "description": "Property ID"},
+                "check_in": {"type": "string", "description": "Check-in date (YYYY-MM-DD)"},
+                "check_out": {"type": "string", "description": "Check-out date (YYYY-MM-DD)"},
+                "guests": {"type": "integer", "description": "Number of guests"},
+                "guest_name": {"type": "string", "description": "Guest name"}
+            },
+            "required": ["property_id", "check_in", "check_out"]
+        }
+    },
+    # Fitness functions
+    {
+        "name": "get_fitness_summary",
+        "description": "Get daily fitness and health summary",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "date": {"type": "string", "description": "Date in YYYY-MM-DD format (optional, defaults to today)"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "log_fitness_activity",
+        "description": "Log a fitness activity",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "activity_type": {"type": "string", "description": "Type of activity (e.g., Running, Cycling, Gym)"},
+                "duration": {"type": "integer", "description": "Duration in minutes"},
+                "calories": {"type": "integer", "description": "Calories burned (optional)"},
+                "distance": {"type": "number", "description": "Distance in km (optional)"},
+                "notes": {"type": "string", "description": "Additional notes (optional)"}
+            },
+            "required": ["activity_type", "duration"]
+        }
+    },
+    {
+        "name": "get_fitness_history",
+        "description": "Get recent fitness activity history",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "Number of days to look back (default: 7)"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "set_fitness_goal",
+        "description": "Set a fitness goal",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "goal_type": {"type": "string", "description": "Type of goal (steps, calories, weight, etc.)"},
+                "target": {"type": "integer", "description": "Target value"}
+            },
+            "required": ["goal_type", "target"]
+        }
+    },
+    # Google Notes functions
+    {
+        "name": "create_note",
+        "description": "Create a new note using Google Tasks",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Note title"},
+                "content": {"type": "string", "description": "Note content"},
+                "tags": {"type": "array", "items": {"type": "string"}, "description": "Note tags"}
+            },
+            "required": ["title"]
+        }
+    },
+    {
+        "name": "search_notes",
+        "description": "Search notes by content or title",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query"}
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "sync_notes_tasks",
+        "description": "Sync Google Tasks with local task management",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    # Enhanced contact and WhatsApp functions
+    {
+        "name": "send_whatsapp_message",
+        "description": "Send a WhatsApp message to a contact",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "contact_query": {"type": "string", "description": "Contact name or phone number"},
+                "message": {"type": "string", "description": "Message to send"}
+            },
+            "required": ["contact_query", "message"]
+        }
+    },
+    {
+        "name": "get_contact_for_whatsapp",
+        "description": "Get contact details formatted for WhatsApp messaging",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "contact_query": {"type": "string", "description": "Contact name or phone number"}
+            },
+            "required": ["contact_query"]
+        }
     }
 
 ]
@@ -562,6 +748,97 @@ def execute_function(call: dict, phone: str = "") -> str:
             from handlers.speech import set_user_voice_preference
             enabled = params.get("enabled", True)
             return set_user_voice_preference(phone, enabled)
+        
+        # Uber transportation functions
+        if name == "get_ride_estimates":
+            return uber_service.get_ride_estimates(
+                params.get("start_lat"),
+                params.get("start_lng"),
+                params["end_lat"],
+                params["end_lng"]
+            )
+        
+        if name == "book_uber_ride":
+            return uber_service.book_ride(
+                params["product_id"],
+                params.get("start_lat"),
+                params.get("start_lng"),
+                params["end_lat"],
+                params["end_lng"],
+                params.get("fare_id")
+            )
+        
+        if name == "search_restaurants":
+            return uber_service.search_restaurants(
+                params.get("query", ""),
+                params.get("lat"),
+                params.get("lng")
+            )
+        
+        # Accommodation functions
+        if name == "search_accommodations":
+            return accommodation_service.search_accommodations(
+                params["location"],
+                params.get("check_in"),
+                params.get("check_out"),
+                params.get("guests", 2),
+                params.get("max_price")
+            )
+        
+        if name == "book_accommodation":
+            return accommodation_service.book_accommodation(
+                params["property_id"],
+                params["check_in"],
+                params["check_out"],
+                params.get("guests", 2),
+                params.get("guest_name", "Guest")
+            )
+        
+        # Fitness functions
+        if name == "get_fitness_summary":
+            return fitness_service.get_daily_summary(params.get("date"))
+        
+        if name == "log_fitness_activity":
+            return fitness_service.log_activity(
+                params["activity_type"],
+                params["duration"],
+                params.get("calories"),
+                params.get("distance"),
+                params.get("notes")
+            )
+        
+        if name == "get_fitness_history":
+            return fitness_service.get_activity_history(params.get("days", 7))
+        
+        if name == "set_fitness_goal":
+            return fitness_service.set_fitness_goal(
+                params["goal_type"],
+                params["target"]
+            )
+        
+        # Google Notes functions
+        if name == "create_note":
+            return google_notes_service.create_note(
+                params["title"],
+                params.get("content", ""),
+                params.get("tags")
+            )
+        
+        if name == "search_notes":
+            return google_notes_service.search_notes(params["query"])
+        
+        if name == "sync_notes_tasks":
+            return google_notes_service.sync_with_local_tasks()
+        
+        # Enhanced contact and WhatsApp functions
+        if name == "send_whatsapp_message":
+            return contact_manager.send_whatsapp_message(
+                params["contact_query"],
+                params["message"]
+            )
+        
+        if name == "get_contact_for_whatsapp":
+            return contact_manager.get_contact_for_whatsapp(params["contact_query"])
 
         return "I couldn't handle that function call."
     except Exception as e:

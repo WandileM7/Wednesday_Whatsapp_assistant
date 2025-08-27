@@ -142,7 +142,8 @@ def download_voice_message(voice_url: str, session: str) -> Optional[str]:
         if session:
             headers['X-Session'] = session
         
-        response = requests.get(voice_url, headers=headers, timeout=30)
+        # Increased timeout for production environments
+        response = requests.get(voice_url, headers=headers, timeout=60)
         response.raise_for_status()
         
         # Determine file extension based on content type or URL
@@ -159,8 +160,15 @@ def download_voice_message(voice_url: str, session: str) -> Optional[str]:
         # Create temporary file for audio
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
             temp_file.write(response.content)
+            logger.info(f"Downloaded voice message: {temp_file.name}, size: {len(response.content)} bytes")
             return temp_file.name
             
+    except requests.exceptions.Timeout as e:
+        logger.error(f"Timeout downloading voice message from {voice_url}: {e}")
+        return None
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Request error downloading voice message from {voice_url}: {e}")
+        return None
     except Exception as e:
         logger.error(f"Error downloading voice message: {e}")
         return None
@@ -246,14 +254,14 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
         
         # Create request generator for streaming synthesis
         def request_generator():
-            # First request contains the configuration and audio config
+            # First request contains only the configuration
             yield texttospeech.StreamingSynthesizeRequest(
-                streaming_config=streaming_config,
-                audio_config=audio_config
+                streaming_config=streaming_config
             )
-            # Second request contains the text input
+            # Second request contains the text input and audio config
             yield texttospeech.StreamingSynthesizeRequest(
-                input=texttospeech.StreamingSynthesisInput(text=text)
+                input=texttospeech.StreamingSynthesisInput(text=text),
+                audio_config=audio_config
             )
         
         # Perform streaming synthesis

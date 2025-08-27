@@ -233,6 +233,131 @@ class ContactManager:
             summary += "☁️ Google contacts: Not available\n"
         
         return summary
+    
+    def send_whatsapp_message(self, contact_query: str, message: str) -> str:
+        """Send WhatsApp message to a contact"""
+        try:
+            # Search for the contact first
+            matching_contacts = []
+            query_lower = contact_query.lower()
+            
+            for contact in self.local_contacts.values():
+                if (query_lower in contact['name'].lower() or
+                    (contact.get('phone') and query_lower in contact.get('phone', ''))):
+                    matching_contacts.append(contact)
+            
+            if not matching_contacts:
+                return f"❌ No contact found matching '{contact_query}'"
+            
+            if len(matching_contacts) > 1:
+                result = f"🤔 Multiple contacts found for '{contact_query}':\n\n"
+                for i, contact in enumerate(matching_contacts[:3], 1):
+                    result += f"{i}. {contact['name']}"
+                    if contact.get('phone'):
+                        result += f" - {contact['phone']}"
+                    result += "\n"
+                result += "\nPlease be more specific with the contact name or phone number."
+                return result
+            
+            contact = matching_contacts[0]
+            phone_number = contact.get('phone')
+            
+            if not phone_number:
+                return f"❌ No phone number found for {contact['name']}"
+            
+            # Format phone number for WhatsApp (remove formatting, add country code if needed)
+            formatted_phone = phone_number.replace('-', '').replace(' ', '').replace('(', '').replace(')', '')
+            if not formatted_phone.startswith('+'):
+                # Assume US number if no country code
+                if len(formatted_phone) == 10:
+                    formatted_phone = '+1' + formatted_phone
+                elif len(formatted_phone) == 11 and formatted_phone.startswith('1'):
+                    formatted_phone = '+' + formatted_phone
+                else:
+                    formatted_phone = '+' + formatted_phone
+            
+            # WhatsApp format: phone@c.us
+            whatsapp_id = formatted_phone.replace('+', '') + '@c.us'
+            
+            # Here you would integrate with your WhatsApp service
+            # For now, return a success message with instructions
+            response = f"📱 Preparing WhatsApp message to {contact['name']}\n\n"
+            response += f"👤 Contact: {contact['name']}\n"
+            response += f"📞 Phone: {phone_number}\n"
+            response += f"🆔 WhatsApp ID: {whatsapp_id}\n"
+            response += f"💬 Message: {message}\n\n"
+            
+            # In a real implementation, you would call the WhatsApp service here
+            # Example: whatsapp_client.send_message(whatsapp_id, message)
+            
+            response += "✅ Message ready to send via WhatsApp service\n"
+            response += "💡 Integration with WhatsApp service pending"
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error sending WhatsApp message: {e}")
+            return f"❌ Error sending WhatsApp message: {str(e)}"
+    
+    def get_contact_for_whatsapp(self, contact_query: str) -> str:
+        """Get contact details formatted for WhatsApp"""
+        try:
+            # Search for the contact
+            matching_contacts = []
+            query_lower = contact_query.lower()
+            
+            for contact in self.local_contacts.values():
+                if (query_lower in contact['name'].lower() or
+                    (contact.get('phone') and query_lower in contact.get('phone', ''))):
+                    matching_contacts.append(contact)
+            
+            if not matching_contacts:
+                return f"❌ No contact found matching '{contact_query}'"
+            
+            if len(matching_contacts) > 1:
+                result = f"🤔 Multiple contacts found for '{contact_query}':\n\n"
+                for i, contact in enumerate(matching_contacts[:5], 1):
+                    phone = contact.get('phone', 'No phone')
+                    result += f"{i}. {contact['name']} - {phone}\n"
+                result += "\nPlease be more specific."
+                return result
+            
+            contact = matching_contacts[0]
+            phone_number = contact.get('phone')
+            
+            if not phone_number:
+                return f"❌ No phone number found for {contact['name']}"
+            
+            # Format for WhatsApp
+            formatted_phone = phone_number.replace('-', '').replace(' ', '').replace('(', '').replace(')', '')
+            if not formatted_phone.startswith('+'):
+                if len(formatted_phone) == 10:
+                    formatted_phone = '+1' + formatted_phone
+                elif len(formatted_phone) == 11 and formatted_phone.startswith('1'):
+                    formatted_phone = '+' + formatted_phone
+                else:
+                    formatted_phone = '+' + formatted_phone
+            
+            whatsapp_id = formatted_phone.replace('+', '') + '@c.us'
+            
+            response = f"📱 WhatsApp Contact Details\n\n"
+            response += f"👤 Name: {contact['name']}\n"
+            response += f"📞 Phone: {phone_number}\n"
+            response += f"🆔 WhatsApp ID: {whatsapp_id}\n"
+            
+            if contact.get('email'):
+                response += f"📧 Email: {contact['email']}\n"
+            
+            if contact.get('notes'):
+                response += f"📝 Notes: {contact['notes']}\n"
+            
+            response += f"\n💡 Use: send_whatsapp_message \"{contact['name']}\" \"your message\""
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error getting contact for WhatsApp: {e}")
+            return f"❌ Error getting contact: {str(e)}"
 
 
 # Global contact manager instance
