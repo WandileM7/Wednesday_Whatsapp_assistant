@@ -234,6 +234,18 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
         logger.error("TTS client not available")
         return None
     
+    # Prepare text for TTS by removing emojis and problematic characters
+    try:
+        from helpers.text_utils import prepare_text_for_tts
+        processed_text = prepare_text_for_tts(text)
+        logger.debug(f"TTS text processing: '{text[:50]}...' -> '{processed_text[:50]}...'")
+    except ImportError:
+        logger.warning("Text utils not available, using original text for TTS")
+        processed_text = text
+    except Exception as e:
+        logger.warning(f"Error processing text for TTS: {e}, using original text")
+        processed_text = text
+    
     try:
         # Configure streaming synthesis with Chirp3-HD Sulafat voice
         # Use the correct Chirp3-HD voice name format
@@ -260,7 +272,7 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
             )
             # Second request contains the text input and audio config
             yield texttospeech.StreamingSynthesizeRequest(
-                input=texttospeech.StreamingSynthesisInput(text=text),
+                input=texttospeech.StreamingSynthesisInput(text=processed_text),
                 audio_config=audio_config
             )
         
@@ -302,9 +314,21 @@ def text_to_speech_fallback(text: str, language_code: str = "en-US") -> Optional
     if not client:
         return None
     
+    # Prepare text for TTS by removing emojis and problematic characters
+    try:
+        from helpers.text_utils import prepare_text_for_tts
+        processed_text = prepare_text_for_tts(text)
+        logger.debug(f"TTS fallback text processing: '{text[:50]}...' -> '{processed_text[:50]}...'")
+    except ImportError:
+        logger.warning("Text utils not available for fallback TTS, using original text")
+        processed_text = text
+    except Exception as e:
+        logger.warning(f"Error processing text for fallback TTS: {e}, using original text")
+        processed_text = text
+    
     try:
         # Configure regular synthesis with Chirp3-HD Sulafat voice
-        synthesis_input = texttospeech.SynthesisInput(text=text)
+        synthesis_input = texttospeech.SynthesisInput(text=processed_text)
         
         # Try Chirp3-HD Sulafat first, then fallback to other Chirp3-HD voices
         chirp3_voices = [

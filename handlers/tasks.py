@@ -339,6 +339,144 @@ class TaskManager:
         except:
             return remind_at
 
+    def sync_to_google_keep(self) -> str:
+        """Sync local tasks to Google Keep (via Google Tasks API)"""
+        try:
+            from handlers.google_notes import google_notes_service
+            
+            if not self.tasks:
+                return "📝 No local tasks to sync"
+            
+            synced_count = 0
+            failed_count = 0
+            results = []
+            
+            for task_id, task in self.tasks.items():
+                try:
+                    # Skip already completed tasks unless specifically requested
+                    if task.completed:
+                        continue
+                    
+                    # Create task content with details
+                    content = f"Description: {task.description}\n" if task.description else ""
+                    if task.priority != "medium":
+                        content += f"Priority: {task.priority}\n"
+                    if task.due_date:
+                        content += f"Due: {task.due_date}\n"
+                    if task.tags:
+                        content += f"Tags: {', '.join(task.tags)}\n"
+                    content += f"Created: {task.created_at}\n"
+                    content += f"Local ID: {task_id}"
+                    
+                    # Create note in Google Tasks
+                    result = google_notes_service.create_note(
+                        title=task.title,
+                        content=content,
+                        tags=task.tags + ["synced_from_local"]
+                    )
+                    
+                    if "✅" in result:  # Success indicator
+                        synced_count += 1
+                        results.append(f"✅ {task.title}")
+                    else:
+                        failed_count += 1
+                        results.append(f"❌ {task.title}: {result}")
+                        
+                except Exception as e:
+                    failed_count += 1
+                    results.append(f"❌ {task.title}: {str(e)}")
+            
+            response = f"🔄 Google Keep Sync Results\n"
+            response += "=" * 25 + "\n\n"
+            response += f"📊 Synced: {synced_count}, Failed: {failed_count}\n\n"
+            
+            if results:
+                response += "📝 Details:\n"
+                for result in results[:10]:  # Limit to 10 results
+                    response += f"  {result}\n"
+                
+                if len(results) > 10:
+                    response += f"  ... and {len(results) - 10} more\n"
+            
+            if synced_count > 0:
+                response += "\n💡 Tasks are now available in Google Tasks/Keep"
+            
+            return response
+            
+        except ImportError:
+            return "❌ Google Notes service not available"
+        except Exception as e:
+            logger.error(f"Error syncing to Google Keep: {e}")
+            return f"❌ Sync failed: {str(e)}"
+    
+    def sync_from_google_keep(self) -> str:
+        """Sync tasks from Google Keep (via Google Tasks API) to local storage"""
+        try:
+            from handlers.google_notes import google_notes_service
+            
+            # Get recent notes/tasks from Google
+            google_tasks_response = google_notes_service.get_recent_notes(limit=20)
+            
+            if "❌" in google_tasks_response:
+                return google_tasks_response
+            
+            # This is a simplified implementation - in practice you'd need to parse the response
+            # For now, just return the sync status message
+            response = "🔄 Google Keep → Local Sync\n"
+            response += "=" * 25 + "\n\n"
+            response += "⚠️ Automated sync from Google Tasks to local storage\n"
+            response += "requires additional parsing implementation.\n\n"
+            response += "💡 For now, you can:\n"
+            response += "1. Use 'sync to google' to send local tasks to Google\n"
+            response += "2. View Google tasks with 'recent notes'\n"
+            response += "3. Create tasks directly in Google with 'create note'\n\n"
+            response += "📋 Current Google Tasks status:\n"
+            response += google_tasks_response[:200] + "..." if len(google_tasks_response) > 200 else google_tasks_response
+            
+            return response
+            
+        except ImportError:
+            return "❌ Google Notes service not available"
+        except Exception as e:
+            logger.error(f"Error syncing from Google Keep: {e}")
+            return f"❌ Sync failed: {str(e)}"
+    
+    def get_sync_status(self) -> str:
+        """Get synchronization status with Google Keep"""
+        try:
+            from handlers.google_notes import google_notes_service
+            
+            status = "🔄 Google Keep Sync Status\n"
+            status += "=" * 25 + "\n\n"
+            
+            # Local task counts
+            total_local = len(self.tasks)
+            pending_local = sum(1 for task in self.tasks.values() if not task.completed)
+            
+            status += f"🏠 Local Tasks: {pending_local} pending, {total_local - pending_local} completed\n"
+            
+            # Google service status
+            google_status = google_notes_service.get_service_status()
+            if "✅" in google_status:
+                status += f"☁️ Google Tasks: Connected\n\n"
+                status += "🔄 Available Sync Operations:\n"
+                status += "  • sync to google - Send local tasks to Google\n"
+                status += "  • sync from google - Import Google tasks to local\n"
+                status += "  • create note [title] - Create task directly in Google\n"
+                status += "  • search notes [query] - Search Google tasks\n"
+            else:
+                status += f"☁️ Google Tasks: ❌ Not authenticated\n\n"
+                status += "⚠️ Google authentication required for sync\n"
+                status += "Visit /google-login to authenticate\n"
+            
+            return status
+            
+        except ImportError:
+            return "❌ Google Notes service not available"
+        except Exception as e:
+            logger.error(f"Error getting sync status: {e}")
+            return f"❌ Status check failed: {str(e)}"
+
 
 # Global task manager instance
 task_manager = TaskManager()

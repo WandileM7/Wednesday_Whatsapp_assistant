@@ -230,6 +230,57 @@ FUNCTIONS = [
         }
     },
     {
+        "name": "sync_tasks_to_google",
+        "description": "Sync local tasks to Google Keep/Google Tasks",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "sync_tasks_from_google",
+        "description": "Sync tasks from Google Keep/Google Tasks to local storage",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "get_sync_status",
+        "description": "Get synchronization status between local tasks and Google Keep",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "create_google_note",
+        "description": "Create a note directly in Google Keep/Google Tasks",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Note title"},
+                "content": {"type": "string", "description": "Note content"},
+                "tags": {"type": "array", "items": {"type": "string"}, "description": "Note tags"}
+            },
+            "required": ["title"]
+        }
+    },
+    {
+        "name": "search_google_notes",
+        "description": "Search notes in Google Keep/Google Tasks",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query"}
+            },
+            "required": ["query"]
+        }
+    },
+    {
         "name": "add_contact",
         "description": "Add a new contact to local storage",
         "parameters": {
@@ -725,6 +776,26 @@ def execute_function(call: dict, phone: str = "") -> str:
         
         if name == "get_task_summary":
             return task_manager.get_task_summary()
+        
+        # Google Keep sync functions
+        if name == "sync_tasks_to_google":
+            return task_manager.sync_to_google_keep()
+        
+        if name == "sync_tasks_from_google":
+            return task_manager.sync_from_google_keep()
+        
+        if name == "get_sync_status":
+            return task_manager.get_sync_status()
+        
+        if name == "create_google_note":
+            return google_notes_service.create_note(
+                params["title"],
+                params.get("content", ""),
+                params.get("tags", [])
+            )
+        
+        if name == "search_google_notes":
+            return google_notes_service.search_notes(params["query"])
         
         # Contact management functions
         if name == "add_contact":

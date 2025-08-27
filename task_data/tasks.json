@@ -53,5 +53,19 @@
     "created_at": "2025-08-26T08:13:41.529200",
     "completed_at": null,
     "tags": []
+  },
+  "9b6cb1f6": {
+    "id": "9b6cb1f6",
+    "title": "Test Task for Google Sync",
+    "description": "This is a test task to verify sync functionality",
+    "due_date": null,
+    "priority": "medium",
+    "completed": false,
+    "created_at": "2025-08-27T18:08:21.589279",
+    "completed_at": null,
+    "tags": [
+      "test",
+      "sync"
+    ]
   }
 }
