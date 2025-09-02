@@ -3115,6 +3115,140 @@ class WAHAClient:
             logger.error(f"Error sending message: {e}")
             return False
 
+# Shopping and Paxi endpoints
+@app.route("/shopping/cart", methods=['GET'])
+def view_shopping_cart():
+    """View current shopping cart"""
+    try:
+        from handlers.shopping import order_manager
+        user_id = request.args.get('user_id', 'web_user')
+        cart_content = order_manager.view_cart(user_id)
+        return jsonify({"success": True, "cart": cart_content})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route("/shopping/cart/add", methods=['POST'])
+def add_to_shopping_cart():
+    """Add item to shopping cart"""
+    try:
+        from handlers.shopping import order_manager
+        data = request.get_json()
+        user_id = data.get('user_id', 'web_user')
+        
+        item = {
+            "name": data['name'],
+            "price": float(data['price']),
+            "quantity": int(data.get('quantity', 1)),
+            "description": data.get('description', '')
+        }
+        
+        result = order_manager.add_to_cart(user_id, item)
+        return jsonify({"success": True, "message": result})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route("/shopping/cart/clear", methods=['POST'])
+def clear_shopping_cart():
+    """Clear shopping cart"""
+    try:
+        from handlers.shopping import order_manager
+        data = request.get_json() or {}
+        user_id = data.get('user_id', 'web_user')
+        
+        result = order_manager.clear_cart(user_id)
+        return jsonify({"success": True, "message": result})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route("/paxi/pickup-points", methods=['GET'])
+def find_paxi_pickup_points():
+    """Find Paxi pickup points"""
+    try:
+        from handlers.paxi import paxi_service
+        location = request.args.get('location', '')
+        city = request.args.get('city', 'Cape Town')
+        
+        result = paxi_service.find_pickup_points(location, "", city)
+        return jsonify({"success": True, "pickup_points": result})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route("/paxi/delivery-options", methods=['GET'])
+def get_delivery_options():
+    """Get delivery options including Paxi"""
+    try:
+        from handlers.paxi import paxi_service
+        result = paxi_service.format_delivery_options()
+        return jsonify({"success": True, "options": result})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route("/paxi/track", methods=['GET'])
+def track_paxi_delivery():
+    """Track Paxi delivery"""
+    try:
+        from handlers.paxi import paxi_service
+        tracking_number = request.args.get('tracking_number')
+        if not tracking_number:
+            return jsonify({"success": False, "error": "Tracking number required"})
+        
+        result = paxi_service.track_delivery(tracking_number)
+        return jsonify({"success": True, "tracking_info": result})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route("/checkout/paxi", methods=['POST'])
+def checkout_with_paxi():
+    """Checkout with Paxi delivery"""
+    try:
+        from handlers.shopping import order_manager
+        data = request.get_json()
+        
+        user_id = data.get('user_id', 'web_user')
+        pickup_point_id = data['pickup_point_id']
+        customer_details = {
+            "name": data['customer_name'],
+            "phone": data['customer_phone'],
+            "email": data.get('customer_email', '')
+        }
+        
+        result = order_manager.checkout_with_paxi(user_id, pickup_point_id, customer_details)
+        
+        if result.get('success'):
+            # Format for WhatsApp
+            order_message = order_manager.format_order_for_whatsapp(result['order'])
+            
+            return jsonify({
+                "success": True,
+                "order_id": result['order']['order_id'],
+                "paxi_tracking": result.get('paxi_tracking'),
+                "pickup_point": result['pickup_point'],
+                "whatsapp_message": order_message
+            })
+        else:
+            return jsonify({"success": False, "error": result.get('error')})
+            
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route("/test-paxi-integration", methods=['GET'])
+def test_paxi_integration():
+    """Test Paxi integration"""
+    try:
+        from handlers.paxi import paxi_service
+        from handlers.shopping import order_manager
+        
+        results = {
+            "paxi_service": paxi_service.get_service_status(),
+            "pickup_points": paxi_service.find_pickup_points("", "", "Cape Town"),
+            "delivery_options": paxi_service.format_delivery_options(),
+            "cart_test": order_manager.view_cart("test_user")
+        }
+        
+        return jsonify({"success": True, "tests": results})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
 # Initialize WAHA client
 waha_client = WAHAClient()
 

@@ -9,3 +9,8 @@ GEMINI_API_KEY        = os.getenv("GEMINI_API_KEY")
 PERSONALITY_PROMPT    = os.getenv("PERSONALITY_PROMPT", "You are a helpful assistant.")
 CONTACTS_FILE         = os.getenv("CONTACTS_FILE", "contacts.json")
 DAILY_EMAIL_TO        = os.getenv("DAILY_EMAIL_TO")
+
+# Paxi delivery service configuration
+PAXI_API_KEY          = os.getenv("PAXI_API_KEY")
+PAXI_BASE_URL         = os.getenv("PAXI_BASE_URL", "https://api.paxi.com/v1")
+PAXI_PARTNER_ID       = os.getenv("PAXI_PARTNER_ID")

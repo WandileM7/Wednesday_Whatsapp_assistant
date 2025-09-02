@@ -13,6 +13,8 @@ from handlers.uber import uber_service
 from handlers.accommodation import accommodation_service
 from handlers.fitness import fitness_service
 from handlers.google_notes import google_notes_service
+from handlers.shopping import order_manager
+from handlers.paxi import paxi_service
 import logging
 from chromedb import *
 
@@ -523,6 +525,85 @@ FUNCTIONS = [
             "required": ["goal_type", "target"]
         }
     },
+    # Shopping and Paxi functions
+    {
+        "name": "add_to_cart",
+        "description": "Add an item to the shopping cart",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Item name"},
+                "price": {"type": "number", "description": "Item price in ZAR"},
+                "quantity": {"type": "integer", "description": "Quantity (default: 1)"},
+                "description": {"type": "string", "description": "Item description (optional)"}
+            },
+            "required": ["name", "price"]
+        }
+    },
+    {
+        "name": "view_cart",
+        "description": "View current shopping cart contents",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "clear_cart",
+        "description": "Clear all items from shopping cart",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "find_paxi_pickup_points",
+        "description": "Find Paxi pickup points near a location",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "Location or suburb to search near"},
+                "city": {"type": "string", "description": "City (default: Cape Town)"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "checkout_with_paxi",
+        "description": "Checkout cart with Paxi pickup point delivery",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "pickup_point_id": {"type": "string", "description": "Paxi pickup point ID"},
+                "customer_name": {"type": "string", "description": "Customer name"},
+                "customer_phone": {"type": "string", "description": "Customer phone number"},
+                "customer_email": {"type": "string", "description": "Customer email (optional)"}
+            },
+            "required": ["pickup_point_id", "customer_name", "customer_phone"]
+        }
+    },
+    {
+        "name": "track_paxi_delivery",
+        "description": "Track a Paxi delivery using tracking number",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tracking_number": {"type": "string", "description": "Paxi tracking number"}
+            },
+            "required": ["tracking_number"]
+        }
+    },
+    {
+        "name": "get_delivery_options",
+        "description": "Get available delivery options including Paxi",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
     # Google Notes functions
     {
         "name": "create_note",
@@ -908,6 +989,61 @@ def execute_function(call: dict, phone: str = "") -> str:
                 params["goal_type"],
                 params["target"]
             )
+        
+        # Shopping and Paxi functions
+        if name == "add_to_cart":
+            item = {
+                "name": params["name"],
+                "price": params["price"],
+                "quantity": params.get("quantity", 1),
+                "description": params.get("description", "")
+            }
+            return order_manager.add_to_cart(phone, item)
+        
+        if name == "view_cart":
+            return order_manager.view_cart(phone)
+        
+        if name == "clear_cart":
+            return order_manager.clear_cart(phone)
+        
+        if name == "find_paxi_pickup_points":
+            return paxi_service.find_pickup_points(
+                params.get("location", ""),
+                "",  # suburb
+                params.get("city", "Cape Town")
+            )
+        
+        if name == "checkout_with_paxi":
+            customer_details = {
+                "name": params["customer_name"],
+                "phone": params["customer_phone"],
+                "email": params.get("customer_email", "")
+            }
+            
+            result = order_manager.checkout_with_paxi(
+                phone, 
+                params["pickup_point_id"], 
+                customer_details
+            )
+            
+            if result.get("success"):
+                # Format order for WhatsApp and return for messaging
+                order_message = order_manager.format_order_for_whatsapp(result["order"])
+                
+                # Try to send WhatsApp order confirmation
+                try:
+                    contact_manager.send_whatsapp_message(phone, order_message)
+                    return f"✅ Order placed successfully! Paxi tracking: {result.get('paxi_tracking')}\n\nOrder confirmation sent via WhatsApp."
+                except Exception as e:
+                    return f"✅ Order placed successfully! Paxi tracking: {result.get('paxi_tracking')}\n\n{order_message}"
+            else:
+                return f"❌ Checkout failed: {result.get('error')}"
+        
+        if name == "track_paxi_delivery":
+            return paxi_service.track_delivery(params["tracking_number"])
+        
+        if name == "get_delivery_options":
+            return paxi_service.format_delivery_options()
         
         # Google Notes functions
         if name == "create_note":
