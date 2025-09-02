@@ -3118,6 +3118,59 @@ class WAHAClient:
 # Initialize WAHA client
 waha_client = WAHAClient()
 
+# Import and register e-commerce blueprints
+try:
+    from handlers.admin import admin_bp
+    from handlers.orders import order_bp
+    from handlers.storefront import store_bp
+    
+    app.register_blueprint(admin_bp)
+    app.register_blueprint(order_bp)
+    app.register_blueprint(store_bp)
+    
+    # Initialize database on startup
+    from models import db_manager
+    logger.info("E-commerce database initialized")
+    
+except Exception as e:
+    logger.error(f"Error initializing e-commerce modules: {e}")
+
+# E-commerce API routes
+@app.route("/api/products")
+def get_products():
+    """Get all products for storefront"""
+    try:
+        from models import Product
+        products = Product.get_all()
+        return jsonify({'success': True, 'products': products})
+    except Exception as e:
+        logger.error(f"Error getting products: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route("/api/store/status")
+def store_status():
+    """Get e-commerce store status"""
+    try:
+        from models import Product, Customer, Order
+        from handlers.paxi import get_paxi_service_status
+        from handlers.orders import get_notification_service_status
+        
+        products = Product.get_all()
+        customers = Customer.get_all()
+        orders = Order.get_all()
+        
+        return jsonify({
+            'store_active': True,
+            'total_products': len(products),
+            'total_customers': len(customers),
+            'total_orders': len(orders),
+            'paxi_service': get_paxi_service_status(),
+            'notifications': get_notification_service_status()
+        })
+    except Exception as e:
+        logger.error(f"Error getting store status: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 if __name__ == '__main__':
     logger.info("Launching Memory-Optimized WhatsApp Assistant...")
     
