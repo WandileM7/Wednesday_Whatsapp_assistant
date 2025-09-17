@@ -49,6 +49,7 @@ from handlers.news import news_service
 from handlers.tasks import task_manager
 from handlers.contacts import contact_manager
 from handlers.spotify_client import make_spotify_oauth
+import spotipy
 import os, time, json, threading, logging, requests
 from urllib.parse import urlparse
 
