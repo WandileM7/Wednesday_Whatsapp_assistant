@@ -246,7 +246,7 @@ class ServiceMonitor:
             
             # Simple test query
             genai.configure(api_key=GEMINI_API_KEY)
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('gemini-2.0-flash')
             response = model.generate_content("Hello")
             
             if response and response.text:
@@ -277,9 +277,15 @@ class ServiceMonitor:
             status = media_generator.get_service_status()
             
             if status.get('openai_available') or status.get('stability_available'):
-                return True, None
+                apis = []
+                if status.get('openai_available'):
+                    apis.append('OpenAI')
+                if status.get('stability_available'):
+                    apis.append('Stability')
+                return True, f"Available APIs: {', '.join(apis)}"
             else:
-                return False, "No media generation APIs available"
+                # Not critical - just informational
+                return False, "Media generation APIs not configured (OPENAI_API_KEY or STABILITY_API_KEY required)"
                 
         except Exception as e:
             return False, str(e)
