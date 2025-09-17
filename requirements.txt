@@ -7,7 +7,6 @@ google-auth-oauthlib==1.2.0
 requests
 google-generativeai
 openai>=1.0.0
-scheduler  
 spotipy==2.23.0
 chromadb
 onnxruntime>=1.15.0
@@ -31,8 +30,4 @@ scipy
 # For video processing
 # ffmpeg-python
 # moviepy
-# For audio processing
-wave
-struct
-# Additional utilities
-asyncio
+# Note: wave, struct, and asyncio are built-in Python modules
