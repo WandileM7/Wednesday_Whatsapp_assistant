@@ -19,6 +19,13 @@ import threading
 
 logger = logging.getLogger(__name__)
 
+class DateTimeEncoder(json.JSONEncoder):
+    """Custom JSON encoder to handle datetime objects"""
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
 class DatabaseManager:
     """SQLite database manager for the WhatsApp Assistant"""
     
@@ -424,7 +431,7 @@ class DatabaseManager:
                 cursor.execute('''
                     INSERT OR REPLACE INTO system_state (key, value, updated_at)
                     VALUES (?, ?, CURRENT_TIMESTAMP)
-                ''', (key, json.dumps(value)))
+                ''', (key, json.dumps(value, cls=DateTimeEncoder)))
                 
                 conn.commit()
                 conn.close()

@@ -45,7 +45,7 @@ class ServiceMonitor:
             name="whatsapp_service",
             health_check_url="http://localhost:3000/health",
             critical=True,
-            restart_command="docker compose restart whatsapp-service",
+            restart_command=None,  # No docker restart available in production
             description="WhatsApp messaging service"
         )
         
@@ -247,7 +247,7 @@ class ServiceMonitor:
             # Simple test query
             genai.configure(api_key=GEMINI_API_KEY)
             model = genai.GenerativeModel('gemini-pro')
-            response = model.generate_content("Hello", timeout=10)
+            response = model.generate_content("Hello")
             
             if response and response.text:
                 return True, None
@@ -455,8 +455,25 @@ class ServiceMonitor:
     def _save_monitoring_data(self):
         """Save monitoring data to database"""
         try:
+            # Create a serializable copy of services data
+            serializable_services = {}
+            for name, service in self.services.items():
+                serializable_services[name] = {
+                    'name': service['name'],
+                    'health_check_url': service.get('health_check_url'),
+                    'critical': service['critical'],
+                    'restart_command': service.get('restart_command'),
+                    'description': service['description'],
+                    'last_check': service['last_check'].isoformat() if service['last_check'] else None,
+                    'status': service['status'],
+                    'response_time': service['response_time'],
+                    'error_count': service['error_count'],
+                    'last_error': service['last_error'],
+                    'uptime_start': service['uptime_start'].isoformat() if service['uptime_start'] else None
+                }
+            
             monitoring_data = {
-                'services': self.services,
+                'services': serializable_services,
                 'stats': self.service_stats,
                 'timestamp': datetime.now().isoformat()
             }

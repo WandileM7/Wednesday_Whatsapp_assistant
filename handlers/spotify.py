@@ -293,3 +293,24 @@ def previous_track() -> str:
     except Exception as e:
         logger.error(f"Error going to previous track: {e}")
         return f"❌ Error going to previous track: {e}"
+
+# Create a service object for compatibility with service monitor
+class SpotifyService:
+    """Spotify service wrapper for service monitoring"""
+    
+    def __init__(self):
+        self.sp = None
+    
+    def is_authenticated(self):
+        """Check if Spotify is authenticated"""
+        self.sp = get_spotify_client()
+        return self.sp is not None
+    
+    def get_status(self):
+        """Get service status"""
+        if self.is_authenticated():
+            return {"status": "authenticated", "client": self.sp}
+        return {"status": "not_authenticated", "client": None}
+
+# Global spotify service instance
+spotify_service = SpotifyService()
