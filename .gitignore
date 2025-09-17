@@ -53,3 +53,22 @@ flask_session/
 *.ogg
 *.wav
 *.mp3
+
+# Enhanced features generated content
+generated_media/
+assistant.db
+assistant.db-journal
+*.sqlite
+*.sqlite3
+
+# Task and reminder data
+task_data/
+reminder_data/
+
+# Media generation cache
+media_cache/
+avatar_cache/
+
+# System monitoring logs
+monitoring_logs/
+service_logs/

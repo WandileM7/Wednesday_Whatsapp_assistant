@@ -6,7 +6,7 @@ google-auth-httplib2
 google-auth-oauthlib
 requests
 google-generativeai
-openai
+openai>=1.0.0
 scheduler  
 spotipy==2.23.0
 chromadb
@@ -22,3 +22,6 @@ google-cloud-speech
 google-cloud-texttospeech
 qrcode==8.0
 Pillow==11.0.0
+# Additional dependencies for enhanced features
+requests-oauthlib
+python-dateutil

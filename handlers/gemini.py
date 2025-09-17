@@ -568,6 +568,52 @@ FUNCTIONS = [
             },
             "required": ["contact_query"]
         }
+    },
+    # Media generation functions
+    {
+        "name": "generate_image",
+        "description": "Generate an image from text description using AI",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string", "description": "Description of the image to generate"},
+                "style": {"type": "string", "description": "Image style: realistic, artistic, cartoon, professional, avatar", "default": "realistic"}
+            },
+            "required": ["prompt"]
+        }
+    },
+    {
+        "name": "create_avatar",
+        "description": "Create an avatar for the assistant",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "personality": {"type": "string", "description": "Personality type for avatar", "default": "wednesday"},
+                "style": {"type": "string", "description": "Avatar style", "default": "professional"}
+            },
+            "required": []
+        }
+    },
+    # Service monitoring functions
+    {
+        "name": "check_service_status",
+        "description": "Check the status of system services",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "service_name": {"type": "string", "description": "Specific service to check (optional)"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "get_system_health",
+        "description": "Get overall system health summary",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
     }
 
 ]
@@ -932,6 +978,84 @@ def execute_function(call: dict, phone: str = "") -> str:
         
         if name == "get_contact_for_whatsapp":
             return contact_manager.get_contact_for_whatsapp(params["contact_query"])
+        
+        # Media generation functions
+        if name == "generate_image":
+            from handlers.media_generator import media_generator
+            import asyncio
+            
+            # Run async function
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(
+                media_generator.generate_image(
+                    params["prompt"], 
+                    phone, 
+                    params.get("style", "realistic")
+                )
+            )
+            loop.close()
+            
+            if result.get('success'):
+                return f"🎨 Image generated successfully!\n\n📝 Prompt: {params['prompt']}\n🎭 Style: {params.get('style', 'realistic')}\n💾 File: {result.get('file_path', 'Unknown')}\n🤖 Generator: {result.get('generator', 'Unknown')}"
+            else:
+                return f"❌ Image generation failed: {result.get('error', 'Unknown error')}"
+        
+        if name == "create_avatar":
+            from handlers.media_generator import media_generator
+            avatar_path = media_generator.create_avatar(
+                params.get("personality", "wednesday"),
+                params.get("style", "professional")
+            )
+            
+            if avatar_path:
+                return f"🎭 Avatar created successfully!\n\n👤 Personality: {params.get('personality', 'wednesday')}\n🎨 Style: {params.get('style', 'professional')}\n💾 File: {avatar_path}"
+            else:
+                return "❌ Failed to create avatar"
+        
+        # Service monitoring functions
+        if name == "check_service_status":
+            from handlers.service_monitor import service_monitor
+            service_name = params.get("service_name")
+            status = service_monitor.get_service_status(service_name)
+            
+            if service_name:
+                service_info = status.get('service', {})
+                stats = status.get('stats', {})
+                
+                return f"🔧 Service Status: {service_name}\n\n" \
+                       f"Status: {service_info.get('status', 'Unknown')}\n" \
+                       f"Last Check: {service_info.get('last_check', 'Never')}\n" \
+                       f"Response Time: {service_info.get('response_time', 'N/A')}ms\n" \
+                       f"Error Count: {service_info.get('error_count', 0)}\n" \
+                       f"Total Checks: {stats.get('total_checks', 0)}\n" \
+                       f"Success Rate: {(stats.get('successful_checks', 0) / max(stats.get('total_checks', 1), 1) * 100):.1f}%"
+            else:
+                services = status.get('services', {})
+                healthy_count = sum(1 for s in services.values() if s.get('status') == 'healthy')
+                total_count = len(services)
+                
+                result = f"🔧 **System Services Overview**\n\n"
+                result += f"✅ Healthy: {healthy_count}/{total_count}\n"
+                result += f"🔄 Monitoring: {'Active' if status.get('monitoring_active') else 'Inactive'}\n\n"
+                
+                for name, service in services.items():
+                    status_emoji = "✅" if service.get('status') == 'healthy' else "❌"
+                    critical_emoji = "🔴" if service.get('critical') else "🟡"
+                    result += f"{status_emoji} {critical_emoji} {name}: {service.get('status', 'unknown')}\n"
+                
+                return result
+        
+        if name == "get_system_health":
+            from handlers.service_monitor import service_monitor
+            health_summary = service_monitor.get_system_health_summary()
+            
+            return f"🏥 **System Health Summary**\n\n" \
+                   f"Overall Status: {health_summary.get('overall_status', 'Unknown').title()}\n" \
+                   f"Healthy Services: {health_summary.get('healthy_services', 0)}/{health_summary.get('total_services', 0)}\n" \
+                   f"Critical Issues: {health_summary.get('critical_services_down', 0)}\n" \
+                   f"Monitoring: {'Active' if health_summary.get('monitoring_active') else 'Inactive'}\n" \
+                   f"Last Check: {health_summary.get('last_check', 'Never')}"
 
         return "I couldn't handle that function call."
     except Exception as e:
