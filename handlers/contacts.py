@@ -364,20 +364,82 @@ class ContactManager:
             # WhatsApp format: phone@c.us
             whatsapp_id = formatted_phone.replace('+', '') + '@c.us'
             
-            # Here you would integrate with your WhatsApp service
-            # For now, return a success message with instructions
-            source_icon = "☁️" if contact['source'] == 'google' else "🏠"
-            response = f"📱 Preparing WhatsApp message to {contact['name']} {source_icon}\n\n"
-            response += f"👤 Contact: {contact['name']}\n"
-            response += f"📞 Phone: {phone_number}\n"
-            response += f"🆔 WhatsApp ID: {whatsapp_id}\n"
-            response += f"📍 Source: {'Google Contacts' if contact['source'] == 'google' else 'Local Contacts'}\n"
-            response += f"💬 Message: {message}\n\n"
-            
-            # In a real implementation, you would call the WhatsApp service here
-            # Example: whatsapp_client.send_message(whatsapp_id, message)
-            
-            response += "✅ Message ready to send via WhatsApp service\n"
+            # Actually send the WhatsApp message
+            try:
+                # Import the message sending function from main
+                import requests
+                import os
+                
+                waha_url = os.getenv("WAHA_URL", "http://localhost:3000/api/sendText")
+                
+                # Prepare the message payload
+                payload = {
+                    "chatId": whatsapp_id,
+                    "text": message,
+                    "session": os.getenv("WAHA_SESSION", "default")
+                }
+                
+                # Send the message
+                response_request = requests.post(
+                    waha_url,
+                    headers={"Content-Type": "application/json"},
+                    json=payload,
+                    timeout=10
+                )
+                
+                if response_request.status_code == 200:
+                    # Message sent successfully
+                    source_icon = "☁️" if contact['source'] == 'google' else "🏠"
+                    response = f"✅ **WhatsApp Message Sent!** {source_icon}\n\n"
+                    response += f"👤 To: {contact['name']}\n"
+                    response += f"📞 Phone: {phone_number}\n"
+                    response += f"💬 Message: \"{message}\"\n"
+                    response += f"🕒 Sent: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
+                    response += "📱 Message delivered via WhatsApp!"
+                    
+                    # Log the successful message sending
+                    logger.info(f"WhatsApp message sent to {contact['name']} ({whatsapp_id})")
+                    
+                    return response
+                else:
+                    # Failed to send
+                    error_msg = f"HTTP {response_request.status_code}"
+                    source_icon = "☁️" if contact['source'] == 'google' else "🏠"
+                    response = f"❌ **Failed to send WhatsApp message** {source_icon}\n\n"
+                    response += f"👤 To: {contact['name']}\n"
+                    response += f"📞 Phone: {phone_number}\n"
+                    response += f"💬 Message: \"{message}\"\n"
+                    response += f"⚠️ Error: {error_msg}\n\n"
+                    response += "🔧 Please check WhatsApp service connection."
+                    
+                    logger.error(f"Failed to send WhatsApp message: {error_msg}")
+                    return response
+                    
+            except requests.exceptions.ConnectionError:
+                # WhatsApp service not available
+                source_icon = "☁️" if contact['source'] == 'google' else "🏠"
+                response = f"⚠️ **WhatsApp Service Unavailable** {source_icon}\n\n"
+                response += f"👤 Contact: {contact['name']}\n"
+                response += f"📞 Phone: {phone_number}\n"
+                response += f"🆔 WhatsApp ID: {whatsapp_id}\n"
+                response += f"📍 Source: {'Google Contacts' if contact['source'] == 'google' else 'Local Contacts'}\n"
+                response += f"💬 Message: \"{message}\"\n\n"
+                response += "🔧 WhatsApp service is not running. Message prepared but not sent.\n"
+                response += "💡 Start the WhatsApp service to enable messaging."
+                
+                logger.warning("WhatsApp service not available for message sending")
+                return response
+                
+            except Exception as e:
+                # Other errors
+                logger.error(f"Error sending WhatsApp message: {e}")
+                source_icon = "☁️" if contact['source'] == 'google' else "🏠"
+                response = f"❌ **Error sending message** {source_icon}\n\n"
+                response += f"👤 To: {contact['name']}\n"
+                response += f"⚠️ Error: {str(e)}\n\n"
+                response += "🔧 Please try again or check service status."
+                
+                return response
             response += "💡 Integration with WhatsApp service pending"
             
             return response

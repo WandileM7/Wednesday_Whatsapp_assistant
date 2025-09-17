@@ -52,13 +52,14 @@ from handlers.spotify_client import make_spotify_oauth
 import os, time, json, threading, logging, requests
 from urllib.parse import urlparse
 
-# ChromaDB imports with fallback
+# SQLite Database imports
 try:
-    from chromedb import add_to_conversation_history, query_conversation_history, retrieve_conversation_history
-    CHROMADB_AVAILABLE = True
+    from database import add_to_conversation_history, query_conversation_history, retrieve_conversation_history, db_manager
+    DATABASE_AVAILABLE = True
+    logger.info("SQLite database initialized successfully")
 except ImportError as e:
-    logger.warning(f"ChromaDB not available: {e}")
-    CHROMADB_AVAILABLE = False
+    logger.error(f"Database not available: {e}")
+    DATABASE_AVAILABLE = False
     
     # Fallback functions
     def add_to_conversation_history(phone, role, message):
@@ -406,6 +407,7 @@ def initialize_google_auth():
 def initialize_services():
     """Initialize all services on startup"""
     logger.info("Initializing services...")
+    
     # Initialize Spotify authentication
     refresh_token = os.getenv("SPOTIFY_REFRESH_TOKEN")
     if refresh_token:
@@ -413,10 +415,33 @@ def initialize_services():
         logger.info("Spotify refresh token present")
     else:
         logger.info("Spotify refresh token not set; will use interactive login when needed")
+    
     # Initialize Google authentication
     initialize_google_auth()
+    
+    # Initialize notification system
+    try:
+        from handlers.notifications import task_notification_system
+        # Use the send_message function defined later in the file
+        def notification_send_message(phone, text):
+            return send_message(phone, text)
+        task_notification_system.set_send_message_callback(notification_send_message)
+        task_notification_system.start_notification_service()
+        logger.info("Task notification system initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize notification system: {e}")
+    
+    # Initialize service monitor
+    try:
+        from handlers.service_monitor import service_monitor
+        service_monitor.start_monitoring()
+        logger.info("Service monitoring initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize service monitor: {e}")
+    
     # Start WAHA keep-alive
     start_waha_keepalive()
+    
     logger.info("Service initialization complete")
 
 # Initialize services on startup
@@ -1557,14 +1582,23 @@ def health():
         process = psutil.Process()
         memory_info = process.memory_info()
         
-        # Include WAHA status in health check
+        # Include database and WAHA status in health check
         waha_healthy = waha_health_check() if waha_url else None
+        
+        # Get database statistics
+        db_stats = {}
+        if DATABASE_AVAILABLE:
+            try:
+                db_stats = db_manager.get_database_stats()
+            except Exception as e:
+                logger.error(f"Failed to get database stats: {e}")
         
         return jsonify({
             "status": "healthy",
             "memory_mb": round(memory_info.rss / 1024 / 1024, 2),
             "active_conversations": len(user_conversations),
-            "chromadb_enabled": CHROMADB_AVAILABLE and os.getenv("ENABLE_CHROMADB", "false").lower() == "true",
+            "database_enabled": DATABASE_AVAILABLE,
+            "database_stats": db_stats,
             "waha_status": "connected" if waha_healthy else ("disconnected" if waha_healthy is False else "not_configured"),
             "waha_keepalive": waha_keepalive_active,
             "gemini_helpers": GEMINI_HELPERS_AVAILABLE,
@@ -3117,6 +3151,767 @@ class WAHAClient:
 
 # Initialize WAHA client
 waha_client = WAHAClient()
+
+# Enhanced Jarvis-like AI endpoints
+@app.route("/api/media/generate-image", methods=['POST'])
+def api_generate_image():
+    """Generate image via API"""
+    try:
+        data = request.get_json() or {}
+        prompt = data.get('prompt')
+        style = data.get('style', 'realistic')
+        phone = data.get('phone', 'api_user')
+        
+        if not prompt:
+            return jsonify({'error': 'Prompt required'}), 400
+        
+        from handlers.media_generator import media_generator
+        import asyncio
+        
+        # Run async function
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(
+            media_generator.generate_image(prompt, phone, style)
+        )
+        loop.close()
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/api/media/create-avatar", methods=['POST'])
+def api_create_avatar():
+    """Create avatar via API"""
+    try:
+        data = request.get_json() or {}
+        personality = data.get('personality', 'wednesday')
+        style = data.get('style', 'professional')
+        
+        from handlers.media_generator import media_generator
+        avatar_path = media_generator.create_avatar(personality, style)
+        
+        if avatar_path:
+            return jsonify({
+                'success': True,
+                'avatar_path': avatar_path,
+                'personality': personality,
+                'style': style
+            })
+        else:
+            return jsonify({'error': 'Failed to create avatar'}), 500
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/api/services/status")
+def api_service_status():
+    """Get comprehensive service status"""
+    try:
+        from handlers.service_monitor import service_monitor
+        return jsonify(service_monitor.get_service_status())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/api/services/health")
+def api_system_health():
+    """Get system health summary"""
+    try:
+        from handlers.service_monitor import service_monitor
+        return jsonify(service_monitor.get_system_health_summary())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/api/services/ping/<service_name>", methods=['POST'])
+def api_ping_service(service_name):
+    """Ping a specific service"""
+    try:
+        from handlers.service_monitor import service_monitor
+        data = request.get_json() or {}
+        endpoint = data.get('endpoint')
+        
+        result = service_monitor.ping_service(service_name, endpoint)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/api/notifications/stats")
+def api_notification_stats():
+    """Get notification statistics"""
+    try:
+        from handlers.notifications import task_notification_system
+        phone = request.args.get('phone')
+        return jsonify(task_notification_system.get_notification_stats(phone))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/api/database/stats")
+def api_database_stats():
+    """Get database statistics"""
+    try:
+        if DATABASE_AVAILABLE:
+            stats = db_manager.get_database_stats()
+            return jsonify(stats)
+        else:
+            return jsonify({'error': 'Database not available'}), 503
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/api/database/cleanup", methods=['POST'])
+def api_database_cleanup():
+    """Clean up old database data"""
+    try:
+        if not DATABASE_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+        
+        data = request.get_json() or {}
+        days_old = data.get('days_old', 30)
+        
+        db_manager.cleanup_old_data(days_old)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Cleaned up data older than {days_old} days'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/api/whatsapp/send", methods=['POST'])
+def api_send_whatsapp():
+    """Send WhatsApp message via API"""
+    try:
+        data = request.get_json() or {}
+        contact_query = data.get('contact_query') 
+        message = data.get('message')
+        
+        if not contact_query or not message:
+            return jsonify({'error': 'contact_query and message required'}), 400
+        
+        result = contact_manager.send_whatsapp_message(contact_query, message)
+        
+        return jsonify({
+            'success': True,
+            'result': result
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/dashboard")
+def enhanced_dashboard():
+    """Enhanced dashboard with all new features"""
+    try:
+        from handlers.service_monitor import service_monitor
+        from handlers.notifications import task_notification_system
+        
+        # Get comprehensive system status
+        services_status = service_monitor.get_service_status()
+        health_summary = service_monitor.get_system_health_summary()
+        notification_stats = task_notification_system.get_notification_stats()
+        
+        if DATABASE_AVAILABLE:
+            db_stats = db_manager.get_database_stats()
+        else:
+            db_stats = {'error': 'Database not available'}
+        
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Wednesday Assistant - Enhanced Dashboard</title>
+            <style>
+                body {{ font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
+                .dashboard {{ max-width: 1200px; margin: 0 auto; }}
+                .card {{ background: white; border-radius: 12px; padding: 20px; margin: 15px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                .card h3 {{ margin-top: 0; color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }}
+                .status-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px; }}
+                .status-item {{ background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #007bff; }}
+                .healthy {{ border-left-color: #28a745; }}
+                .warning {{ border-left-color: #ffc107; }}
+                .error {{ border-left-color: #dc3545; }}
+                .button {{ display: inline-block; padding: 8px 16px; margin: 5px; background: #007bff; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; }}
+                .button:hover {{ background: #0056b3; }}
+                .metric {{ display: inline-block; margin: 10px 15px 10px 0; }}
+                .metric-value {{ font-size: 24px; font-weight: bold; color: #007bff; }}
+                .metric-label {{ font-size: 12px; color: #666; text-transform: uppercase; }}
+            </style>
+            <script>
+                function refreshPage() {{ window.location.reload(); }}
+                setInterval(refreshPage, 30000); // Refresh every 30 seconds
+            </script>
+        </head>
+        <body>
+            <div class="dashboard">
+                <h1>🤖 Wednesday Assistant - Enhanced Dashboard</h1>
+                <p><em>Auto-refreshes every 30 seconds | Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</em></p>
+                
+                <div class="card">
+                    <h3>🏥 System Health Overview</h3>
+                    <div class="status-grid">
+                        <div class="status-item {'healthy' if health_summary.get('overall_status') == 'healthy' else 'error'}">
+                            <strong>Overall Status:</strong> {health_summary.get('overall_status', 'Unknown').title()}<br>
+                            <small>Healthy Services: {health_summary.get('healthy_services', 0)}/{health_summary.get('total_services', 0)}</small>
+                        </div>
+                        <div class="status-item">
+                            <strong>Database:</strong> {'✅ Active' if DATABASE_AVAILABLE else '❌ Unavailable'}<br>
+                            <small>Records: {db_stats.get('conversations_count', 0)} conversations, {db_stats.get('tasks_count', 0)} tasks</small>
+                        </div>
+                        <div class="status-item">
+                            <strong>Notifications:</strong> {'✅ Active' if notification_stats.get('service_running') else '❌ Stopped'}<br>
+                            <small>Total sent: {notification_stats.get('total_notifications', 0)}</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>🔧 Service Status</h3>
+                    <div class="status-grid">
+        """
+        
+        # Add service status cards
+        for service_name, service_info in services_status.get('services', {}).items():
+            status_class = 'healthy' if service_info.get('status') == 'healthy' else 'error'
+            critical_indicator = '🔴' if service_info.get('critical') else '🟡'
+            
+            dashboard_html = f"""
+                        <div class="status-item {status_class}">
+                            <strong>{critical_indicator} {service_name.replace('_', ' ').title()}:</strong> {service_info.get('status', 'Unknown')}<br>
+                            <small>Last check: {service_info.get('last_check', 'Never')}</small>
+                        </div>
+            """
+        
+        dashboard_html += f"""
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>📊 Performance Metrics</h3>
+                    <div class="metric">
+                        <div class="metric-value">{health_summary.get('system_metrics', {}).get('memory_percent', 'N/A')}%</div>
+                        <div class="metric-label">Memory Usage</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value">{health_summary.get('system_metrics', {}).get('cpu_percent', 'N/A')}%</div>
+                        <div class="metric-label">CPU Usage</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value">{db_stats.get('db_size_mb', 'N/A')} MB</div>
+                        <div class="metric-label">Database Size</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value">{len(user_conversations)}</div>
+                        <div class="metric-label">Active Conversations</div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>🛠️ Quick Actions</h3>
+                    <a href="/health" class="button">Health Check</a>
+                    <a href="/api/services/status" class="button">Service Status JSON</a>
+                    <a href="/api/database/stats" class="button">Database Stats</a>
+                    <a href="/quick-setup" class="button">Setup Guide</a>
+                    <a href="/services" class="button">Services Overview</a>
+                    <a href="javascript:refreshPage()" class="button">Refresh Now</a>
+                    <a href="/api/advanced/test-suite" class="button">Run Tests</a>
+                    <a href="/api/advanced/diagnostics" class="button">Diagnostics</a>
+                </div>
+                
+                <div class="card">
+                    <h3>🎨 AI Media Generation</h3>
+                    <p>Test advanced AI capabilities:</p>
+                    <div style="margin: 10px 0;">
+                        <button onclick="testImageGeneration()" class="button">Test Image Generation</button>
+                        <button onclick="testVideoGeneration()" class="button">Test Video Generation</button>
+                        <button onclick="testVoiceSynthesis()" class="button">Test Voice Synthesis</button>
+                        <button onclick="runDiagnostics()" class="button">Run System Diagnostics</button>
+                    </div>
+                    <div id="ai-results" style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 5px; display: none;">
+                        <p id="ai-status">Processing...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <script>
+                async function testImageGeneration() {{
+                    showAIResults('Generating AI image...');
+                    try {{
+                        const response = await fetch('/api/media/generate-image', {{
+                            method: 'POST',
+                            headers: {{'Content-Type': 'application/json'}},
+                            body: JSON.stringify({{prompt: 'A futuristic AI assistant', style: 'professional'}})
+                        }});
+                        const result = await response.json();
+                        showAIResults(result.success ? '✅ Image generated successfully!' : '❌ Generation failed: ' + result.error);
+                    }} catch (e) {{
+                        showAIResults('❌ Error: ' + e.message);
+                    }}
+                }}
+                
+                async function testVideoGeneration() {{
+                    showAIResults('Generating AI video (this may take a moment)...');
+                    try {{
+                        const response = await fetch('/api/advanced/generate-video', {{
+                            method: 'POST',
+                            headers: {{'Content-Type': 'application/json'}},
+                            body: JSON.stringify({{prompt: 'A spinning cube animation', style: 'animated', duration: 3}})
+                        }});
+                        const result = await response.json();
+                        showAIResults(result.success ? '✅ Video generated successfully!' : '❌ Generation failed: ' + result.error);
+                    }} catch (e) {{
+                        showAIResults('❌ Error: ' + e.message);
+                    }}
+                }}
+                
+                async function testVoiceSynthesis() {{
+                    showAIResults('Synthesizing voice...');
+                    try {{
+                        const response = await fetch('/api/advanced/synthesize-voice', {{
+                            method: 'POST',
+                            headers: {{'Content-Type': 'application/json'}},
+                            body: JSON.stringify({{text: 'Hello, I am Wednesday, your AI assistant.', style: 'natural'}})
+                        }});
+                        const result = await response.json();
+                        showAIResults(result.success ? '✅ Voice synthesized successfully!' : '❌ Synthesis failed: ' + result.error);
+                    }} catch (e) {{
+                        showAIResults('❌ Error: ' + e.message);
+                    }}
+                }}
+                
+                async function runDiagnostics() {{
+                    showAIResults('Running system diagnostics...');
+                    try {{
+                        const response = await fetch('/api/advanced/diagnostics?type=comprehensive');
+                        const result = await response.json();
+                        showAIResults('✅ Diagnostics complete! Check console for details.');
+                        console.log('Diagnostics Results:', result);
+                    }} catch (e) {{
+                        showAIResults('❌ Error: ' + e.message);
+                    }}
+                }}
+                
+                function showAIResults(message) {{
+                    const resultsDiv = document.getElementById('ai-results');
+                    const statusP = document.getElementById('ai-status');
+                    statusP.textContent = message;
+                    resultsDiv.style.display = 'block';
+                }}
+            </script>
+        </body>
+        </html>
+        """
+        
+        return dashboard_html
+        
+    except Exception as e:
+        return f"<h1>Dashboard Error</h1><p>{str(e)}</p>", 500
+
+# Advanced AI endpoints
+@app.route("/api/advanced/generate-video", methods=['POST'])
+def api_generate_video():
+    """Generate video using advanced AI"""
+    try:
+        data = request.get_json() or {}
+        prompt = data.get('prompt')
+        style = data.get('style', 'realistic')
+        duration = data.get('duration', 5)
+        
+        if not prompt:
+            return jsonify({'success': False, 'error': 'Prompt required'}), 400
+        
+        from handlers.advanced_ai import advanced_ai
+        import asyncio
+        
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(
+            advanced_ai.generate_video(prompt, style, duration)
+        )
+        loop.close()
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route("/api/advanced/synthesize-voice", methods=['POST'])
+def api_synthesize_voice():
+    """Synthesize voice using advanced AI"""
+    try:
+        data = request.get_json() or {}
+        text = data.get('text')
+        voice_id = data.get('voice_id', 'default')
+        style = data.get('style', 'natural')
+        
+        if not text:
+            return jsonify({'success': False, 'error': 'Text required'}), 400
+        
+        from handlers.advanced_ai import advanced_ai
+        import asyncio
+        
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(
+            advanced_ai.synthesize_voice(text, voice_id, style)
+        )
+        loop.close()
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route("/api/advanced/analyze-image", methods=['POST'])
+def api_analyze_image():
+    """Analyze image using computer vision"""
+    try:
+        data = request.get_json() or {}
+        image_path = data.get('image_path')
+        analysis_type = data.get('analysis_type', 'comprehensive')
+        
+        if not image_path:
+            return jsonify({'success': False, 'error': 'Image path required'}), 400
+        
+        from handlers.advanced_ai import advanced_ai
+        import asyncio
+        
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(
+            advanced_ai.analyze_image(image_path, analysis_type)
+        )
+        loop.close()
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route("/api/advanced/predict-behavior", methods=['POST'])
+def api_predict_behavior():
+    """Predict user behavior"""
+    try:
+        data = request.get_json() or {}
+        phone = data.get('phone', 'api_user')
+        context = data.get('context')
+        
+        from handlers.advanced_ai import advanced_ai
+        import asyncio
+        
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(
+            advanced_ai.predict_user_behavior(phone, context)
+        )
+        loop.close()
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route("/api/advanced/test-suite")
+def api_test_suite():
+    """Run comprehensive test suite"""
+    try:
+        test_type = request.args.get('type', 'quick')
+        
+        if test_type == 'quick':
+            # Quick tests
+            from handlers.service_monitor import service_monitor
+            health = service_monitor.get_system_health_summary()
+            
+            return jsonify({
+                'success': True,
+                'test_type': 'quick',
+                'system_health': health,
+                'timestamp': datetime.now().isoformat()
+            })
+        
+        elif test_type == 'comprehensive':
+            # Run comprehensive test suite
+            from test_suite import ComprehensiveTestSuite
+            test_suite = ComprehensiveTestSuite()
+            
+            # Run tests in background to avoid timeout
+            import threading
+            
+            def run_tests():
+                try:
+                    results = test_suite.run_all_tests()
+                    # Store results in system state for later retrieval
+                    db_manager.set_system_state('last_test_results', results)
+                except Exception as e:
+                    db_manager.set_system_state('last_test_results', {'error': str(e)})
+            
+            test_thread = threading.Thread(target=run_tests)
+            test_thread.start()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Comprehensive test suite started in background',
+                'check_endpoint': '/api/advanced/test-results',
+                'estimated_duration': '2-3 minutes'
+            })
+        
+        else:
+            return jsonify({'success': False, 'error': 'Invalid test type'}), 400
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route("/api/advanced/test-results")
+def api_test_results():
+    """Get latest test results"""
+    try:
+        results = db_manager.get_system_state('last_test_results')
+        if results:
+            return jsonify({
+                'success': True,
+                'results': results,
+                'retrieved_at': datetime.now().isoformat()
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'No test results available. Run tests first.'
+            })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route("/api/advanced/diagnostics")
+def api_diagnostics():
+    """Run system diagnostics"""
+    try:
+        diagnostic_type = request.args.get('type', 'basic')
+        
+        diagnostics = {
+            'timestamp': datetime.now().isoformat(),
+            'type': diagnostic_type
+        }
+        
+        # Basic system information
+        import psutil
+        import platform
+        
+        diagnostics['system'] = {
+            'platform': platform.system(),
+            'python_version': platform.python_version(),
+            'cpu_count': psutil.cpu_count(),
+            'memory_total_gb': psutil.virtual_memory().total / (1024**3),
+            'disk_total_gb': psutil.disk_usage('/').total / (1024**3)
+        }
+        
+        # Current resource usage
+        process = psutil.Process()
+        diagnostics['current_usage'] = {
+            'memory_mb': process.memory_info().rss / (1024**2),
+            'cpu_percent': process.cpu_percent(),
+            'memory_percent': psutil.virtual_memory().percent,
+            'disk_percent': psutil.disk_usage('/').percent
+        }
+        
+        # Service status
+        from handlers.service_monitor import service_monitor
+        diagnostics['services'] = service_monitor.get_system_health_summary()
+        
+        # Database status
+        if DATABASE_AVAILABLE:
+            diagnostics['database'] = db_manager.get_database_stats()
+        
+        # Advanced AI status
+        try:
+            from handlers.advanced_ai import advanced_ai
+            diagnostics['advanced_ai'] = advanced_ai.get_service_status()
+        except Exception as e:
+            diagnostics['advanced_ai'] = {'error': str(e)}
+        
+        return jsonify({
+            'success': True,
+            'diagnostics': diagnostics
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route("/api/advanced/optimize", methods=['POST'])
+def api_optimize():
+    """Optimize system performance"""
+    try:
+        data = request.get_json() or {}
+        optimization_type = data.get('type', 'all')
+        
+        results = {}
+        
+        if optimization_type in ['memory', 'all']:
+            # Memory optimization
+            import gc
+            before_mem = psutil.Process().memory_info().rss / (1024**2)
+            gc.collect()
+            after_mem = psutil.Process().memory_info().rss / (1024**2)
+            
+            results['memory'] = {
+                'before_mb': before_mem,
+                'after_mb': after_mem,
+                'saved_mb': before_mem - after_mem
+            }
+        
+        if optimization_type in ['database', 'all']:
+            # Database optimization
+            try:
+                old_stats = db_manager.get_database_stats()
+                db_manager.cleanup_old_data(7)  # Clean data older than 7 days
+                new_stats = db_manager.get_database_stats()
+                
+                results['database'] = {
+                    'before_size_mb': old_stats.get('db_size_mb', 0),
+                    'after_size_mb': new_stats.get('db_size_mb', 0),
+                    'cleaned_records': 'Unknown'  # Would need more detailed tracking
+                }
+            except Exception as e:
+                results['database'] = {'error': str(e)}
+        
+        if optimization_type in ['cache', 'all']:
+            # Cache optimization
+            try:
+                from handlers.media_generator import media_generator
+                media_generator.cleanup_old_media(7)
+                results['cache'] = {'status': 'cleaned', 'max_age_days': 7}
+            except Exception as e:
+                results['cache'] = {'error': str(e)}
+        
+        return jsonify({
+            'success': True,
+            'optimization_type': optimization_type,
+            'results': results,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route("/api/advanced/backup", methods=['POST'])
+def api_backup():
+    """Create system backup"""
+    try:
+        import shutil
+        import zipfile
+        from datetime import datetime
+        
+        backup_id = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_dir = f"/tmp/backup_{backup_id}"
+        backup_file = f"/tmp/wednesday_backup_{backup_id}.zip"
+        
+        os.makedirs(backup_dir, exist_ok=True)
+        
+        # Copy database
+        if os.path.exists('assistant.db'):
+            shutil.copy2('assistant.db', f"{backup_dir}/assistant.db")
+        
+        # Copy generated media (limited to prevent large backups)
+        if os.path.exists('generated_media'):
+            media_backup = f"{backup_dir}/generated_media"
+            os.makedirs(media_backup, exist_ok=True)
+            
+            # Copy only recent files to limit backup size
+            import glob
+            recent_files = glob.glob('generated_media/*')[:50]  # Limit to 50 files
+            for file_path in recent_files:
+                if os.path.isfile(file_path):
+                    shutil.copy2(file_path, media_backup)
+        
+        # Copy configuration (without sensitive data)
+        config_data = {
+            'backup_created': datetime.now().isoformat(),
+            'version': '2.0.0',
+            'features': ['database', 'media', 'advanced_ai', 'monitoring']
+        }
+        
+        with open(f"{backup_dir}/config.json", 'w') as f:
+            json.dump(config_data, f, indent=2)
+        
+        # Create zip file
+        with zipfile.ZipFile(backup_file, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(backup_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arc_path = os.path.relpath(file_path, backup_dir)
+                    zipf.write(file_path, arc_path)
+        
+        # Cleanup temp directory
+        shutil.rmtree(backup_dir)
+        
+        # Get backup file size
+        backup_size = os.path.getsize(backup_file) / (1024**2)  # MB
+        
+        return jsonify({
+            'success': True,
+            'backup_id': backup_id,
+            'backup_file': backup_file,
+            'backup_size_mb': backup_size,
+            'created_at': datetime.now().isoformat(),
+            'expires_in': '24 hours'
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route("/api/advanced/status")
+def api_advanced_status():
+    """Get comprehensive advanced features status"""
+    try:
+        status = {
+            'timestamp': datetime.now().isoformat(),
+            'version': '2.0.0',
+            'features': {}
+        }
+        
+        # Advanced AI status
+        try:
+            from handlers.advanced_ai import advanced_ai
+            status['features']['advanced_ai'] = advanced_ai.get_service_status()
+        except Exception as e:
+            status['features']['advanced_ai'] = {'error': str(e)}
+        
+        # Media generation status
+        try:
+            from handlers.media_generator import media_generator
+            status['features']['media_generation'] = media_generator.get_service_status()
+        except Exception as e:
+            status['features']['media_generation'] = {'error': str(e)}
+        
+        # Service monitoring status
+        try:
+            from handlers.service_monitor import service_monitor
+            status['features']['service_monitoring'] = {
+                'active': service_monitor.running,
+                'services_count': len(service_monitor.services),
+                'health_summary': service_monitor.get_system_health_summary()
+            }
+        except Exception as e:
+            status['features']['service_monitoring'] = {'error': str(e)}
+        
+        # Notification system status
+        try:
+            from handlers.notifications import task_notification_system
+            status['features']['notifications'] = task_notification_system.get_notification_stats()
+        except Exception as e:
+            status['features']['notifications'] = {'error': str(e)}
+        
+        # Database status
+        if DATABASE_AVAILABLE:
+            status['features']['database'] = db_manager.get_database_stats()
+        else:
+            status['features']['database'] = {'error': 'Database not available'}
+        
+        return jsonify({
+            'success': True,
+            'status': status
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     logger.info("Launching Memory-Optimized WhatsApp Assistant...")

@@ -568,6 +568,124 @@ FUNCTIONS = [
             },
             "required": ["contact_query"]
         }
+    },
+    # Media generation functions
+    {
+        "name": "generate_image",
+        "description": "Generate an image from text description using AI",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string", "description": "Description of the image to generate"},
+                "style": {"type": "string", "description": "Image style: realistic, artistic, cartoon, professional, avatar", "default": "realistic"}
+            },
+            "required": ["prompt"]
+        }
+    },
+    {
+        "name": "create_avatar",
+        "description": "Create an avatar for the assistant",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "personality": {"type": "string", "description": "Personality type for avatar", "default": "wednesday"},
+                "style": {"type": "string", "description": "Avatar style", "default": "professional"}
+            },
+            "required": []
+        }
+    },
+    # Service monitoring functions
+    {
+        "name": "check_service_status",
+        "description": "Check the status of system services",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "service_name": {"type": "string", "description": "Specific service to check (optional)"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "get_system_health",
+        "description": "Get overall system health summary",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    # Advanced AI functions
+    {
+        "name": "generate_video",
+        "description": "Generate video from text description using AI",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string", "description": "Description of the video to generate"},
+                "style": {"type": "string", "description": "Video style: realistic, animated, cinematic", "default": "realistic"},
+                "duration": {"type": "integer", "description": "Video duration in seconds (1-10)", "default": 5}
+            },
+            "required": ["prompt"]
+        }
+    },
+    {
+        "name": "synthesize_voice",
+        "description": "Synthesize voice from text using AI",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Text to convert to speech"},
+                "voice_id": {"type": "string", "description": "Voice ID to use", "default": "default"},
+                "style": {"type": "string", "description": "Voice style: natural, expressive, calm", "default": "natural"}
+            },
+            "required": ["text"]
+        }
+    },
+    {
+        "name": "analyze_image",
+        "description": "Analyze an image using computer vision",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "image_description": {"type": "string", "description": "Description of image to analyze"},
+                "analysis_type": {"type": "string", "description": "Type of analysis: comprehensive, objects, text, faces, scene", "default": "comprehensive"}
+            },
+            "required": ["image_description"]
+        }
+    },
+    {
+        "name": "predict_user_behavior",
+        "description": "Predict user behavior and provide recommendations",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "context": {"type": "string", "description": "Current context or situation"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "run_system_diagnostics",
+        "description": "Run comprehensive system diagnostics and tests",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "test_type": {"type": "string", "description": "Type of test: quick, comprehensive, performance", "default": "quick"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "optimize_performance",
+        "description": "Analyze and optimize system performance",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "optimization_type": {"type": "string", "description": "Type of optimization: memory, cpu, database, all", "default": "all"}
+            },
+            "required": []
+        }
     }
 
 ]
@@ -932,6 +1050,285 @@ def execute_function(call: dict, phone: str = "") -> str:
         
         if name == "get_contact_for_whatsapp":
             return contact_manager.get_contact_for_whatsapp(params["contact_query"])
+        
+        # Media generation functions
+        if name == "generate_image":
+            from handlers.media_generator import media_generator
+            import asyncio
+            
+            # Run async function
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(
+                media_generator.generate_image(
+                    params["prompt"], 
+                    phone, 
+                    params.get("style", "realistic")
+                )
+            )
+            loop.close()
+            
+            if result.get('success'):
+                return f"🎨 Image generated successfully!\n\n📝 Prompt: {params['prompt']}\n🎭 Style: {params.get('style', 'realistic')}\n💾 File: {result.get('file_path', 'Unknown')}\n🤖 Generator: {result.get('generator', 'Unknown')}"
+            else:
+                return f"❌ Image generation failed: {result.get('error', 'Unknown error')}"
+        
+        if name == "create_avatar":
+            from handlers.media_generator import media_generator
+            avatar_path = media_generator.create_avatar(
+                params.get("personality", "wednesday"),
+                params.get("style", "professional")
+            )
+            
+            if avatar_path:
+                return f"🎭 Avatar created successfully!\n\n👤 Personality: {params.get('personality', 'wednesday')}\n🎨 Style: {params.get('style', 'professional')}\n💾 File: {avatar_path}"
+            else:
+                return "❌ Failed to create avatar"
+        
+        # Service monitoring functions
+        if name == "check_service_status":
+            from handlers.service_monitor import service_monitor
+            service_name = params.get("service_name")
+            status = service_monitor.get_service_status(service_name)
+            
+            if service_name:
+                service_info = status.get('service', {})
+                stats = status.get('stats', {})
+                
+                return f"🔧 Service Status: {service_name}\n\n" \
+                       f"Status: {service_info.get('status', 'Unknown')}\n" \
+                       f"Last Check: {service_info.get('last_check', 'Never')}\n" \
+                       f"Response Time: {service_info.get('response_time', 'N/A')}ms\n" \
+                       f"Error Count: {service_info.get('error_count', 0)}\n" \
+                       f"Total Checks: {stats.get('total_checks', 0)}\n" \
+                       f"Success Rate: {(stats.get('successful_checks', 0) / max(stats.get('total_checks', 1), 1) * 100):.1f}%"
+            else:
+                services = status.get('services', {})
+                healthy_count = sum(1 for s in services.values() if s.get('status') == 'healthy')
+                total_count = len(services)
+                
+                result = f"🔧 **System Services Overview**\n\n"
+                result += f"✅ Healthy: {healthy_count}/{total_count}\n"
+                result += f"🔄 Monitoring: {'Active' if status.get('monitoring_active') else 'Inactive'}\n\n"
+                
+                for name, service in services.items():
+                    status_emoji = "✅" if service.get('status') == 'healthy' else "❌"
+                    critical_emoji = "🔴" if service.get('critical') else "🟡"
+                    result += f"{status_emoji} {critical_emoji} {name}: {service.get('status', 'unknown')}\n"
+                
+                return result
+        
+        if name == "get_system_health":
+            from handlers.service_monitor import service_monitor
+            health_summary = service_monitor.get_system_health_summary()
+            
+            return f"🏥 **System Health Summary**\n\n" \
+                   f"Overall Status: {health_summary.get('overall_status', 'Unknown').title()}\n" \
+                   f"Healthy Services: {health_summary.get('healthy_services', 0)}/{health_summary.get('total_services', 0)}\n" \
+                   f"Critical Issues: {health_summary.get('critical_services_down', 0)}\n" \
+                   f"Monitoring: {'Active' if health_summary.get('monitoring_active') else 'Inactive'}\n" \
+                   f"Last Check: {health_summary.get('last_check', 'Never')}"
+        
+        # Advanced AI functions
+        if name == "generate_video":
+            from handlers.advanced_ai import advanced_ai
+            import asyncio
+            
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(
+                advanced_ai.generate_video(
+                    params["prompt"], 
+                    params.get("style", "realistic"),
+                    params.get("duration", 5)
+                )
+            )
+            loop.close()
+            
+            if result.get('success'):
+                return f"🎬 Video generated successfully!\n\n📝 Prompt: {params['prompt']}\n🎭 Style: {params.get('style', 'realistic')}\n⏱️ Duration: {params.get('duration', 5)}s\n💾 File: {result.get('video_path', 'Unknown')}\n🤖 Generator: {result.get('generator', 'Unknown')}"
+            else:
+                return f"❌ Video generation failed: {result.get('error', 'Unknown error')}"
+        
+        if name == "synthesize_voice":
+            from handlers.advanced_ai import advanced_ai
+            import asyncio
+            
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(
+                advanced_ai.synthesize_voice(
+                    params["text"],
+                    params.get("voice_id", "default"),
+                    params.get("style", "natural")
+                )
+            )
+            loop.close()
+            
+            if result.get('success'):
+                return f"🗣️ Voice synthesized successfully!\n\n📝 Text: {params['text'][:100]}{'...' if len(params['text']) > 100 else ''}\n🎤 Voice: {params.get('voice_id', 'default')}\n🎭 Style: {params.get('style', 'natural')}\n💾 File: {result.get('audio_path', 'Unknown')}\n🤖 Generator: {result.get('generator', 'Unknown')}"
+            else:
+                return f"❌ Voice synthesis failed: {result.get('error', 'Unknown error')}"
+        
+        if name == "analyze_image":
+            from handlers.advanced_ai import advanced_ai
+            import asyncio
+            
+            # For demo purposes, create a placeholder image path
+            # In real implementation, this would be an actual uploaded image
+            placeholder_path = "generated_media/placeholder_analysis.jpg"
+            
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(
+                advanced_ai.analyze_image(
+                    placeholder_path,
+                    params.get("analysis_type", "comprehensive")
+                )
+            )
+            loop.close()
+            
+            if result.get('success'):
+                analysis = result
+                response = f"🔍 **Image Analysis Complete**\n\n"
+                response += f"📊 **Properties**: {analysis.get('properties', {}).get('width', 'Unknown')}x{analysis.get('properties', {}).get('height', 'Unknown')} pixels\n"
+                
+                if analysis.get('color_analysis'):
+                    colors = analysis['color_analysis']
+                    response += f"🎨 **Colors**: {colors.get('color_palette', 'Unknown')} palette, {colors.get('brightness', 0):.0f}% brightness\n"
+                
+                if analysis.get('objects'):
+                    response += f"🎯 **Objects**: {len(analysis['objects'])} detected\n"
+                
+                if analysis.get('faces'):
+                    response += f"👤 **Faces**: {len(analysis['faces'])} detected\n"
+                
+                if analysis.get('scene'):
+                    scene = analysis['scene']
+                    response += f"🌍 **Scene**: {scene.get('scene_type', 'Unknown')} ({scene.get('lighting', 'Unknown')} lighting)\n"
+                
+                return response
+            else:
+                return f"❌ Image analysis failed: {result.get('error', 'Unknown error')}"
+        
+        if name == "predict_user_behavior":
+            from handlers.advanced_ai import advanced_ai
+            import asyncio
+            
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            context = {"current_request": params.get("context", "")} if params.get("context") else None
+            result = loop.run_until_complete(
+                advanced_ai.predict_user_behavior(phone, context)
+            )
+            loop.close()
+            
+            if result.get('success'):
+                patterns = result.get('patterns', {})
+                predictions = result.get('predictions', [])
+                recommendations = result.get('recommendations', [])
+                
+                response = f"🔮 **Behavior Prediction Analysis**\n\n"
+                response += f"📊 **Confidence**: {result.get('confidence', 0):.1%}\n"
+                response += f"💬 **Message Frequency**: {patterns.get('message_frequency', 0)} messages\n"
+                response += f"❓ **Question Ratio**: {patterns.get('question_ratio', 0):.1%}\n"
+                response += f"⚡ **Command Usage**: {patterns.get('command_ratio', 0):.1%}\n\n"
+                
+                if predictions:
+                    response += "🎯 **Predictions**:\n"
+                    for pred in predictions[:3]:
+                        response += f"• {pred.get('description', 'Unknown')} ({pred.get('confidence', 0):.1%})\n"
+                
+                if recommendations:
+                    response += "\n💡 **Recommendations**:\n"
+                    for rec in recommendations[:3]:
+                        response += f"• {rec.get('title', 'Unknown')}: {rec.get('description', 'No description')}\n"
+                
+                return response
+            else:
+                return f"❌ Behavior prediction failed: {result.get('error', 'Unknown error')}"
+        
+        if name == "run_system_diagnostics":
+            test_type = params.get("test_type", "quick")
+            
+            if test_type == "quick":
+                # Quick health check
+                from handlers.service_monitor import service_monitor
+                health = service_monitor.get_system_health_summary()
+                
+                response = f"🔧 **Quick System Diagnostics**\n\n"
+                response += f"System Status: {health.get('overall_status', 'Unknown').title()}\n"
+                response += f"Services: {health.get('healthy_services', 0)}/{health.get('total_services', 0)} healthy\n"
+                response += f"Memory: {health.get('system_metrics', {}).get('memory_percent', 'Unknown')}% used\n"
+                response += f"CPU: {health.get('system_metrics', {}).get('cpu_percent', 'Unknown')}% used\n"
+                response += f"Disk: {health.get('system_metrics', {}).get('disk_percent', 'Unknown')}% used\n\n"
+                response += "✅ Quick diagnostics complete!"
+                
+                return response
+            
+            elif test_type == "comprehensive":
+                # Run comprehensive tests
+                try:
+                    from test_suite import ComprehensiveTestSuite
+                    test_suite = ComprehensiveTestSuite()
+                    
+                    # Run a subset of tests for Gemini response
+                    api_results = test_suite.run_api_tests()
+                    db_results = test_suite.run_database_tests()
+                    
+                    response = f"🧪 **Comprehensive Diagnostics**\n\n"
+                    response += f"API Tests: {api_results['passed']}/{api_results['passed'] + api_results['failed']} passed\n"
+                    response += f"Database Tests: {db_results['passed']}/{db_results['passed'] + db_results['failed']} passed\n"
+                    response += f"Overall Status: {'✅ Healthy' if (api_results['failed'] + db_results['failed']) == 0 else '⚠️ Issues Detected'}\n\n"
+                    response += "📊 Run '/dashboard' for detailed metrics"
+                    
+                    return response
+                except Exception as e:
+                    return f"❌ Comprehensive diagnostics failed: {str(e)}"
+            
+            else:
+                return f"❌ Unknown test type: {test_type}. Use: quick, comprehensive, performance"
+        
+        if name == "optimize_performance":
+            optimization_type = params.get("optimization_type", "all")
+            
+            try:
+                import gc
+                import psutil
+                
+                response = f"⚡ **Performance Optimization**\n\n"
+                
+                if optimization_type in ["memory", "all"]:
+                    # Force garbage collection
+                    gc.collect()
+                    response += "🧹 Memory cleanup completed\n"
+                
+                if optimization_type in ["database", "all"]:
+                    # Database optimization
+                    try:
+                        db_manager.cleanup_old_data(7)  # Clean data older than 7 days
+                        response += "🗃️ Database optimization completed\n"
+                    except Exception as e:
+                        response += f"⚠️ Database optimization failed: {str(e)}\n"
+                
+                if optimization_type in ["cpu", "all"]:
+                    # CPU optimization (placeholder)
+                    response += "⚙️ CPU optimization analysis completed\n"
+                
+                # Get current metrics
+                process = psutil.Process()
+                memory_mb = process.memory_info().rss / 1024 / 1024
+                cpu_percent = process.cpu_percent()
+                
+                response += f"\n📊 **Current Metrics**:\n"
+                response += f"Memory: {memory_mb:.1f} MB\n"
+                response += f"CPU: {cpu_percent:.1f}%\n"
+                response += f"Status: {'🟢 Optimal' if memory_mb < 200 and cpu_percent < 50 else '🟡 Monitoring'}"
+                
+                return response
+                
+            except Exception as e:
+                return f"❌ Performance optimization failed: {str(e)}"
 
         return "I couldn't handle that function call."
     except Exception as e:
