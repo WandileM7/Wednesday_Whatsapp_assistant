@@ -6,6 +6,8 @@
   "scripts": {
     "start": "ENABLE_REAL_WHATSAPP=true node server-production.js",
     "start:prod": "ENABLE_REAL_WHATSAPP=true node server-production.js",
+    "start:optimized": "node server-memory-optimized.js",
+    "start:mock": "ENABLE_REAL_WHATSAPP=false node server.js",
     "dev": "nodemon server.js"
   },
   "dependencies": {
