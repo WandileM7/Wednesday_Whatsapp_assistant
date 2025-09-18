@@ -1,47 +1,58 @@
-FROM node:24-slim
+# Multi-stage build for memory optimization
+FROM node:20-alpine AS base
 WORKDIR /app
 
-# 1) Install Chromium and needed system libs (headless essentials)
-RUN apt-get update && apt-get install -y \
-    chromium \
-    chromium-common \
-    chromium-driver \
-    fonts-freefont-ttf \
-    fonts-liberation \
-    ca-certificates \
-    libnss3 \
-    libatk-bridge2.0-0 \
-    libgtk-3-0 \
-    libx11-xcb1 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxrandr2 \
-    libasound2 \
-    libxss1 \
-    libxtst6 \
-    libgbm1 \
-    xdg-utils \
-    && ln -s /usr/bin/chromium /usr/bin/chromium-browser \
-    && rm -rf /var/lib/apt/lists/*
-
-# 2) Sanity check: both names should resolve
-RUN which chromium && which chromium-browser
-
-# 3) Tell puppeteer where the browser is
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
-
-# App install
+# Copy package files for dependency analysis
 COPY whatsapp-service/package.json whatsapp-service/package-lock.json ./
-ARG ENABLE_REAL_WHATSAPP=true
-ENV ENABLE_REAL_WHATSAPP=${ENABLE_REAL_WHATSAPP}
-RUN npm install
+
+# Production mode - includes browser dependencies
+FROM base AS production
+RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont \
+    && rm -rf /var/cache/apk/*
+
+# Set Puppeteer to use system Chromium
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
+# Install all dependencies for production mode
+RUN npm ci --only=production --silent
+
+# Mock mode - minimal dependencies
+FROM base AS mock
+# Install only core dependencies, skip browser-related packages
+RUN npm install --silent express fs-extra && npm cache clean --force
+
+# Final stage - choose based on build argument
+FROM ${DOCKER_MODE:-production} AS final
+
+# Memory optimization environment variables
+ENV NODE_ENV=production \
+    NODE_OPTIONS="--max-old-space-size=256" \
+    SESSION_PATH=/app/session \
+    SHOW_QR=false \
+    MAX_RECONNECT_ATTEMPTS=3 \
+    INITIAL_RECONNECT_DELAY=5000
 
 # App files
 COPY whatsapp-service/ .
-RUN mkdir -p session
+RUN mkdir -p session && chmod 755 session
+
+# Set proper permissions for non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nextjs -u 1001 && \
+    chown -R nextjs:nodejs /app
+USER nextjs
 
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+
+# Memory-efficient health check
+HEALTHCHECK --interval=60s --timeout=5s --start-period=10s --retries=2 \
   CMD node -e "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"
 
-CMD ["npm", "start"]
+CMD ["npm", "run", "start:optimized"]

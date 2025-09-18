@@ -18,7 +18,7 @@ services:
       - key: SPOTIFY_REDIRECT_URI
         value: https://waha-gemini-assistant.onrender.com/callback
 
-  # Lightweight WhatsApp Gateway (Alternative to WAHA)
+  # Lightweight WhatsApp Gateway (Memory Optimized)
   - type: web
     name: whatsapp-service
     runtime: docker
@@ -26,20 +26,30 @@ services:
     plan: free
     dockerfilePath: ./whatsapp-service/Dockerfile
     autoDeploy: true
+    buildCommand: "docker build --build-arg DOCKER_MODE=mock -t whatsapp-service -f ./whatsapp-service/Dockerfile ."
     envVars:
-      # Enable real WhatsApp integration for production
+      # Memory optimization: Use mock mode for maximum efficiency
       - key: ENABLE_REAL_WHATSAPP
+        value: "false"
+      - key: FORCE_MOCK_MODE
         value: "true"
+      # Memory monitoring
+      - key: MEMORY_THRESHOLD_MB
+        value: "350"
+      - key: NODE_OPTIONS
+        value: "--max-old-space-size=256"
       # WhatsApp -> Assistant (public URL of Flask webhook)
       - key: WHATSAPP_HOOK_URL
         value: https://waha-gemini-assistant.onrender.com/webhook
       - key: WHATSAPP_HOOK_EVENTS
         value: message
-      # Don't show QR in logs to save memory
+      # Memory-efficient settings
       - key: SHOW_QR
         value: "false"
-      # Browser stability settings
-      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
-        value: "true"
-      - key: PUPPETEER_EXECUTABLE_PATH
-        value: "/usr/bin/chromium-browser"
+      - key: MAX_RECONNECT_ATTEMPTS
+        value: "2"
+      - key: INITIAL_RECONNECT_DELAY
+        value: "10000"
+      # Session management
+      - key: SESSION_PATH
+        value: "/app/session"

@@ -80,15 +80,40 @@ async function forwardToWebhook(message) {
 
 // API Routes
 
-// Health check
+// Health check with memory monitoring
 app.get('/health', (req, res) => {
+    const memUsage = process.memoryUsage();
+    const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+    const heapTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
+    
     res.json({
         status: 'healthy',
         mode: 'mock',
         whatsapp_ready: isClientReady,
         has_qr: !!qrCodeData,
+        memory: {
+            heap_used_mb: heapUsedMB,
+            heap_total_mb: heapTotalMB,
+            memory_efficient: heapUsedMB < 100 // Flag for memory efficiency
+        },
         timestamp: new Date().toISOString(),
         service: 'lightweight-whatsapp-service'
+    });
+});
+
+// Memory monitoring endpoint
+app.get('/api/memory', (req, res) => {
+    const memUsage = process.memoryUsage();
+    res.json({
+        memory: {
+            rss_mb: Math.round(memUsage.rss / 1024 / 1024),
+            heap_total_mb: Math.round(memUsage.heapTotal / 1024 / 1024),
+            heap_used_mb: Math.round(memUsage.heapUsed / 1024 / 1024),
+            external_mb: Math.round(memUsage.external / 1024 / 1024),
+            array_buffers_mb: Math.round(memUsage.arrayBuffers / 1024 / 1024)
+        },
+        status: 'ok',
+        timestamp: new Date().toISOString()
     });
 });
 

@@ -1,15 +1,28 @@
 services:
   whatsapp-service:
-    build: ./whatsapp-service
+    build: 
+      context: .
+      dockerfile: ./whatsapp-service/Dockerfile
+      args:
+        DOCKER_MODE: mock
     container_name: whatsapp-service
     ports:
       - "3000:3000"
     environment:
-      - WHATSAPP_HOOK_URL=https://whatsapp-service-8vgb.onrender.com
+      - ENABLE_REAL_WHATSAPP=false
+      - FORCE_MOCK_MODE=true
+      - MEMORY_THRESHOLD_MB=350
+      - NODE_OPTIONS=--max-old-space-size=256
+      - WHATSAPP_HOOK_URL=http://assistant:5000/webhook
       - WHATSAPP_HOOK_EVENTS=message
       - SHOW_QR=false
+      - MAX_RECONNECT_ATTEMPTS=2
+      - INITIAL_RECONNECT_DELAY=10000
+      - SESSION_PATH=/app/session
     volumes:
       - ./whatsapp-session:/app/session
+    restart: unless-stopped
+    mem_limit: 256m
 
   assistant:
     build: .

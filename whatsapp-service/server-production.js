@@ -6,9 +6,15 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const ENABLE_REAL_WHATSAPP = process.env.ENABLE_REAL_WHATSAPP === 'true';
 
-// Middleware
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true }));
+// Middleware - Memory optimized
+app.use(express.json({ limit: '10mb' })); // Reduced from 50mb to save memory
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Memory optimization: Disable keep-alive for lower memory footprint
+app.use((req, res, next) => {
+    res.setHeader('Connection', 'close');
+    next();
+});
 
 // Global state
 let whatsappClient = null;
@@ -16,16 +22,22 @@ let isClientReady = false;
 let qrCodeData = null;
 let lastQRTime = null;
 let reconnectAttempts = 0;
-let maxReconnectAttempts = parseInt(process.env.MAX_RECONNECT_ATTEMPTS) || 5;
-let reconnectDelay = parseInt(process.env.INITIAL_RECONNECT_DELAY) || 1000; // Start with 1 second
+let maxReconnectAttempts = parseInt(process.env.MAX_RECONNECT_ATTEMPTS) || 3; // Reduced from 5
+let reconnectDelay = parseInt(process.env.INITIAL_RECONNECT_DELAY) || 5000; // Increased from 1000 to reduce resource churn
 let isReconnecting = false;
 let connectionHealthCheck = null;
 
 const WEBHOOK_URL = process.env.WHATSAPP_HOOK_URL;
 const WEBHOOK_EVENTS = (process.env.WHATSAPP_HOOK_EVENTS || 'message').split(',');
-const SESSION_PATH = process.env.SESSION_PATH || '/data/session';
+const SESSION_PATH = process.env.SESSION_PATH || './session'; // Changed from /data/session to avoid permission issues
 
-fs.ensureDirSync(SESSION_PATH);
+// Memory optimization: Ensure directory exists with proper permissions
+try {
+    fs.ensureDirSync(SESSION_PATH);
+} catch (error) {
+    console.error('❌ Session directory creation failed:', error.message);
+    process.exit(1);
+}
 
 console.log(`🔧 WhatsApp Service Mode: ${ENABLE_REAL_WHATSAPP ? 'PRODUCTION (Real WhatsApp)' : 'MOCK (Testing)'}`);
 
