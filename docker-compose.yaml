@@ -3,26 +3,32 @@ services:
     build: 
       context: .
       dockerfile: ./whatsapp-service/Dockerfile
-      args:
-        DOCKER_MODE: mock
     container_name: whatsapp-service
     ports:
       - "3000:3000"
     environment:
-      - ENABLE_REAL_WHATSAPP=false
-      - FORCE_MOCK_MODE=true
-      - MEMORY_THRESHOLD_MB=350
-      - NODE_OPTIONS=--max-old-space-size=256
+      # Production-only mode with memory optimization
+      - ENABLE_REAL_WHATSAPP=true
+      - MEMORY_THRESHOLD_MB=300
+      - MAX_HEAP_SIZE_MB=256
+      - GC_INTERVAL_MS=15000
+      - NODE_OPTIONS=--max-old-space-size=256 --expose-gc
+      # WhatsApp configuration
       - WHATSAPP_HOOK_URL=http://assistant:5000/webhook
       - WHATSAPP_HOOK_EVENTS=message
       - SHOW_QR=false
       - MAX_RECONNECT_ATTEMPTS=2
       - INITIAL_RECONNECT_DELAY=10000
       - SESSION_PATH=/app/session
+      # Puppeteer optimization
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
     volumes:
       - ./whatsapp-session:/app/session
     restart: unless-stopped
-    mem_limit: 256m
+    # Reduced memory limit for optimized service
+    mem_limit: 300m
+    # CPU limit for stability
+    cpus: '0.5'
 
   assistant:
     build: .
@@ -31,7 +37,11 @@ services:
       - "5000:5000"
     env_file: .env
     environment:
-      - WAHA_URL=https://whatsapp-service-8vgb.onrender.com/api/sendText
+      - WAHA_URL=http://whatsapp-service:3000/api/sendText
       - WAHA_KEEPALIVE_INTERVAL=600
+      - USE_MEMORY_DB=true
     depends_on:
       - whatsapp-service
+    # Memory optimizations for assistant
+    mem_limit: 512m
+    cpus: '1.0'

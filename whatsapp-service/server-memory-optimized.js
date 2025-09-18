@@ -1,6 +1,6 @@
 /**
- * Memory-Optimized WhatsApp Service
- * Automatically chooses production or mock mode based on available resources
+ * Memory-Optimized WhatsApp Service - Production Only
+ * No mock mode fallbacks - uses aggressive memory optimization for real WhatsApp functionality
  */
 
 const express = require('express');
@@ -8,98 +8,38 @@ const fs = require('fs-extra');
 const path = require('path');
 const os = require('os');
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+// Immediately load the optimized production server
+console.log('🚀 Starting Memory-Optimized Production WhatsApp Service');
+console.log('📊 Production-only mode with aggressive memory optimization');
+console.log('🚫 Mock mode eliminated - real WhatsApp functionality only');
 
-// Memory monitoring and resource management
-const MEMORY_THRESHOLD_MB = parseInt(process.env.MEMORY_THRESHOLD_MB) || 400; // Memory limit in MB
-const FORCE_MOCK_MODE = process.env.FORCE_MOCK_MODE === 'true';
-
-// Check available memory
-function getAvailableMemoryMB() {
-    const totalMem = os.totalmem();
-    const freeMem = os.freemem();
-    return Math.round((totalMem - freeMem) / 1024 / 1024);
+// Check if dependencies are available before starting
+try {
+    require('whatsapp-web.js');
+    require('puppeteer');
+    console.log('✅ WhatsApp dependencies verified');
+} catch (error) {
+    console.error('❌ Missing required dependencies for WhatsApp service:');
+    console.error('💡 Install with: npm install whatsapp-web.js puppeteer');
+    console.error('🚫 Exiting - mock mode not available in this implementation');
+    process.exit(1);
 }
 
-// Determine optimal mode based on resources
-function determineOptimalMode() {
-    if (FORCE_MOCK_MODE) {
-        console.log('🔧 Mode: FORCED MOCK (Environment override)');
-        return 'mock';
-    }
+// Set optimized environment variables
+process.env.ENABLE_REAL_WHATSAPP = 'true'; // Force production mode
+process.env.MAX_RECONNECT_ATTEMPTS = process.env.MAX_RECONNECT_ATTEMPTS || '2';
+process.env.INITIAL_RECONNECT_DELAY = process.env.INITIAL_RECONNECT_DELAY || '10000';
+process.env.SHOW_QR = process.env.SHOW_QR || 'false';
+process.env.MAX_HEAP_SIZE_MB = process.env.MAX_HEAP_SIZE_MB || '256';
+process.env.GC_INTERVAL_MS = process.env.GC_INTERVAL_MS || '15000';
 
-    const currentMemoryMB = getAvailableMemoryMB();
-    const enableRealWhatsApp = process.env.ENABLE_REAL_WHATSAPP === 'true';
-    
-    console.log(`📊 Current memory usage: ${currentMemoryMB}MB`);
-    console.log(`⚖️ Memory threshold: ${MEMORY_THRESHOLD_MB}MB`);
-    
-    if (currentMemoryMB > MEMORY_THRESHOLD_MB) {
-        console.log('⚠️ High memory usage detected - forcing mock mode for stability');
-        return 'mock';
-    }
-    
-    if (!enableRealWhatsApp) {
-        console.log('🔧 Mode: MOCK (Environment configuration)');
-        return 'mock';
-    }
-    
-    // Check if production dependencies are available
-    try {
-        require('whatsapp-web.js');
-        require('puppeteer');
-        console.log('🔧 Mode: PRODUCTION (Full WhatsApp functionality)');
-        return 'production';
-    } catch (error) {
-        console.log('🔧 Mode: MOCK (Production dependencies not available)');
-        console.log('💡 To enable production mode, install: npm install whatsapp-web.js puppeteer');
-        return 'mock';
-    }
+// Memory optimization: Enable garbage collection
+if (process.env.NODE_ENV === 'production') {
+    process.env.NODE_OPTIONS = (process.env.NODE_OPTIONS || '') + ' --expose-gc --max-old-space-size=256';
 }
 
-// Memory monitoring middleware
-function memoryMonitoring(req, res, next) {
-    const memUsage = process.memoryUsage();
-    const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
-    
-    // Log high memory usage
-    if (heapUsedMB > MEMORY_THRESHOLD_MB * 0.8) {
-        console.log(`⚠️ High heap usage: ${heapUsedMB}MB`);
-    }
-    
-    // Set memory usage in response headers for monitoring
-    res.setHeader('X-Memory-Usage-MB', heapUsedMB);
-    next();
-}
-
-// Apply memory monitoring
-app.use(memoryMonitoring);
-
-// Determine mode and start appropriate server
-const mode = determineOptimalMode();
-
-// Memory optimization settings
-if (mode === 'mock') {
-    // Minimize memory for mock mode
-    if (global.gc) {
-        setInterval(() => {
-            global.gc();
-        }, 30000); // Force garbage collection every 30 seconds
-    }
-    
-    console.log('🚀 Starting lightweight mock server...');
-    require('./server.js');
-} else {
-    console.log('🚀 Starting production server with memory optimizations...');
-    
-    // Set production memory limits
-    process.env.MAX_RECONNECT_ATTEMPTS = process.env.MAX_RECONNECT_ATTEMPTS || '2';
-    process.env.INITIAL_RECONNECT_DELAY = process.env.INITIAL_RECONNECT_DELAY || '10000';
-    process.env.SHOW_QR = process.env.SHOW_QR || 'false';
-    
-    require('./server-production.js');
-}
+console.log('🔧 Starting optimized production server...');
+require('./server-optimized-production.js');
 
 // Graceful shutdown on memory pressure
 process.on('SIGTERM', () => {
