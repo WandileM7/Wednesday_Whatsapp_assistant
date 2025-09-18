@@ -30,9 +30,9 @@ services:
     envVars:
       # Memory optimization: Use mock mode for maximum efficiency
       - key: ENABLE_REAL_WHATSAPP
-        value: "false"
-      - key: FORCE_MOCK_MODE
         value: "true"
+      - key: FORCE_MOCK_MODE
+        value: "false"
       # Memory monitoring
       - key: MEMORY_THRESHOLD_MB
         value: "350"
