@@ -1,12 +1,8 @@
-# Multi-stage build for memory optimization
+# Memory-Optimized Production WhatsApp Service
 FROM node:20-alpine AS base
 WORKDIR /app
 
-# Copy package files for dependency analysis
-COPY whatsapp-service/package.json whatsapp-service/package-lock.json ./
-
-# Production mode - includes browser dependencies
-FROM base AS production
+# Install system dependencies for WhatsApp Web.js (production-only)
 RUN apk add --no-cache \
     chromium \
     nss \
@@ -20,39 +16,41 @@ RUN apk add --no-cache \
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
-# Install all dependencies for production mode
-RUN npm ci --only=production --silent
+# Copy package files
+COPY whatsapp-service/package.json whatsapp-service/package-lock.json ./
 
-# Mock mode - minimal dependencies
-FROM base AS mock
-# Install only core dependencies, skip browser-related packages
-RUN npm install --silent express fs-extra && npm cache clean --force
-
-# Final stage - choose based on build argument
-FROM ${DOCKER_MODE:-production} AS final
+# Install dependencies - production only
+RUN npm ci --only=production --silent && npm cache clean --force
 
 # Memory optimization environment variables
 ENV NODE_ENV=production \
-    NODE_OPTIONS="--max-old-space-size=256" \
+    NODE_OPTIONS="--max-old-space-size=256 --expose-gc" \
     SESSION_PATH=/app/session \
     SHOW_QR=false \
-    MAX_RECONNECT_ATTEMPTS=3 \
-    INITIAL_RECONNECT_DELAY=5000
+    MAX_RECONNECT_ATTEMPTS=2 \
+    INITIAL_RECONNECT_DELAY=10000 \
+    MEMORY_THRESHOLD_MB=300 \
+    MAX_HEAP_SIZE_MB=256 \
+    GC_INTERVAL_MS=15000 \
+    ENABLE_REAL_WHATSAPP=true
 
-# App files
+# Copy application files
 COPY whatsapp-service/ .
+
+# Create session directory with proper permissions
 RUN mkdir -p session && chmod 755 session
 
-# Set proper permissions for non-root user
+# Set up non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nextjs -u 1001 && \
-    chown -R nextjs:nodejs /app
-USER nextjs
+    adduser -S whatsapp -u 1001 -G nodejs && \
+    chown -R whatsapp:nodejs /app
+USER whatsapp
 
 EXPOSE 3000
 
-# Memory-efficient health check
-HEALTHCHECK --interval=60s --timeout=5s --start-period=10s --retries=2 \
+# Optimized health check
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"
 
+# Start with memory-optimized production server
 CMD ["npm", "run", "start:optimized"]
