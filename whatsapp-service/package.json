@@ -4,7 +4,10 @@
   "description": "Ultra memory-efficient WhatsApp service with minimal dependencies",
   "main": "server-minimal.js",
   "scripts": {
-    "start": "node server-minimal.js"
+    "start": "node server-minimal.js",
+    "start:optimized": "node server-memory-optimized.js",
+    "start:production": "node server-production.js",
+    "start:minimal": "node server-minimal.js"
   },
   "dependencies": {
     "express": "^4.18.2",

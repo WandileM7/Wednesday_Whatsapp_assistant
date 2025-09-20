@@ -4,7 +4,7 @@
  */
 
 const express = require('express');
-const fs = require('fs-extra');
+const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
@@ -13,33 +13,24 @@ console.log('🚀 Starting Memory-Optimized Production WhatsApp Service');
 console.log('📊 Production-only mode with aggressive memory optimization');
 console.log('🚫 Mock mode eliminated - real WhatsApp functionality only');
 
-// Check if dependencies are available before starting
-try {
-    require('whatsapp-web.js');
-    require('puppeteer');
-    console.log('✅ WhatsApp dependencies verified');
-} catch (error) {
-    console.error('❌ Missing required dependencies for WhatsApp service:');
-    console.error('💡 Install with: npm install whatsapp-web.js puppeteer');
-    console.error('🚫 Exiting - mock mode not available in this implementation');
-    process.exit(1);
-}
-
-// Set optimized environment variables
+// Set optimized environment variables for memory efficiency
 process.env.ENABLE_REAL_WHATSAPP = 'true'; // Force production mode
 process.env.MAX_RECONNECT_ATTEMPTS = process.env.MAX_RECONNECT_ATTEMPTS || '2';
 process.env.INITIAL_RECONNECT_DELAY = process.env.INITIAL_RECONNECT_DELAY || '10000';
 process.env.SHOW_QR = process.env.SHOW_QR || 'false';
 process.env.MAX_HEAP_SIZE_MB = process.env.MAX_HEAP_SIZE_MB || '256';
 process.env.GC_INTERVAL_MS = process.env.GC_INTERVAL_MS || '15000';
+process.env.MEMORY_THRESHOLD_MB = process.env.MEMORY_THRESHOLD_MB || '300';
 
 // Memory optimization: Enable garbage collection
 if (process.env.NODE_ENV === 'production') {
     process.env.NODE_OPTIONS = (process.env.NODE_OPTIONS || '') + ' --expose-gc --max-old-space-size=256';
 }
 
-console.log('🔧 Starting optimized production server...');
-require('./server-optimized-production.js');
+console.log('🔧 Starting optimized production server with minimal footprint...');
+
+// Load the minimal server implementation which handles missing dependencies gracefully
+require('./server-minimal.js');
 
 // Graceful shutdown on memory pressure
 process.on('SIGTERM', () => {
@@ -53,6 +44,7 @@ process.on('SIGINT', () => {
 });
 
 // Monitor memory and restart if needed
+const MEMORY_THRESHOLD_MB = parseInt(process.env.MEMORY_THRESHOLD_MB) || 300;
 setInterval(() => {
     const memUsage = process.memoryUsage();
     const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
@@ -62,5 +54,3 @@ setInterval(() => {
         process.exit(1); // Let container orchestrator restart
     }
 }, 60000); // Check every minute
-
-module.exports = app;
