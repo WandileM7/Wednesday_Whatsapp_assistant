@@ -6,13 +6,14 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const ENABLE_REAL_WHATSAPP = process.env.ENABLE_REAL_WHATSAPP === 'true';
 
-// Middleware - Memory optimized
-app.use(express.json({ limit: '10mb' })); // Reduced from 50mb to save memory
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Memory optimization: Even more aggressive settings
+app.use(express.json({ limit: '5mb' })); // Further reduced to save memory
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
-// Memory optimization: Disable keep-alive for lower memory footprint
+// Memory optimization: Disable keep-alive and add aggressive GC hints
 app.use((req, res, next) => {
     res.setHeader('Connection', 'close');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     next();
 });
 
@@ -22,10 +23,17 @@ let isClientReady = false;
 let qrCodeData = null;
 let lastQRTime = null;
 let reconnectAttempts = 0;
-let maxReconnectAttempts = parseInt(process.env.MAX_RECONNECT_ATTEMPTS) || 3; // Reduced from 5
-let reconnectDelay = parseInt(process.env.INITIAL_RECONNECT_DELAY) || 5000; // Increased from 1000 to reduce resource churn
+let maxReconnectAttempts = parseInt(process.env.MAX_RECONNECT_ATTEMPTS) || 2; // Further reduced for stability
+let reconnectDelay = parseInt(process.env.INITIAL_RECONNECT_DELAY) || 10000; // Increased to reduce resource usage
 let isReconnecting = false;
 let connectionHealthCheck = null;
+
+// Memory cleanup interval
+setInterval(() => {
+    if (global.gc) {
+        global.gc();
+    }
+}, 30000); // Force garbage collection every 30 seconds if available
 
 const WEBHOOK_URL = process.env.WHATSAPP_HOOK_URL;
 const WEBHOOK_EVENTS = (process.env.WHATSAPP_HOOK_EVENTS || 'message').split(',');
