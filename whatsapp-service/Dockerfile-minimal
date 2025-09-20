@@ -3,12 +3,12 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install only essential system dependencies
-RUN apk add --no-cache chromium && \
+# Install system dependencies (optional chromium for production)
+RUN apk add --no-cache chromium || echo "Chromium not available - will download if needed" && \
     rm -rf /var/cache/apk/*
 
-# Set Puppeteer to use system Chromium
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+# Set Puppeteer to prefer system Chromium but allow fallback
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 # Copy minimal package.json
