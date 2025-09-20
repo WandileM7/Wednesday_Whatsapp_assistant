@@ -2,33 +2,22 @@ services:
   whatsapp-service:
     build: 
       context: .
-      dockerfile: ./whatsapp-service/Dockerfile
-    container_name: whatsapp-service
+      dockerfile: ./whatsapp-service/Dockerfile-minimal
+    container_name: whatsapp-service-minimal
     ports:
       - "3000:3000"
     environment:
-      # Production-only mode with memory optimization
-      - ENABLE_REAL_WHATSAPP=true
-      - MEMORY_THRESHOLD_MB=300
-      - MAX_HEAP_SIZE_MB=256
-      - GC_INTERVAL_MS=15000
-      - NODE_OPTIONS=--max-old-space-size=256 --expose-gc
-      # WhatsApp configuration
+      # Ultra-minimal configuration
       - WHATSAPP_HOOK_URL=http://assistant:5000/webhook
-      - WHATSAPP_HOOK_EVENTS=message
-      - SHOW_QR=false
-      - MAX_RECONNECT_ATTEMPTS=2
-      - INITIAL_RECONNECT_DELAY=10000
       - SESSION_PATH=/app/session
-      # Puppeteer optimization
-      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+      - NODE_OPTIONS=--max-old-space-size=128 --expose-gc
     volumes:
       - ./whatsapp-session:/app/session
     restart: unless-stopped
-    # Reduced memory limit for optimized service
-    mem_limit: 300m
+    # Ultra-minimal memory limit
+    mem_limit: 200m
     # CPU limit for stability
-    cpus: '0.5'
+    cpus: '0.3'
 
   assistant:
     build: .
@@ -37,11 +26,10 @@ services:
       - "5000:5000"
     env_file: .env
     environment:
-      - WAHA_URL=http://whatsapp-service:3000/api/sendText
-      - WAHA_KEEPALIVE_INTERVAL=600
+      - WAHA_URL=http://whatsapp-service-minimal:3000/api/sendText
       - USE_MEMORY_DB=true
     depends_on:
       - whatsapp-service
-    # Memory optimizations for assistant
-    mem_limit: 512m
-    cpus: '1.0'
+    # Optimized memory for assistant
+    mem_limit: 400m
+    cpus: '0.7'
