@@ -455,8 +455,8 @@ except Exception as e:
 # Routes
 @app.route("/")
 def home():
-    """Redirect to the main authentication dashboard"""
-    return redirect(url_for('auth_dashboard'))
+    """Redirect to the unified dashboard"""
+    return redirect(url_for('unified_dashboard'))
 
 @app.route("/login")
 def spotify_login():
@@ -1322,68 +1322,6 @@ def test_google_services():
     }
     
     return results
-
-@app.route("/google-services-dashboard")
-def google_services_dashboard():
-    """HTML dashboard for Google services"""
-    from handlers.google_auth import load_credentials
-    
-    try:
-        creds = load_credentials()
-        is_authenticated = creds and creds.valid
-        
-        html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Google Services Dashboard</title>
-            <style>
-                body {{ font-family: Arial, sans-serif; margin: 40px; }}
-                .status {{ padding: 10px; margin: 10px 0; border-radius: 5px; }}
-                .success {{ background-color: #d4edda; color: #155724; }}
-                .warning {{ background-color: #fff3cd; color: #856404; }}
-                .error {{ background-color: #f8d7da; color: #721c24; }}
-                .button {{ padding: 10px 20px; margin: 5px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }}
-                .button:hover {{ background: #0056b3; }}
-            </style>
-        </head>
-        <body>
-            <h1>Google Services Dashboard</h1>
-            
-            <div class="status {'success' if is_authenticated else 'error'}">
-                <h3>Authentication Status</h3>
-                <p>{'✅ Authenticated and ready' if is_authenticated else '❌ Not authenticated'}</p>
-            </div>
-            
-            <h3>Quick Actions</h3>
-            {'<a href="/test-gmail" class="button">Test Gmail</a>' if is_authenticated else '<a href="/google-login" class="button">Authenticate Google</a>'}
-            <a href="/google-auth-status" class="button">Check Status</a>
-            <a href="/test-google-services" class="button">Test All Services</a>
-            
-            <h3>Available Services</h3>
-            <ul>
-                <li>📧 Gmail (Read & Send)</li>
-                <li>📅 Google Calendar</li>
-            </ul>
-            
-            <h3>Debug Information</h3>
-            <p><strong>Credentials Path:</strong> {os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "Not set")}</p>
-            <p><strong>Environment:</strong> {'Production' if not os.getenv("FLASK_DEBUG") else 'Development'}</p>
-            
-        </body>
-        </html>
-        """
-        return html
-        
-    except Exception as e:
-        return f"""
-        <h1>Google Services Dashboard</h1>
-        <div class="status error">
-            <h3>Error</h3>
-            <p>Failed to load dashboard: {str(e)}</p>
-        </div>
-        <a href="/google-status" class="button">Check Raw Status</a>
-        """, 500
 
 @app.route("/services")
 def services_overview():
@@ -2307,8 +2245,9 @@ def quick_setup():
     </html>
     """
 
-@app.route("/auth-dashboard")
-def auth_dashboard():
+# Old auth dashboard function - disabled, now redirects to unified dashboard
+# @app.route("/auth-dashboard")  # Moved to redirect function
+def auth_dashboard_old():
     """Comprehensive authentication dashboard"""
     try:
         from helpers.token_storage import token_storage
@@ -3300,74 +3239,165 @@ def api_send_whatsapp():
         return jsonify({'error': str(e)}), 500
 
 @app.route("/dashboard")
-def enhanced_dashboard():
-    """Enhanced dashboard with all new features"""
+def unified_dashboard():
+    """Unified dashboard combining all functionality"""
     try:
         from handlers.service_monitor import service_monitor
         from handlers.notifications import task_notification_system
+        from helpers.token_storage import token_storage
         
         # Get comprehensive system status
         services_status = service_monitor.get_service_status()
         health_summary = service_monitor.get_system_health_summary()
         notification_stats = task_notification_system.get_notification_stats()
         
+        # Get authentication status
+        spotify_tokens = token_storage.load_spotify_tokens()
+        google_tokens = token_storage.load_google_tokens()
+        
+        env_spotify_token = os.getenv("SPOTIFY_REFRESH_TOKEN")
+        env_google_token = os.getenv("GOOGLE_REFRESH_TOKEN")
+        
+        session_spotify = session.get("token_info")
+        session_google = session.get("google_credentials")
+        
+        # Test current connections
+        spotify_working = False
+        google_working = False
+        
+        try:
+            test_token = get_token_info()
+            spotify_working = test_token is not None
+        except:
+            pass
+        
+        try:
+            from handlers.google_auth import load_credentials
+            test_creds = load_credentials()
+            google_working = test_creds is not None and test_creds.valid
+        except:
+            pass
+        
         if DATABASE_AVAILABLE:
             db_stats = db_manager.get_database_stats()
         else:
             db_stats = {'error': 'Database not available'}
         
-        return f"""
+        dashboard_html = f"""
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Wednesday Assistant - Enhanced Dashboard</title>
+            <title>Wednesday Assistant - Unified Dashboard</title>
             <style>
-                body {{ font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
-                .dashboard {{ max-width: 1200px; margin: 0 auto; }}
-                .card {{ background: white; border-radius: 12px; padding: 20px; margin: 15px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-                .card h3 {{ margin-top: 0; color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }}
-                .status-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px; }}
-                .status-item {{ background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #007bff; }}
+                body {{ 
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    margin: 0; padding: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: #333; min-height: 100vh;
+                }}
+                .container {{ max-width: 1200px; margin: 0 auto; padding: 20px; }}
+                .header {{ text-align: center; color: white; margin-bottom: 40px; }}
+                .dashboard {{ background: white; border-radius: 15px; padding: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }}
+                .section {{ margin-bottom: 30px; padding: 20px; border-radius: 10px; background: #f8f9fa; }}
+                .section h3 {{ margin-top: 0; color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }}
+                .auth-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }}
+                .status-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; }}
+                .auth-card, .status-item {{ 
+                    background: white; border-radius: 10px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+                    border-left: 5px solid #007bff;
+                }}
+                .auth-card:hover {{ transform: translateY(-2px); transition: transform 0.3s ease; }}
                 .healthy {{ border-left-color: #28a745; }}
                 .warning {{ border-left-color: #ffc107; }}
                 .error {{ border-left-color: #dc3545; }}
-                .button {{ display: inline-block; padding: 8px 16px; margin: 5px; background: #007bff; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; }}
+                .button {{ 
+                    display: inline-block; padding: 10px 16px; margin: 5px; background: #007bff; 
+                    color: white; text-decoration: none; border-radius: 6px; font-size: 14px; 
+                }}
                 .button:hover {{ background: #0056b3; }}
                 .metric {{ display: inline-block; margin: 10px 15px 10px 0; }}
-                .metric-value {{ font-size: 24px; font-weight: bold; color: #007bff; }}
+                .metric-value {{ font-size: 20px; font-weight: bold; color: #007bff; }}
                 .metric-label {{ font-size: 12px; color: #666; text-transform: uppercase; }}
+                .status-badge {{ 
+                    padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;
+                    background: #28a745; color: white; margin-left: 10px;
+                }}
+                .status-badge.error {{ background: #dc3545; }}
+                .status-badge.warning {{ background: #ffc107; color: #000; }}
             </style>
             <script>
                 function refreshPage() {{ window.location.reload(); }}
-                setInterval(refreshPage, 30000); // Refresh every 30 seconds
+                setInterval(refreshPage, 60000); // Refresh every 60 seconds
             </script>
         </head>
         <body>
-            <div class="dashboard">
-                <h1>🤖 Wednesday Assistant - Enhanced Dashboard</h1>
-                <p><em>Auto-refreshes every 30 seconds | Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</em></p>
-                
-                <div class="card">
-                    <h3>🏥 System Health Overview</h3>
-                    <div class="status-grid">
-                        <div class="status-item {'healthy' if health_summary.get('overall_status') == 'healthy' else 'error'}">
-                            <strong>Overall Status:</strong> {health_summary.get('overall_status', 'Unknown').title()}<br>
-                            <small>Healthy Services: {health_summary.get('healthy_services', 0)}/{health_summary.get('total_services', 0)}</small>
-                        </div>
-                        <div class="status-item">
-                            <strong>Database:</strong> {'✅ Active' if DATABASE_AVAILABLE else '❌ Unavailable'}<br>
-                            <small>Records: {db_stats.get('conversations_count', 0)} conversations, {db_stats.get('tasks_count', 0)} tasks</small>
-                        </div>
-                        <div class="status-item">
-                            <strong>Notifications:</strong> {'✅ Active' if notification_stats.get('service_running') else '❌ Stopped'}<br>
-                            <small>Total sent: {notification_stats.get('total_notifications', 0)}</small>
-                        </div>
-                    </div>
+            <div class="container">
+                <div class="header">
+                    <h1>🤖 Wednesday Assistant</h1>
+                    <p>Unified System Dashboard</p>
+                    <p><em>Auto-refreshes every minute | Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</em></p>
                 </div>
                 
-                <div class="card">
-                    <h3>🔧 Service Status</h3>
-                    <div class="status-grid">
+                <div class="dashboard">
+                    <!-- System Health Overview -->
+                    <div class="section">
+                        <h3>🏥 System Health</h3>
+                        <div class="status-grid">
+                            <div class="status-item {'healthy' if health_summary.get('overall_status') == 'healthy' else 'error'}">
+                                <strong>Overall Status</strong>
+                                <span class="status-badge {'error' if health_summary.get('overall_status') != 'healthy' else ''}">{health_summary.get('overall_status', 'Unknown').title()}</span><br>
+                                <small>Healthy Services: {health_summary.get('healthy_services', 0)}/{health_summary.get('total_services', 0)}</small>
+                            </div>
+                            <div class="status-item">
+                                <strong>Database</strong>
+                                <span class="status-badge {'error' if not DATABASE_AVAILABLE else ''}">{'Active' if DATABASE_AVAILABLE else 'Unavailable'}</span><br>
+                                <small>Records: {db_stats.get('conversations_count', 0)} conversations, {db_stats.get('tasks_count', 0)} tasks</small>
+                            </div>
+                            <div class="status-item">
+                                <strong>Notifications</strong>
+                                <span class="status-badge {'error' if not notification_stats.get('service_running') else ''}">{'Active' if notification_stats.get('service_running') else 'Stopped'}</span><br>
+                                <small>Total sent: {notification_stats.get('total_notifications', 0)}</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Authentication Status -->
+                    <div class="section">
+                        <h3>🔐 Authentication Status</h3>
+                        <div class="auth-grid">
+                            <div class="auth-card">
+                                <h4><span style="margin-right: 8px;">🎵</span>Spotify
+                                    <span class="status-badge {'error' if not spotify_working else ''}">{'Connected' if spotify_working else 'Disconnected'}</span>
+                                </h4>
+                                <p><strong>Session Token:</strong> {'✅ Available' if session_spotify else '❌ None'}</p>
+                                <p><strong>Stored Tokens:</strong> {'✅ Available' if spotify_tokens else '❌ None'}</p>
+                                <p><strong>Environment Token:</strong> {'✅ Set' if env_spotify_token else '❌ Not set'}</p>
+                                <p><strong>API Working:</strong> {'✅ Yes' if spotify_working else '❌ No'}</p>
+                                <div>
+                                    {'<a href="/test-spotify" class="button">Test Connection</a>' if spotify_working else '<a href="/login" class="button">Authenticate</a>'}
+                                    <a href="/spotify-status" class="button">Detailed Status</a>
+                                </div>
+                            </div>
+                            
+                            <div class="auth-card">
+                                <h4><span style="margin-right: 8px;">📧</span>Google Services
+                                    <span class="status-badge {'error' if not google_working else ''}">{'Connected' if google_working else 'Disconnected'}</span>
+                                </h4>
+                                <p><strong>Session Credentials:</strong> {'✅ Available' if session_google else '❌ None'}</p>
+                                <p><strong>Stored Tokens:</strong> {'✅ Available' if google_tokens else '❌ None'}</p>
+                                <p><strong>Environment Token:</strong> {'✅ Set' if env_google_token else '❌ Not set'}</p>
+                                <p><strong>API Working:</strong> {'✅ Yes' if google_working else '❌ No'}</p>
+                                <div>
+                                    {'<a href="/test-google-services" class="button">Test Services</a>' if google_working else '<a href="/google-login" class="button">Authenticate</a>'}
+                                    <a href="/google-auth-status" class="button">Detailed Status</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Service Status -->
+                    <div class="section">
+                        <h3>🔧 Service Status</h3>
+                        <div class="status-grid">
         """
         
         # Add service status cards
@@ -3382,122 +3412,56 @@ def enhanced_dashboard():
                         </div>
             """
         
+        
         dashboard_html += f"""
+                        </div>
                     </div>
-                </div>
-                
-                <div class="card">
-                    <h3>📊 Performance Metrics</h3>
-                    <div class="metric">
-                        <div class="metric-value">{health_summary.get('system_metrics', {}).get('memory_percent', 'N/A')}%</div>
-                        <div class="metric-label">Memory Usage</div>
+                    
+                    <!-- Performance Metrics -->
+                    <div class="section">
+                        <h3>📊 Performance Metrics</h3>
+                        <div class="metric">
+                            <div class="metric-value">{health_summary.get('system_metrics', {}).get('memory_percent', 'N/A')}%</div>
+                            <div class="metric-label">Memory Usage</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">{health_summary.get('system_metrics', {}).get('cpu_percent', 'N/A')}%</div>
+                            <div class="metric-label">CPU Usage</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">{db_stats.get('db_size_mb', 'N/A')} MB</div>
+                            <div class="metric-label">Database Size</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">{len(user_conversations)}</div>
+                            <div class="metric-label">Active Conversations</div>
+                        </div>
                     </div>
-                    <div class="metric">
-                        <div class="metric-value">{health_summary.get('system_metrics', {}).get('cpu_percent', 'N/A')}%</div>
-                        <div class="metric-label">CPU Usage</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-value">{db_stats.get('db_size_mb', 'N/A')} MB</div>
-                        <div class="metric-label">Database Size</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-value">{len(user_conversations)}</div>
-                        <div class="metric-label">Active Conversations</div>
-                    </div>
-                </div>
-                
-                <div class="card">
-                    <h3>🛠️ Quick Actions</h3>
-                    <a href="/health" class="button">Health Check</a>
-                    <a href="/api/services/status" class="button">Service Status JSON</a>
-                    <a href="/api/database/stats" class="button">Database Stats</a>
-                    <a href="/quick-setup" class="button">Setup Guide</a>
-                    <a href="/services" class="button">Services Overview</a>
-                    <a href="javascript:refreshPage()" class="button">Refresh Now</a>
-                    <a href="/api/advanced/test-suite" class="button">Run Tests</a>
-                    <a href="/api/advanced/diagnostics" class="button">Diagnostics</a>
-                </div>
-                
-                <div class="card">
-                    <h3>🎨 AI Media Generation</h3>
-                    <p>Test advanced AI capabilities:</p>
-                    <div style="margin: 10px 0;">
-                        <button onclick="testImageGeneration()" class="button">Test Image Generation</button>
-                        <button onclick="testVideoGeneration()" class="button">Test Video Generation</button>
-                        <button onclick="testVoiceSynthesis()" class="button">Test Voice Synthesis</button>
-                        <button onclick="runDiagnostics()" class="button">Run System Diagnostics</button>
-                    </div>
-                    <div id="ai-results" style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 5px; display: none;">
-                        <p id="ai-status">Processing...</p>
+                    
+                    <!-- Quick Actions -->
+                    <div class="section">
+                        <h3>🛠️ Quick Actions</h3>
+                        <div style="margin-bottom: 20px;">
+                            <h4>System</h4>
+                            <a href="/health" class="button">Health Check</a>
+                            <a href="/services" class="button">Services JSON</a>
+                            <a href="javascript:refreshPage()" class="button">Refresh Now</a>
+                        </div>
+                        <div style="margin-bottom: 20px;">
+                            <h4>Authentication</h4>
+                            <a href="/login" class="button">Spotify Login</a>
+                            <a href="/google-login" class="button">Google Login</a>
+                            <a href="/setup-all-auto-auth" class="button">Setup Auto-Auth</a>
+                        </div>
+                        <div style="margin-bottom: 20px;">
+                            <h4>Testing & Diagnostics</h4>
+                            <a href="/test-webhook-auth" class="button">Test Webhook</a>
+                            <a href="/quick-setup" class="button">Setup Guide</a>
+                            <a href="/whatsapp-qr" class="button">WhatsApp QR</a>
+                        </div>
                     </div>
                 </div>
             </div>
-            
-            <script>
-                async function testImageGeneration() {{
-                    showAIResults('Generating AI image...');
-                    try {{
-                        const response = await fetch('/api/media/generate-image', {{
-                            method: 'POST',
-                            headers: {{'Content-Type': 'application/json'}},
-                            body: JSON.stringify({{prompt: 'A futuristic AI assistant', style: 'professional'}})
-                        }});
-                        const result = await response.json();
-                        showAIResults(result.success ? '✅ Image generated successfully!' : '❌ Generation failed: ' + result.error);
-                    }} catch (e) {{
-                        showAIResults('❌ Error: ' + e.message);
-                    }}
-                }}
-                
-                async function testVideoGeneration() {{
-                    showAIResults('Generating AI video (this may take a moment)...');
-                    try {{
-                        const response = await fetch('/api/advanced/generate-video', {{
-                            method: 'POST',
-                            headers: {{'Content-Type': 'application/json'}},
-                            body: JSON.stringify({{prompt: 'A spinning cube animation', style: 'animated', duration: 3}})
-                        }});
-                        const result = await response.json();
-                        showAIResults(result.success ? '✅ Video generated successfully!' : '❌ Generation failed: ' + result.error);
-                    }} catch (e) {{
-                        showAIResults('❌ Error: ' + e.message);
-                    }}
-                }}
-                
-                async function testVoiceSynthesis() {{
-                    showAIResults('Synthesizing voice...');
-                    try {{
-                        const response = await fetch('/api/advanced/synthesize-voice', {{
-                            method: 'POST',
-                            headers: {{'Content-Type': 'application/json'}},
-                            body: JSON.stringify({{text: 'Hello, I am Wednesday, your AI assistant.', style: 'natural'}})
-                        }});
-                        const result = await response.json();
-                        showAIResults(result.success ? '✅ Voice synthesized successfully!' : '❌ Synthesis failed: ' + result.error);
-                    }} catch (e) {{
-                        showAIResults('❌ Error: ' + e.message);
-                    }}
-                }}
-                
-                async function runDiagnostics() {{
-                    showAIResults('Running system diagnostics...');
-                    try {{
-                        const response = await fetch('/api/advanced/diagnostics?type=comprehensive');
-                        const result = await response.json();
-                        showAIResults('✅ Diagnostics complete! Check console for details.');
-                        console.log('Diagnostics Results:', result);
-                    }} catch (e) {{
-                        showAIResults('❌ Error: ' + e.message);
-                    }}
-                }}
-                
-                function showAIResults(message) {{
-                    const resultsDiv = document.getElementById('ai-results');
-                    const statusP = document.getElementById('ai-status');
-                    statusP.textContent = message;
-                    resultsDiv.style.display = 'block';
-                }}
-            </script>
         </body>
         </html>
         """
@@ -3506,6 +3470,17 @@ def enhanced_dashboard():
         
     except Exception as e:
         return f"<h1>Dashboard Error</h1><p>{str(e)}</p>", 500
+
+# Redirect old dashboard routes to unified dashboard
+@app.route("/auth-dashboard")
+def auth_dashboard_redirect():
+    """Redirect to unified dashboard"""
+    return redirect(url_for('unified_dashboard'))
+
+@app.route("/google-services-dashboard")
+def google_services_dashboard_redirect():
+    """Redirect to unified dashboard"""
+    return redirect(url_for('unified_dashboard'))
 
 # Advanced AI endpoints
 @app.route("/api/advanced/generate-video", methods=['POST'])

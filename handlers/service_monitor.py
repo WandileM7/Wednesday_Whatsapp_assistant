@@ -309,11 +309,15 @@ class ServiceMonitor:
         try:
             from handlers.spotify import spotify_service
             
-            if spotify_service and hasattr(spotify_service, 'sp') and spotify_service.sp:
-                # Try a simple API call
-                user = spotify_service.sp.current_user()
-                if user:
-                    return True, None
+            # Use the service's authentication check method
+            if spotify_service.is_authenticated():
+                # Try a simple API call to verify connection
+                try:
+                    user = spotify_service.sp.current_user()
+                    if user:
+                        return True, f"Authenticated as {user.get('display_name', user.get('id', 'Unknown'))}"
+                except Exception as api_error:
+                    return False, f"Authentication valid but API error: {str(api_error)}"
             
             return False, "Spotify not authenticated"
             
@@ -402,8 +406,11 @@ class ServiceMonitor:
                 except Exception as e:
                     logger.error(f"Alert callback failed: {e}")
             
-            # Log the alert
-            logger.warning(f"Service alert: {service_name} - {error}")
+            # Log the alert with appropriate severity
+            if service_config['critical']:
+                logger.warning(f"🔴 Critical service alert: {service_name} - {error}")
+            else:
+                logger.info(f"🟡 Service notice: {service_name} - {error}")
             
         except Exception as e:
             logger.error(f"Failed to send service alert: {e}")
