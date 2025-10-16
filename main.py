@@ -205,7 +205,7 @@ def _waha_base():
     return waha_url.rstrip("/")
 
 # WAHA Keep-Alive Configuration (Optimized)
-WAHA_KEEPALIVE_INTERVAL = int(os.getenv("WAHA_KEEPALIVE_INTERVAL", "300"))  # 5 minutes default (improved from 10)
+WAHA_KEEPALIVE_INTERVAL = int(os.getenv("WAHA_KEEPALIVE_INTERVAL", "300"))  # Default: 5 minutes (300 seconds); previously 10 minutes (600 seconds)
 WAHA_SESSION = os.getenv("WAHA_SESSION", "default")
 WAHA_RETRY_ATTEMPTS = 3
 waha_keepalive_active = False
