@@ -3306,6 +3306,98 @@ def api_send_whatsapp():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route("/api/make-call", methods=['POST'])
+def make_whatsapp_call():
+    """Initiate WhatsApp voice call via WAHA API"""
+    try:
+        data = request.get_json() or {}
+        phone = data.get('phone')
+        
+        if not phone:
+            return jsonify({'success': False, 'error': 'Phone number required'}), 400
+        
+        # Format phone number for WhatsApp (add @c.us if not present)
+        if '@c.us' not in phone:
+            phone = f"{phone}@c.us"
+        
+        base = _waha_base()
+        if not base:
+            return jsonify({'success': False, 'error': 'WAHA not configured'}), 500
+        
+        # Make call using WAHA API
+        session_name = WAHA_SESSION
+        call_url = f"{base}/api/sessions/{session_name}/calls/start"
+        
+        payload = {
+            "chatId": phone,
+            "audio": True,
+            "video": False
+        }
+        
+        response = requests.post(
+            call_url, 
+            json=payload, 
+            headers=_waha_headers(),
+            timeout=30
+        )
+        
+        if response.status_code in (200, 201):
+            logger.info(f"WhatsApp call initiated to {phone}")
+            return jsonify({
+                'success': True,
+                'message': f'Call initiated to {phone}',
+                'phone': phone
+            })
+        else:
+            error_msg = f"WAHA API error: {response.status_code}"
+            logger.error(f"Failed to initiate call: {error_msg}")
+            return jsonify({
+                'success': False, 
+                'error': error_msg,
+                'details': response.text
+            }), 500
+        
+    except Exception as e:
+        logger.error(f"Error making call: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route("/api/end-call", methods=['POST'])
+def end_whatsapp_call():
+    """End current WhatsApp voice call via WAHA API"""
+    try:
+        base = _waha_base()
+        if not base:
+            return jsonify({'success': False, 'error': 'WAHA not configured'}), 500
+        
+        # End call using WAHA API
+        session_name = WAHA_SESSION
+        call_url = f"{base}/api/sessions/{session_name}/calls/end"
+        
+        response = requests.post(
+            call_url,
+            headers=_waha_headers(),
+            timeout=30
+        )
+        
+        if response.status_code in (200, 201, 204):
+            logger.info("WhatsApp call ended")
+            return jsonify({
+                'success': True,
+                'message': 'Call ended successfully'
+            })
+        else:
+            error_msg = f"WAHA API error: {response.status_code}"
+            logger.error(f"Failed to end call: {error_msg}")
+            return jsonify({
+                'success': False,
+                'error': error_msg,
+                'details': response.text
+            }), 500
+        
+    except Exception as e:
+        logger.error(f"Error ending call: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route("/dashboard")
 def unified_dashboard():
     """Unified dashboard combining all functionality"""
@@ -3361,40 +3453,97 @@ def unified_dashboard():
         <head>
             <title>Wednesday Assistant - Unified Dashboard</title>
             <style>
+                * {{ box-sizing: border-box; }}
                 body {{ 
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    margin: 0; padding: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    color: #333; min-height: 100vh;
+                    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+                    margin: 0; padding: 0; 
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: #1a202c; min-height: 100vh;
                 }}
-                .container {{ max-width: 1200px; margin: 0 auto; padding: 20px; }}
-                .header {{ text-align: center; color: white; margin-bottom: 40px; }}
-                .dashboard {{ background: white; border-radius: 15px; padding: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }}
-                .section {{ margin-bottom: 30px; padding: 20px; border-radius: 10px; background: #f8f9fa; }}
-                .section h3 {{ margin-top: 0; color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }}
-                .auth-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }}
-                .status-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; }}
+                .container {{ max-width: 1400px; margin: 0 auto; padding: 20px; }}
+                .header {{ 
+                    text-align: center; color: white; margin-bottom: 40px;
+                    text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                }}
+                .header h1 {{ font-size: 3em; margin: 0; font-weight: 700; letter-spacing: -1px; }}
+                .header p {{ font-size: 1.1em; margin: 10px 0; opacity: 0.9; }}
+                .dashboard {{ 
+                    background: white; border-radius: 20px; padding: 40px; 
+                    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                }}
+                .section {{ 
+                    margin-bottom: 35px; padding: 25px; border-radius: 12px; 
+                    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+                    border: 1px solid #e0e0e0;
+                }}
+                .section h3 {{ 
+                    margin-top: 0; color: #2d3748; border-bottom: 3px solid #007bff; 
+                    padding-bottom: 12px; font-size: 1.5em; font-weight: 600;
+                }}
+                .auth-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 25px; }}
+                .status-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }}
                 .auth-card, .status-item {{ 
-                    background: white; border-radius: 10px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+                    background: white; border-radius: 12px; padding: 24px; 
+                    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
                     border-left: 5px solid #007bff;
+                    transition: all 0.3s ease;
                 }}
-                .auth-card:hover {{ transform: translateY(-2px); transition: transform 0.3s ease; }}
+                .auth-card:hover, .status-item:hover {{ 
+                    transform: translateY(-4px); 
+                    box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+                }}
                 .healthy {{ border-left-color: #28a745; }}
                 .warning {{ border-left-color: #ffc107; }}
                 .error {{ border-left-color: #dc3545; }}
                 .button {{ 
-                    display: inline-block; padding: 10px 16px; margin: 5px; background: #007bff; 
-                    color: white; text-decoration: none; border-radius: 6px; font-size: 14px; 
+                    display: inline-block; padding: 12px 20px; margin: 5px; 
+                    background: linear-gradient(135deg, #007bff 0%, #0056b3 100%); 
+                    color: white; text-decoration: none; border-radius: 8px; 
+                    font-size: 14px; font-weight: 600;
+                    transition: all 0.3s ease;
+                    box-shadow: 0 2px 8px rgba(0,123,255,0.3);
                 }}
-                .button:hover {{ background: #0056b3; }}
-                .metric {{ display: inline-block; margin: 10px 15px 10px 0; }}
-                .metric-value {{ font-size: 20px; font-weight: bold; color: #007bff; }}
-                .metric-label {{ font-size: 12px; color: #666; text-transform: uppercase; }}
+                .button:hover {{ 
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 12px rgba(0,123,255,0.5);
+                }}
+                .button.success {{ 
+                    background: linear-gradient(135deg, #28a745 0%, #20833c 100%);
+                    box-shadow: 0 2px 8px rgba(40,167,69,0.3);
+                }}
+                .button.success:hover {{ box-shadow: 0 4px 12px rgba(40,167,69,0.5); }}
+                .button.danger {{ 
+                    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+                    box-shadow: 0 2px 8px rgba(220,53,69,0.3);
+                }}
+                .button.danger:hover {{ box-shadow: 0 4px 12px rgba(220,53,69,0.5); }}
+                .metric {{ 
+                    display: inline-block; margin: 15px 20px 15px 0; 
+                    padding: 15px; background: white; border-radius: 10px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+                }}
+                .metric-value {{ font-size: 28px; font-weight: 700; color: #007bff; }}
+                .metric-label {{ font-size: 11px; color: #6c757d; text-transform: uppercase; letter-spacing: 1px; margin-top: 5px; }}
                 .status-badge {{ 
-                    padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;
+                    padding: 6px 12px; border-radius: 20px; font-size: 11px; font-weight: 700;
                     background: #28a745; color: white; margin-left: 10px;
+                    text-transform: uppercase; letter-spacing: 0.5px;
                 }}
                 .status-badge.error {{ background: #dc3545; }}
                 .status-badge.warning {{ background: #ffc107; color: #000; }}
+                .phone-section {{ 
+                    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+                    color: white; padding: 30px; border-radius: 12px;
+                    box-shadow: 0 4px 20px rgba(99,102,241,0.3);
+                }}
+                .phone-section h3 {{ color: white; border-bottom-color: white; }}
+                .phone-input {{ 
+                    padding: 12px 16px; border: 2px solid white; background: rgba(255,255,255,0.2);
+                    border-radius: 8px; font-size: 16px; color: white; width: 300px;
+                    margin-right: 10px;
+                }}
+                .phone-input::placeholder {{ color: rgba(255,255,255,0.7); }}
+                .phone-input:focus {{ outline: none; background: rgba(255,255,255,0.3); }}
             </style>
             <script>
                 function refreshPage() {{ window.location.reload(); }}
@@ -3550,8 +3699,74 @@ def unified_dashboard():
                             <a href="/whatsapp-qr" class="button">WhatsApp QR</a>
                         </div>
                     </div>
+                    
+                    <!-- Phone Call Section -->
+                    <div class="section phone-section">
+                        <h3>📞 WhatsApp Phone Calls</h3>
+                        <p style="margin-bottom: 20px;">Make WhatsApp voice calls directly from the dashboard. Requires active WhatsApp connection.</p>
+                        <form id="callForm" onsubmit="makeCall(event)" style="display: flex; align-items: center; flex-wrap: wrap;">
+                            <input type="text" id="phoneNumber" class="phone-input" placeholder="Enter phone number (e.g., 27729224495)" required>
+                            <button type="submit" class="button success" style="margin: 5px;">📞 Make Call</button>
+                            <button type="button" onclick="endCall()" class="button danger" style="margin: 5px;">❌ End Call</button>
+                        </form>
+                        <div id="callStatus" style="margin-top: 15px; padding: 15px; background: rgba(255,255,255,0.2); border-radius: 8px; display: none;">
+                            <strong>Status:</strong> <span id="statusText"></span>
+                        </div>
+                    </div>
                 </div>
             </div>
+            <script>
+                function makeCall(event) {{
+                    event.preventDefault();
+                    const phone = document.getElementById('phoneNumber').value;
+                    const statusDiv = document.getElementById('callStatus');
+                    const statusText = document.getElementById('statusText');
+                    
+                    statusDiv.style.display = 'block';
+                    statusText.textContent = 'Initiating call to ' + phone + '...';
+                    
+                    fetch('/api/make-call', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{ phone: phone }})
+                    }})
+                    .then(response => response.json())
+                    .then(data => {{
+                        if (data.success) {{
+                            statusText.textContent = '✅ Call initiated successfully to ' + phone;
+                        }} else {{
+                            statusText.textContent = '❌ Error: ' + (data.error || 'Failed to initiate call');
+                        }}
+                    }})
+                    .catch(error => {{
+                        statusText.textContent = '❌ Error: ' + error.message;
+                    }});
+                }}
+                
+                function endCall() {{
+                    const statusDiv = document.getElementById('callStatus');
+                    const statusText = document.getElementById('statusText');
+                    
+                    statusDiv.style.display = 'block';
+                    statusText.textContent = 'Ending call...';
+                    
+                    fetch('/api/end-call', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }}
+                    }})
+                    .then(response => response.json())
+                    .then(data => {{
+                        if (data.success) {{
+                            statusText.textContent = '✅ Call ended successfully';
+                        }} else {{
+                            statusText.textContent = '❌ Error: ' + (data.error || 'Failed to end call');
+                        }}
+                    }})
+                    .catch(error => {{
+                        statusText.textContent = '❌ Error: ' + error.message;
+                    }});
+                }}
+            </script>
         </body>
         </html>
         """
