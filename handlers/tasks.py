@@ -598,7 +598,7 @@ class BackgroundTaskSync:
             for task in self.task_manager.tasks.values():
                 if not task.completed:
                     # Check if task was created since last sync
-                    if self.last_sync is None or task.created_at > self.last_sync:
+                    if self.last_sync is None or datetime.fromisoformat(task.created_at) > datetime.fromisoformat(self.last_sync):
                         unsynced_tasks.append(task)
             
             if not unsynced_tasks:
