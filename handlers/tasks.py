@@ -102,8 +102,8 @@ class TaskManager:
             logger.error(f"Error saving reminders: {e}")
     
     def create_task(self, title: str, description: str = "", due_date: Optional[str] = None, 
-                   priority: str = "medium", tags: List[str] = None) -> str:
-        """Create a new task"""
+                   priority: str = "medium", tags: List[str] = None, auto_sync: bool = True) -> str:
+        """Create a new task with optional real-time sync to Google Keep/Tasks"""
         import uuid
         
         task_id = str(uuid.uuid4())[:8]
@@ -119,7 +119,21 @@ class TaskManager:
         self.tasks[task_id] = task
         self._save_tasks()
         
-        return f"✅ Task created: '{title}' (ID: {task_id})"
+        response = f"✅ Task created: '{title}' (ID: {task_id})"
+        
+        # Automatically sync to Google Keep/Tasks if enabled
+        if auto_sync:
+            try:
+                sync_result = self._sync_single_task_to_google(task)
+                if "✅" in sync_result:
+                    response += f"\n☁️ Synced to Google Tasks/Keep"
+                else:
+                    response += f"\n⚠️ Local only (Google sync failed)"
+            except Exception as e:
+                logger.warning(f"Auto-sync to Google failed: {e}")
+                response += f"\n⚠️ Local only (Google unavailable)"
+        
+        return response
     
     def list_tasks(self, filter_completed: bool = False, filter_priority: Optional[str] = None) -> str:
         """List all tasks"""
@@ -339,6 +353,41 @@ class TaskManager:
         except:
             return remind_at
 
+    def _sync_single_task_to_google(self, task: Task) -> str:
+        """Sync a single task to Google Keep/Tasks (internal helper)"""
+        try:
+            from handlers.google_notes import google_notes_service
+            
+            # Skip completed tasks
+            if task.completed:
+                return "⏭️ Skipped (completed)"
+            
+            # Create task content with details
+            content = f"Description: {task.description}\n" if task.description else ""
+            if task.priority != "medium":
+                content += f"Priority: {task.priority}\n"
+            if task.due_date:
+                content += f"Due: {task.due_date}\n"
+            if task.tags:
+                content += f"Tags: {', '.join(task.tags)}\n"
+            content += f"Created: {task.created_at}\n"
+            content += f"Local ID: {task.id}"
+            
+            # Create note in Google Tasks
+            result = google_notes_service.create_note(
+                title=task.title,
+                content=content,
+                tags=task.tags + ["auto_synced"]
+            )
+            
+            return result
+            
+        except ImportError:
+            return "❌ Google Notes service not available"
+        except Exception as e:
+            logger.error(f"Error syncing single task: {e}")
+            return f"❌ Sync failed: {str(e)}"
+    
     def sync_to_google_keep(self) -> str:
         """Sync local tasks to Google Keep (via Google Tasks API)"""
         try:
@@ -480,3 +529,122 @@ class TaskManager:
 
 # Global task manager instance
 task_manager = TaskManager()
+
+
+# Background Task Sync Service
+import threading
+import time
+
+class BackgroundTaskSync:
+    """Background service for periodic task synchronization with Google Keep"""
+    
+    def __init__(self, task_manager: TaskManager, sync_interval: int = 1800):
+        self.task_manager = task_manager
+        self.sync_interval = sync_interval  # Default 30 minutes
+        self.running = False
+        self.thread = None
+        self.last_sync = None
+        self.sync_stats = {
+            "total_syncs": 0,
+            "successful_syncs": 0,
+            "failed_syncs": 0,
+            "last_sync_time": None,
+            "last_error": None
+        }
+    
+    def start(self):
+        """Start the background sync service"""
+        if self.running:
+            logger.info("Background task sync already running")
+            return
+        
+        self.running = True
+        self.thread = threading.Thread(target=self._sync_loop, daemon=True, name="TaskSyncService")
+        self.thread.start()
+        logger.info(f"Background task sync service started (interval: {self.sync_interval}s)")
+    
+    def stop(self):
+        """Stop the background sync service"""
+        self.running = False
+        logger.info("Background task sync service stopped")
+    
+    def _sync_loop(self):
+        """Main sync loop that runs in background"""
+        while self.running:
+            try:
+                # Wait for the sync interval
+                time.sleep(self.sync_interval)
+                
+                if not self.running:
+                    break
+                
+                # Perform sync
+                self._perform_sync()
+                
+            except Exception as e:
+                logger.error(f"Error in background task sync loop: {e}")
+                self.sync_stats["last_error"] = str(e)
+                # Continue running even if sync fails
+                time.sleep(60)  # Wait a minute before retrying
+    
+    def _perform_sync(self):
+        """Perform the actual synchronization"""
+        try:
+            logger.info("Starting background task sync to Google Keep...")
+            self.sync_stats["total_syncs"] += 1
+            
+            # Get unsynced tasks (those created since last sync)
+            unsynced_tasks = []
+            for task in self.task_manager.tasks.values():
+                if not task.completed:
+                    # Check if task was created since last sync
+                    if self.last_sync is None or datetime.fromisoformat(task.created_at) > datetime.fromisoformat(self.last_sync):
+                        unsynced_tasks.append(task)
+            
+            if not unsynced_tasks:
+                logger.info("No new tasks to sync")
+                self.last_sync = datetime.now().isoformat()
+                return
+            
+            # Sync each unsynced task
+            synced_count = 0
+            failed_count = 0
+            
+            for task in unsynced_tasks:
+                try:
+                    result = self.task_manager._sync_single_task_to_google(task)
+                    if "✅" in result:
+                        synced_count += 1
+                    else:
+                        failed_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to sync task {task.id}: {e}")
+                    failed_count += 1
+            
+            # Update stats
+            if failed_count == 0:
+                self.sync_stats["successful_syncs"] += 1
+            else:
+                self.sync_stats["failed_syncs"] += 1
+            
+            self.last_sync = datetime.now().isoformat()
+            self.sync_stats["last_sync_time"] = self.last_sync
+            
+            logger.info(f"Background sync complete: {synced_count} synced, {failed_count} failed")
+            
+        except Exception as e:
+            logger.error(f"Error performing background sync: {e}")
+            self.sync_stats["failed_syncs"] += 1
+            self.sync_stats["last_error"] = str(e)
+    
+    def get_status(self) -> Dict[str, Any]:
+        """Get sync service status"""
+        return {
+            "running": self.running,
+            "sync_interval": self.sync_interval,
+            "last_sync": self.last_sync,
+            "stats": self.sync_stats
+        }
+
+# Global background sync service instance
+background_sync_service = BackgroundTaskSync(task_manager, sync_interval=int(os.getenv("TASK_SYNC_INTERVAL", "1800")))

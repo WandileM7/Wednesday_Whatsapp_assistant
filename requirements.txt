@@ -6,11 +6,7 @@ google-auth-httplib2
 google-auth-oauthlib==1.2.0
 requests
 google-generativeai
-openai>=1.0.0
 spotipy==2.23.0
-chromadb
-onnxruntime>=1.15.0
-fastapi
 flask-session
 werkzeug
 psutil
@@ -19,15 +15,5 @@ google-cloud-speech
 google-cloud-texttospeech
 qrcode==8.0
 Pillow==11.0.0
-# Additional dependencies for enhanced features
 requests-oauthlib
 python-dateutil
-# Advanced AI and CV dependencies
-opencv-python
-scikit-learn
-numpy
-scipy
-# For video processing
-# ffmpeg-python
-# moviepy
-# Note: wave, struct, and asyncio are built-in Python modules

@@ -14,7 +14,7 @@ from handlers.accommodation import accommodation_service
 from handlers.fitness import fitness_service
 from handlers.google_notes import google_notes_service
 import logging
-from chromedb import *
+from database import add_to_conversation_history, query_conversation_history, retrieve_conversation_history
 
 # Timeout handler for thread-safe timeout
 class TimeoutException(Exception):

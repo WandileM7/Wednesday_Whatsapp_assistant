@@ -204,52 +204,96 @@ def _waha_base():
         return waha_url.split("/api/")[0]
     return waha_url.rstrip("/")
 
-# WAHA Keep-Alive Configuration
-WAHA_KEEPALIVE_INTERVAL = int(os.getenv("WAHA_KEEPALIVE_INTERVAL", "600"))  # 10 minutes default
+# WAHA Keep-Alive Configuration (Optimized)
+WAHA_KEEPALIVE_INTERVAL = int(os.getenv("WAHA_KEEPALIVE_INTERVAL", "300"))  # Default: 5 minutes (300 seconds); previously 10 minutes (600 seconds)
 WAHA_SESSION = os.getenv("WAHA_SESSION", "default")
+WAHA_RETRY_ATTEMPTS = 3
 waha_keepalive_active = False
+waha_connection_status = {"status": "unknown", "last_check": None, "consecutive_failures": 0}
 
 def waha_health_check():
-    """Ensure WAHA session exists and is started using sessions API (no Apps dependency)."""
+    """Ensure WAHA session exists and is started using sessions API (optimized for reliability)."""
+    global waha_connection_status
+    
     try:
         base = _waha_base()
         if not base:
+            waha_connection_status.update({"status": "not_configured", "last_check": datetime.now()})
             return False
-        session_name = "default"
-        # Check session status
-        r = requests.get(f"{base}/api/sessions/{session_name}", timeout=10)
-        if r.status_code == 200:
-            data = r.json()
-            status = (data.get("status") or "").lower()
-            return status in ("working", "active", "connected", "ready")
-        if r.status_code == 404:
-            # Create session if missing
-            rc = requests.post(f"{base}/api/sessions/{session_name}", timeout=15)
-            if rc.status_code not in (200, 201, 409):
-                logger.warning(f"WAHA create session failed: {rc.status_code} {rc.text}")
-        # Try to start the session (safe even if already started)
-        rs = requests.post(f"{base}/api/sessions/{session_name}/start", timeout=20)
-        if rs.status_code in (200, 202):
-            return True
-        if rs.status_code == 422 and "already started" in rs.text.lower():
-            return True
-        logger.warning(f"WAHA start session response: {rs.status_code} {rs.text}")
+            
+        session_name = WAHA_SESSION
+        
+        # Check session status with retry logic
+        for attempt in range(WAHA_RETRY_ATTEMPTS):
+            try:
+                r = requests.get(f"{base}/api/sessions/{session_name}", timeout=5, headers=_waha_headers(is_json=False))
+                if r.status_code == 200:
+                    data = r.json()
+                    status = (data.get("status") or "").lower()
+                    is_healthy = status in ("working", "active", "connected", "ready")
+                    
+                    if is_healthy:
+                        waha_connection_status.update({
+                            "status": "healthy",
+                            "last_check": datetime.now(),
+                            "consecutive_failures": 0
+                        })
+                        return True
+                        
+                if r.status_code == 404 and attempt == 0:
+                    # Create session if missing
+                    logger.info(f"Creating WAHA session: {session_name}")
+                    rc = requests.post(f"{base}/api/sessions/{session_name}", timeout=10, headers=_waha_headers())
+                    if rc.status_code not in (200, 201, 409):
+                        logger.warning(f"WAHA create session failed: {rc.status_code}")
+                    time.sleep(2)  # Wait for creation
+                    continue
+                    
+                # Try to start the session
+                rs = requests.post(f"{base}/api/sessions/{session_name}/start", timeout=10, headers=_waha_headers())
+                if rs.status_code in (200, 202):
+                    waha_connection_status.update({
+                        "status": "healthy",
+                        "last_check": datetime.now(),
+                        "consecutive_failures": 0
+                    })
+                    return True
+                if rs.status_code == 422 and "already started" in rs.text.lower():
+                    waha_connection_status.update({
+                        "status": "healthy",
+                        "last_check": datetime.now(),
+                        "consecutive_failures": 0
+                    })
+                    return True
+                    
+            except requests.exceptions.RequestException as e:
+                if attempt < WAHA_RETRY_ATTEMPTS - 1:
+                    time.sleep(1)
+                    continue
+                raise e
+                
+        waha_connection_status["consecutive_failures"] += 1
+        waha_connection_status.update({"status": "unhealthy", "last_check": datetime.now()})
         return False
+        
     except Exception as e:
         logger.warning(f"WAHA health check error: {e}")
-        logger.warning(f"WAHA health check error: {e}")
+        waha_connection_status["consecutive_failures"] += 1
+        waha_connection_status.update({"status": "error", "last_check": datetime.now()})
         return False
 
 def waha_keepalive():
-    """Background keep-alive loop that maintains the WAHA session."""
-    """Background keep-alive loop that maintains the WAHA session."""
+    """Background keep-alive loop that maintains the WAHA session (optimized)."""
     global waha_keepalive_active
     while waha_keepalive_active:
         ok = waha_health_check()
-        logger.info(f"WAHA keep-alive: {'OK' if ok else 'NOT READY'}")
-        time.sleep(WAHA_KEEPALIVE_INTERVAL)
-        ok = waha_health_check()
-        logger.info(f"WAHA keep-alive: {'OK' if ok else 'NOT READY'}")
+        status_emoji = "✅" if ok else "❌"
+        logger.info(f"{status_emoji} WAHA keep-alive: {'OK' if ok else 'NOT READY'} (failures: {waha_connection_status['consecutive_failures']})")
+        
+        # Alert if too many consecutive failures
+        if waha_connection_status["consecutive_failures"] >= 5:
+            logger.error(f"⚠️ WAHA connection critical: {waha_connection_status['consecutive_failures']} consecutive failures")
+        
         time.sleep(WAHA_KEEPALIVE_INTERVAL)
 
 def start_waha_keepalive():
@@ -257,12 +301,13 @@ def start_waha_keepalive():
     if waha_keepalive_active:
         return
     waha_keepalive_active = True
-    threading.Thread(target=waha_keepalive, daemon=True).start()
-    threading.Thread(target=waha_keepalive, daemon=True).start()
+    threading.Thread(target=waha_keepalive, daemon=True, name="WAHAKeepAlive").start()
+    logger.info("WAHA keep-alive service started")
 
 def stop_waha_keepalive():
     global waha_keepalive_active
     waha_keepalive_active = False
+    logger.info("WAHA keep-alive service stopped")
 
 # Spotify OAuth Setup
 SPOTIFY_SCOPE = "user-read-playback-state user-modify-playback-state"
@@ -431,6 +476,14 @@ def initialize_services():
         logger.info("Task notification system initialized")
     except Exception as e:
         logger.error(f"Failed to initialize notification system: {e}")
+    
+    # Initialize background task sync service
+    try:
+        from handlers.tasks import background_sync_service
+        background_sync_service.start()
+        logger.info("Background Google Keep task sync initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize background task sync: {e}")
     
     # Initialize service monitor
     try:
@@ -1563,8 +1616,17 @@ def status():
 
 @app.route("/waha-status")
 def waha_status():
+    """Get comprehensive WAHA connection status (optimized)"""
     ok = waha_health_check()
-    return jsonify({"waha_ok": ok, "session": WAHA_SESSION, "base": _waha_base()})
+    return jsonify({
+        "waha_ok": ok,
+        "session": WAHA_SESSION,
+        "base": _waha_base(),
+        "connection_status": waha_connection_status,
+        "keepalive_active": waha_keepalive_active,
+        "keepalive_interval": WAHA_KEEPALIVE_INTERVAL,
+        "timestamp": datetime.now().isoformat()
+    })
 
 @app.route("/waha-restart-keepalive", methods=['POST'])
 def restart_waha_keepalive():
@@ -2018,6 +2080,12 @@ def handle_reminders():
 def task_summary():
     """Get task and reminder summary"""
     return task_manager.get_task_summary()
+
+@app.route("/tasks/sync-status")
+def task_sync_status():
+    """Get background task sync status"""
+    from handlers.tasks import background_sync_service
+    return jsonify(background_sync_service.get_status())
 
 @app.route("/contacts", methods=['GET', 'POST'])
 def handle_contacts():
@@ -2934,8 +3002,8 @@ def test_conversation_history():
             "phone": test_phone
         }
         
-        # Test ChromaDB availability
-        if CHROMADB_AVAILABLE:
+        # Test Database availability
+        if DATABASE_AVAILABLE:
             try:
                 # Test adding a conversation
                 success = add_to_conversation_history(test_phone, "user", "Test message for history")
@@ -2953,9 +3021,9 @@ def test_conversation_history():
                     results["retrieve_test"] = {"success": False, "reason": "Add failed"}
                     
             except Exception as e:
-                results["chromadb_error"] = str(e)
+                results["database_error"] = str(e)
         else:
-            results["chromadb_available"] = False
+            results["database_available"] = False
             
         return jsonify(results)
         
@@ -3041,13 +3109,13 @@ class ConversationManager:
                 return "I'm currently in test mode. Please configure GEMINI_API_KEY for full functionality."
             
             # Add conversation history
-            if CHROMADB_AVAILABLE:
+            if DATABASE_AVAILABLE:
                 add_to_conversation_history(phone, "user", message)
             
             # Generate response using Gemini (implement this based on your gemini.py)
             response = self._generate_response(message, phone)
             
-            if CHROMADB_AVAILABLE:
+            if DATABASE_AVAILABLE:
                 add_to_conversation_history(phone, "assistant", response)
             
             return response
@@ -3238,6 +3306,98 @@ def api_send_whatsapp():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route("/api/make-call", methods=['POST'])
+def make_whatsapp_call():
+    """Initiate WhatsApp voice call via WAHA API"""
+    try:
+        data = request.get_json() or {}
+        phone = data.get('phone')
+        
+        if not phone:
+            return jsonify({'success': False, 'error': 'Phone number required'}), 400
+        
+        # Format phone number for WhatsApp (add @c.us if not present)
+        if '@c.us' not in phone:
+            phone = f"{phone}@c.us"
+        
+        base = _waha_base()
+        if not base:
+            return jsonify({'success': False, 'error': 'WAHA not configured'}), 500
+        
+        # Make call using WAHA API
+        session_name = WAHA_SESSION
+        call_url = f"{base}/api/sessions/{session_name}/calls/start"
+        
+        payload = {
+            "chatId": phone,
+            "audio": True,
+            "video": False
+        }
+        
+        response = requests.post(
+            call_url, 
+            json=payload, 
+            headers=_waha_headers(),
+            timeout=30
+        )
+        
+        if response.status_code in (200, 201):
+            logger.info(f"WhatsApp call initiated to {phone}")
+            return jsonify({
+                'success': True,
+                'message': f'Call initiated to {phone}',
+                'phone': phone
+            })
+        else:
+            error_msg = f"WAHA API error: {response.status_code}"
+            logger.error(f"Failed to initiate call: {error_msg}")
+            return jsonify({
+                'success': False, 
+                'error': error_msg,
+                'details': response.text
+            }), 500
+        
+    except Exception as e:
+        logger.error(f"Error making call: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route("/api/end-call", methods=['POST'])
+def end_whatsapp_call():
+    """End current WhatsApp voice call via WAHA API"""
+    try:
+        base = _waha_base()
+        if not base:
+            return jsonify({'success': False, 'error': 'WAHA not configured'}), 500
+        
+        # End call using WAHA API
+        session_name = WAHA_SESSION
+        call_url = f"{base}/api/sessions/{session_name}/calls/end"
+        
+        response = requests.post(
+            call_url,
+            headers=_waha_headers(),
+            timeout=30
+        )
+        
+        if response.status_code in (200, 201, 204):
+            logger.info("WhatsApp call ended")
+            return jsonify({
+                'success': True,
+                'message': 'Call ended successfully'
+            })
+        else:
+            error_msg = f"WAHA API error: {response.status_code}"
+            logger.error(f"Failed to end call: {error_msg}")
+            return jsonify({
+                'success': False,
+                'error': error_msg,
+                'details': response.text
+            }), 500
+        
+    except Exception as e:
+        logger.error(f"Error ending call: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route("/dashboard")
 def unified_dashboard():
     """Unified dashboard combining all functionality"""
@@ -3250,6 +3410,10 @@ def unified_dashboard():
         services_status = service_monitor.get_service_status()
         health_summary = service_monitor.get_system_health_summary()
         notification_stats = task_notification_system.get_notification_stats()
+        
+        # Get task sync status
+        from handlers.tasks import background_sync_service
+        sync_status = background_sync_service.get_status()
         
         # Get authentication status
         spotify_tokens = token_storage.load_spotify_tokens()
@@ -3289,40 +3453,97 @@ def unified_dashboard():
         <head>
             <title>Wednesday Assistant - Unified Dashboard</title>
             <style>
+                * {{ box-sizing: border-box; }}
                 body {{ 
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    margin: 0; padding: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    color: #333; min-height: 100vh;
+                    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+                    margin: 0; padding: 0; 
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: #1a202c; min-height: 100vh;
                 }}
-                .container {{ max-width: 1200px; margin: 0 auto; padding: 20px; }}
-                .header {{ text-align: center; color: white; margin-bottom: 40px; }}
-                .dashboard {{ background: white; border-radius: 15px; padding: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }}
-                .section {{ margin-bottom: 30px; padding: 20px; border-radius: 10px; background: #f8f9fa; }}
-                .section h3 {{ margin-top: 0; color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }}
-                .auth-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }}
-                .status-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; }}
+                .container {{ max-width: 1400px; margin: 0 auto; padding: 20px; }}
+                .header {{ 
+                    text-align: center; color: white; margin-bottom: 40px;
+                    text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+                }}
+                .header h1 {{ font-size: 3em; margin: 0; font-weight: 700; letter-spacing: -1px; }}
+                .header p {{ font-size: 1.1em; margin: 10px 0; opacity: 0.9; }}
+                .dashboard {{ 
+                    background: white; border-radius: 20px; padding: 40px; 
+                    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                }}
+                .section {{ 
+                    margin-bottom: 35px; padding: 25px; border-radius: 12px; 
+                    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+                    border: 1px solid #e0e0e0;
+                }}
+                .section h3 {{ 
+                    margin-top: 0; color: #2d3748; border-bottom: 3px solid #007bff; 
+                    padding-bottom: 12px; font-size: 1.5em; font-weight: 600;
+                }}
+                .auth-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 25px; }}
+                .status-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }}
                 .auth-card, .status-item {{ 
-                    background: white; border-radius: 10px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+                    background: white; border-radius: 12px; padding: 24px; 
+                    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
                     border-left: 5px solid #007bff;
+                    transition: all 0.3s ease;
                 }}
-                .auth-card:hover {{ transform: translateY(-2px); transition: transform 0.3s ease; }}
+                .auth-card:hover, .status-item:hover {{ 
+                    transform: translateY(-4px); 
+                    box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+                }}
                 .healthy {{ border-left-color: #28a745; }}
                 .warning {{ border-left-color: #ffc107; }}
                 .error {{ border-left-color: #dc3545; }}
                 .button {{ 
-                    display: inline-block; padding: 10px 16px; margin: 5px; background: #007bff; 
-                    color: white; text-decoration: none; border-radius: 6px; font-size: 14px; 
+                    display: inline-block; padding: 12px 20px; margin: 5px; 
+                    background: linear-gradient(135deg, #007bff 0%, #0056b3 100%); 
+                    color: white; text-decoration: none; border-radius: 8px; 
+                    font-size: 14px; font-weight: 600;
+                    transition: all 0.3s ease;
+                    box-shadow: 0 2px 8px rgba(0,123,255,0.3);
                 }}
-                .button:hover {{ background: #0056b3; }}
-                .metric {{ display: inline-block; margin: 10px 15px 10px 0; }}
-                .metric-value {{ font-size: 20px; font-weight: bold; color: #007bff; }}
-                .metric-label {{ font-size: 12px; color: #666; text-transform: uppercase; }}
+                .button:hover {{ 
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 12px rgba(0,123,255,0.5);
+                }}
+                .button.success {{ 
+                    background: linear-gradient(135deg, #28a745 0%, #20833c 100%);
+                    box-shadow: 0 2px 8px rgba(40,167,69,0.3);
+                }}
+                .button.success:hover {{ box-shadow: 0 4px 12px rgba(40,167,69,0.5); }}
+                .button.danger {{ 
+                    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+                    box-shadow: 0 2px 8px rgba(220,53,69,0.3);
+                }}
+                .button.danger:hover {{ box-shadow: 0 4px 12px rgba(220,53,69,0.5); }}
+                .metric {{ 
+                    display: inline-block; margin: 15px 20px 15px 0; 
+                    padding: 15px; background: white; border-radius: 10px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+                }}
+                .metric-value {{ font-size: 28px; font-weight: 700; color: #007bff; }}
+                .metric-label {{ font-size: 11px; color: #6c757d; text-transform: uppercase; letter-spacing: 1px; margin-top: 5px; }}
                 .status-badge {{ 
-                    padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;
+                    padding: 6px 12px; border-radius: 20px; font-size: 11px; font-weight: 700;
                     background: #28a745; color: white; margin-left: 10px;
+                    text-transform: uppercase; letter-spacing: 0.5px;
                 }}
                 .status-badge.error {{ background: #dc3545; }}
                 .status-badge.warning {{ background: #ffc107; color: #000; }}
+                .phone-section {{ 
+                    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+                    color: white; padding: 30px; border-radius: 12px;
+                    box-shadow: 0 4px 20px rgba(99,102,241,0.3);
+                }}
+                .phone-section h3 {{ color: white; border-bottom-color: white; }}
+                .phone-input {{ 
+                    padding: 12px 16px; border: 2px solid white; background: rgba(255,255,255,0.2);
+                    border-radius: 8px; font-size: 16px; color: white; width: 300px;
+                    margin-right: 10px;
+                }}
+                .phone-input::placeholder {{ color: rgba(255,255,255,0.7); }}
+                .phone-input:focus {{ outline: none; background: rgba(255,255,255,0.3); }}
             </style>
             <script>
                 function refreshPage() {{ window.location.reload(); }}
@@ -3356,6 +3577,18 @@ def unified_dashboard():
                                 <strong>Notifications</strong>
                                 <span class="status-badge {'error' if not notification_stats.get('service_running') else ''}">{'Active' if notification_stats.get('service_running') else 'Stopped'}</span><br>
                                 <small>Total sent: {notification_stats.get('total_notifications', 0)}</small>
+                            </div>
+                            <div class="status-item">
+                                <strong>Google Keep Sync</strong>
+                                <span class="status-badge {'error' if not sync_status.get('running') else ''}">{'Active' if sync_status.get('running') else 'Stopped'}</span><br>
+                                <small>Syncs: {sync_status.get('stats', {}).get('successful_syncs', 0)} successful, {sync_status.get('stats', {}).get('failed_syncs', 0)} failed</small>
+                            </div>
+                            <div class="status-item {'warning' if waha_connection_status.get('consecutive_failures', 0) > 0 else 'healthy'}">
+                                <strong>WhatsApp (WAHA)</strong>
+                                <span class="status-badge {'error' if waha_connection_status.get('status') != 'healthy' else ''}">
+                                    {waha_connection_status.get('status', 'Unknown').title()}
+                                </span><br>
+                                <small>Keep-alive: {'Active' if waha_keepalive_active else 'Inactive'}, Failures: {waha_connection_status.get('consecutive_failures', 0)}</small>
                             </div>
                         </div>
                     </div>
@@ -3448,10 +3681,16 @@ def unified_dashboard():
                             <a href="javascript:refreshPage()" class="button">Refresh Now</a>
                         </div>
                         <div style="margin-bottom: 20px;">
-                            <h4>Authentication</h4>
-                            <a href="/login" class="button">Spotify Login</a>
-                            <a href="/google-login" class="button">Google Login</a>
+                            <h4>Authentication (SSO)</h4>
+                            {'<span class="status-badge">Both Authenticated</span>' if (spotify_working and google_working) else ''}
+                            {'<a href="/login" class="button">Spotify Login</a>' if not spotify_working else '<span class="status-badge">Spotify ✓</span>'}
+                            {'<a href="/google-login" class="button">Google Login</a>' if not google_working else '<span class="status-badge">Google ✓</span>'}
                             <a href="/setup-all-auto-auth" class="button">Setup Auto-Auth</a>
+                        </div>
+                        <div style="margin-bottom: 20px;">
+                            <h4>Task Management</h4>
+                            <a href="/test-tasks" class="button">View Tasks</a>
+                            <a href="/test-google-notes" class="button">Google Keep Sync Status</a>
                         </div>
                         <div style="margin-bottom: 20px;">
                             <h4>Testing & Diagnostics</h4>
@@ -3460,8 +3699,74 @@ def unified_dashboard():
                             <a href="/whatsapp-qr" class="button">WhatsApp QR</a>
                         </div>
                     </div>
+                    
+                    <!-- Phone Call Section -->
+                    <div class="section phone-section">
+                        <h3>📞 WhatsApp Phone Calls</h3>
+                        <p style="margin-bottom: 20px;">Make WhatsApp voice calls directly from the dashboard. Requires active WhatsApp connection.</p>
+                        <form id="callForm" onsubmit="makeCall(event)" style="display: flex; align-items: center; flex-wrap: wrap;">
+                            <input type="text" id="phoneNumber" class="phone-input" placeholder="Enter phone number (e.g., 27729224495)" required>
+                            <button type="submit" class="button success" style="margin: 5px;">📞 Make Call</button>
+                            <button type="button" onclick="endCall()" class="button danger" style="margin: 5px;">❌ End Call</button>
+                        </form>
+                        <div id="callStatus" style="margin-top: 15px; padding: 15px; background: rgba(255,255,255,0.2); border-radius: 8px; display: none;">
+                            <strong>Status:</strong> <span id="statusText"></span>
+                        </div>
+                    </div>
                 </div>
             </div>
+            <script>
+                function makeCall(event) {{
+                    event.preventDefault();
+                    const phone = document.getElementById('phoneNumber').value;
+                    const statusDiv = document.getElementById('callStatus');
+                    const statusText = document.getElementById('statusText');
+                    
+                    statusDiv.style.display = 'block';
+                    statusText.textContent = 'Initiating call to ' + phone + '...';
+                    
+                    fetch('/api/make-call', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{ phone: phone }})
+                    }})
+                    .then(response => response.json())
+                    .then(data => {{
+                        if (data.success) {{
+                            statusText.textContent = '✅ Call initiated successfully to ' + phone;
+                        }} else {{
+                            statusText.textContent = '❌ Error: ' + (data.error || 'Failed to initiate call');
+                        }}
+                    }})
+                    .catch(error => {{
+                        statusText.textContent = '❌ Error: ' + error.message;
+                    }});
+                }}
+                
+                function endCall() {{
+                    const statusDiv = document.getElementById('callStatus');
+                    const statusText = document.getElementById('statusText');
+                    
+                    statusDiv.style.display = 'block';
+                    statusText.textContent = 'Ending call...';
+                    
+                    fetch('/api/end-call', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }}
+                    }})
+                    .then(response => response.json())
+                    .then(data => {{
+                        if (data.success) {{
+                            statusText.textContent = '✅ Call ended successfully';
+                        }} else {{
+                            statusText.textContent = '❌ Error: ' + (data.error || 'Failed to end call');
+                        }}
+                    }})
+                    .catch(error => {{
+                        statusText.textContent = '❌ Error: ' + error.message;
+                    }});
+                }}
+            </script>
         </body>
         </html>
         """
