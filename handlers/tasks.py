@@ -529,3 +529,122 @@ class TaskManager:
 
 # Global task manager instance
 task_manager = TaskManager()
+
+
+# Background Task Sync Service
+import threading
+import time
+
+class BackgroundTaskSync:
+    """Background service for periodic task synchronization with Google Keep"""
+    
+    def __init__(self, task_manager: TaskManager, sync_interval: int = 1800):
+        self.task_manager = task_manager
+        self.sync_interval = sync_interval  # Default 30 minutes
+        self.running = False
+        self.thread = None
+        self.last_sync = None
+        self.sync_stats = {
+            "total_syncs": 0,
+            "successful_syncs": 0,
+            "failed_syncs": 0,
+            "last_sync_time": None,
+            "last_error": None
+        }
+    
+    def start(self):
+        """Start the background sync service"""
+        if self.running:
+            logger.info("Background task sync already running")
+            return
+        
+        self.running = True
+        self.thread = threading.Thread(target=self._sync_loop, daemon=True, name="TaskSyncService")
+        self.thread.start()
+        logger.info(f"Background task sync service started (interval: {self.sync_interval}s)")
+    
+    def stop(self):
+        """Stop the background sync service"""
+        self.running = False
+        logger.info("Background task sync service stopped")
+    
+    def _sync_loop(self):
+        """Main sync loop that runs in background"""
+        while self.running:
+            try:
+                # Wait for the sync interval
+                time.sleep(self.sync_interval)
+                
+                if not self.running:
+                    break
+                
+                # Perform sync
+                self._perform_sync()
+                
+            except Exception as e:
+                logger.error(f"Error in background task sync loop: {e}")
+                self.sync_stats["last_error"] = str(e)
+                # Continue running even if sync fails
+                time.sleep(60)  # Wait a minute before retrying
+    
+    def _perform_sync(self):
+        """Perform the actual synchronization"""
+        try:
+            logger.info("Starting background task sync to Google Keep...")
+            self.sync_stats["total_syncs"] += 1
+            
+            # Get unsynced tasks (those created since last sync)
+            unsynced_tasks = []
+            for task in self.task_manager.tasks.values():
+                if not task.completed:
+                    # Check if task was created since last sync
+                    if self.last_sync is None or task.created_at > self.last_sync:
+                        unsynced_tasks.append(task)
+            
+            if not unsynced_tasks:
+                logger.info("No new tasks to sync")
+                self.last_sync = datetime.now().isoformat()
+                return
+            
+            # Sync each unsynced task
+            synced_count = 0
+            failed_count = 0
+            
+            for task in unsynced_tasks:
+                try:
+                    result = self.task_manager._sync_single_task_to_google(task)
+                    if "✅" in result:
+                        synced_count += 1
+                    else:
+                        failed_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to sync task {task.id}: {e}")
+                    failed_count += 1
+            
+            # Update stats
+            if failed_count == 0:
+                self.sync_stats["successful_syncs"] += 1
+            else:
+                self.sync_stats["failed_syncs"] += 1
+            
+            self.last_sync = datetime.now().isoformat()
+            self.sync_stats["last_sync_time"] = self.last_sync
+            
+            logger.info(f"Background sync complete: {synced_count} synced, {failed_count} failed")
+            
+        except Exception as e:
+            logger.error(f"Error performing background sync: {e}")
+            self.sync_stats["failed_syncs"] += 1
+            self.sync_stats["last_error"] = str(e)
+    
+    def get_status(self) -> Dict[str, Any]:
+        """Get sync service status"""
+        return {
+            "running": self.running,
+            "sync_interval": self.sync_interval,
+            "last_sync": self.last_sync,
+            "stats": self.sync_stats
+        }
+
+# Global background sync service instance
+background_sync_service = BackgroundTaskSync(task_manager, sync_interval=int(os.getenv("TASK_SYNC_INTERVAL", "1800")))

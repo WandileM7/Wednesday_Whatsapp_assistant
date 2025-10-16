@@ -477,6 +477,14 @@ def initialize_services():
     except Exception as e:
         logger.error(f"Failed to initialize notification system: {e}")
     
+    # Initialize background task sync service
+    try:
+        from handlers.tasks import background_sync_service
+        background_sync_service.start()
+        logger.info("Background Google Keep task sync initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize background task sync: {e}")
+    
     # Initialize service monitor
     try:
         from handlers.service_monitor import service_monitor
@@ -2073,6 +2081,12 @@ def task_summary():
     """Get task and reminder summary"""
     return task_manager.get_task_summary()
 
+@app.route("/tasks/sync-status")
+def task_sync_status():
+    """Get background task sync status"""
+    from handlers.tasks import background_sync_service
+    return jsonify(background_sync_service.get_status())
+
 @app.route("/contacts", methods=['GET', 'POST'])
 def handle_contacts():
     """Handle contact operations"""
@@ -3305,6 +3319,10 @@ def unified_dashboard():
         health_summary = service_monitor.get_system_health_summary()
         notification_stats = task_notification_system.get_notification_stats()
         
+        # Get task sync status
+        from handlers.tasks import background_sync_service
+        sync_status = background_sync_service.get_status()
+        
         # Get authentication status
         spotify_tokens = token_storage.load_spotify_tokens()
         google_tokens = token_storage.load_google_tokens()
@@ -3410,6 +3428,18 @@ def unified_dashboard():
                                 <strong>Notifications</strong>
                                 <span class="status-badge {'error' if not notification_stats.get('service_running') else ''}">{'Active' if notification_stats.get('service_running') else 'Stopped'}</span><br>
                                 <small>Total sent: {notification_stats.get('total_notifications', 0)}</small>
+                            </div>
+                            <div class="status-item">
+                                <strong>Google Keep Sync</strong>
+                                <span class="status-badge {'error' if not sync_status.get('running') else ''}">{'Active' if sync_status.get('running') else 'Stopped'}</span><br>
+                                <small>Syncs: {sync_status.get('stats', {}).get('successful_syncs', 0)} successful, {sync_status.get('stats', {}).get('failed_syncs', 0)} failed</small>
+                            </div>
+                            <div class="status-item {'warning' if waha_connection_status.get('consecutive_failures', 0) > 0 else 'healthy'}">
+                                <strong>WhatsApp (WAHA)</strong>
+                                <span class="status-badge {'error' if waha_connection_status.get('status') != 'healthy' else ''}">
+                                    {waha_connection_status.get('status', 'Unknown').title()}
+                                </span><br>
+                                <small>Keep-alive: {'Active' if waha_keepalive_active else 'Inactive'}, Failures: {waha_connection_status.get('consecutive_failures', 0)}</small>
                             </div>
                         </div>
                     </div>
