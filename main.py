@@ -204,52 +204,96 @@ def _waha_base():
         return waha_url.split("/api/")[0]
     return waha_url.rstrip("/")
 
-# WAHA Keep-Alive Configuration
-WAHA_KEEPALIVE_INTERVAL = int(os.getenv("WAHA_KEEPALIVE_INTERVAL", "600"))  # 10 minutes default
+# WAHA Keep-Alive Configuration (Optimized)
+WAHA_KEEPALIVE_INTERVAL = int(os.getenv("WAHA_KEEPALIVE_INTERVAL", "300"))  # 5 minutes default (improved from 10)
 WAHA_SESSION = os.getenv("WAHA_SESSION", "default")
+WAHA_RETRY_ATTEMPTS = 3
 waha_keepalive_active = False
+waha_connection_status = {"status": "unknown", "last_check": None, "consecutive_failures": 0}
 
 def waha_health_check():
-    """Ensure WAHA session exists and is started using sessions API (no Apps dependency)."""
+    """Ensure WAHA session exists and is started using sessions API (optimized for reliability)."""
+    global waha_connection_status
+    
     try:
         base = _waha_base()
         if not base:
+            waha_connection_status.update({"status": "not_configured", "last_check": datetime.now()})
             return False
-        session_name = "default"
-        # Check session status
-        r = requests.get(f"{base}/api/sessions/{session_name}", timeout=10)
-        if r.status_code == 200:
-            data = r.json()
-            status = (data.get("status") or "").lower()
-            return status in ("working", "active", "connected", "ready")
-        if r.status_code == 404:
-            # Create session if missing
-            rc = requests.post(f"{base}/api/sessions/{session_name}", timeout=15)
-            if rc.status_code not in (200, 201, 409):
-                logger.warning(f"WAHA create session failed: {rc.status_code} {rc.text}")
-        # Try to start the session (safe even if already started)
-        rs = requests.post(f"{base}/api/sessions/{session_name}/start", timeout=20)
-        if rs.status_code in (200, 202):
-            return True
-        if rs.status_code == 422 and "already started" in rs.text.lower():
-            return True
-        logger.warning(f"WAHA start session response: {rs.status_code} {rs.text}")
+            
+        session_name = WAHA_SESSION
+        
+        # Check session status with retry logic
+        for attempt in range(WAHA_RETRY_ATTEMPTS):
+            try:
+                r = requests.get(f"{base}/api/sessions/{session_name}", timeout=5, headers=_waha_headers(is_json=False))
+                if r.status_code == 200:
+                    data = r.json()
+                    status = (data.get("status") or "").lower()
+                    is_healthy = status in ("working", "active", "connected", "ready")
+                    
+                    if is_healthy:
+                        waha_connection_status.update({
+                            "status": "healthy",
+                            "last_check": datetime.now(),
+                            "consecutive_failures": 0
+                        })
+                        return True
+                        
+                if r.status_code == 404 and attempt == 0:
+                    # Create session if missing
+                    logger.info(f"Creating WAHA session: {session_name}")
+                    rc = requests.post(f"{base}/api/sessions/{session_name}", timeout=10, headers=_waha_headers())
+                    if rc.status_code not in (200, 201, 409):
+                        logger.warning(f"WAHA create session failed: {rc.status_code}")
+                    time.sleep(2)  # Wait for creation
+                    continue
+                    
+                # Try to start the session
+                rs = requests.post(f"{base}/api/sessions/{session_name}/start", timeout=10, headers=_waha_headers())
+                if rs.status_code in (200, 202):
+                    waha_connection_status.update({
+                        "status": "healthy",
+                        "last_check": datetime.now(),
+                        "consecutive_failures": 0
+                    })
+                    return True
+                if rs.status_code == 422 and "already started" in rs.text.lower():
+                    waha_connection_status.update({
+                        "status": "healthy",
+                        "last_check": datetime.now(),
+                        "consecutive_failures": 0
+                    })
+                    return True
+                    
+            except requests.exceptions.RequestException as e:
+                if attempt < WAHA_RETRY_ATTEMPTS - 1:
+                    time.sleep(1)
+                    continue
+                raise e
+                
+        waha_connection_status["consecutive_failures"] += 1
+        waha_connection_status.update({"status": "unhealthy", "last_check": datetime.now()})
         return False
+        
     except Exception as e:
         logger.warning(f"WAHA health check error: {e}")
-        logger.warning(f"WAHA health check error: {e}")
+        waha_connection_status["consecutive_failures"] += 1
+        waha_connection_status.update({"status": "error", "last_check": datetime.now()})
         return False
 
 def waha_keepalive():
-    """Background keep-alive loop that maintains the WAHA session."""
-    """Background keep-alive loop that maintains the WAHA session."""
+    """Background keep-alive loop that maintains the WAHA session (optimized)."""
     global waha_keepalive_active
     while waha_keepalive_active:
         ok = waha_health_check()
-        logger.info(f"WAHA keep-alive: {'OK' if ok else 'NOT READY'}")
-        time.sleep(WAHA_KEEPALIVE_INTERVAL)
-        ok = waha_health_check()
-        logger.info(f"WAHA keep-alive: {'OK' if ok else 'NOT READY'}")
+        status_emoji = "✅" if ok else "❌"
+        logger.info(f"{status_emoji} WAHA keep-alive: {'OK' if ok else 'NOT READY'} (failures: {waha_connection_status['consecutive_failures']})")
+        
+        # Alert if too many consecutive failures
+        if waha_connection_status["consecutive_failures"] >= 5:
+            logger.error(f"⚠️ WAHA connection critical: {waha_connection_status['consecutive_failures']} consecutive failures")
+        
         time.sleep(WAHA_KEEPALIVE_INTERVAL)
 
 def start_waha_keepalive():
@@ -257,12 +301,13 @@ def start_waha_keepalive():
     if waha_keepalive_active:
         return
     waha_keepalive_active = True
-    threading.Thread(target=waha_keepalive, daemon=True).start()
-    threading.Thread(target=waha_keepalive, daemon=True).start()
+    threading.Thread(target=waha_keepalive, daemon=True, name="WAHAKeepAlive").start()
+    logger.info("WAHA keep-alive service started")
 
 def stop_waha_keepalive():
     global waha_keepalive_active
     waha_keepalive_active = False
+    logger.info("WAHA keep-alive service stopped")
 
 # Spotify OAuth Setup
 SPOTIFY_SCOPE = "user-read-playback-state user-modify-playback-state"
@@ -1563,8 +1608,17 @@ def status():
 
 @app.route("/waha-status")
 def waha_status():
+    """Get comprehensive WAHA connection status (optimized)"""
     ok = waha_health_check()
-    return jsonify({"waha_ok": ok, "session": WAHA_SESSION, "base": _waha_base()})
+    return jsonify({
+        "waha_ok": ok,
+        "session": WAHA_SESSION,
+        "base": _waha_base(),
+        "connection_status": waha_connection_status,
+        "keepalive_active": waha_keepalive_active,
+        "keepalive_interval": WAHA_KEEPALIVE_INTERVAL,
+        "timestamp": datetime.now().isoformat()
+    })
 
 @app.route("/waha-restart-keepalive", methods=['POST'])
 def restart_waha_keepalive():
@@ -2934,8 +2988,8 @@ def test_conversation_history():
             "phone": test_phone
         }
         
-        # Test ChromaDB availability
-        if CHROMADB_AVAILABLE:
+        # Test Database availability
+        if DATABASE_AVAILABLE:
             try:
                 # Test adding a conversation
                 success = add_to_conversation_history(test_phone, "user", "Test message for history")
@@ -2953,9 +3007,9 @@ def test_conversation_history():
                     results["retrieve_test"] = {"success": False, "reason": "Add failed"}
                     
             except Exception as e:
-                results["chromadb_error"] = str(e)
+                results["database_error"] = str(e)
         else:
-            results["chromadb_available"] = False
+            results["database_available"] = False
             
         return jsonify(results)
         
@@ -3041,13 +3095,13 @@ class ConversationManager:
                 return "I'm currently in test mode. Please configure GEMINI_API_KEY for full functionality."
             
             # Add conversation history
-            if CHROMADB_AVAILABLE:
+            if DATABASE_AVAILABLE:
                 add_to_conversation_history(phone, "user", message)
             
             # Generate response using Gemini (implement this based on your gemini.py)
             response = self._generate_response(message, phone)
             
-            if CHROMADB_AVAILABLE:
+            if DATABASE_AVAILABLE:
                 add_to_conversation_history(phone, "assistant", response)
             
             return response
@@ -3448,10 +3502,16 @@ def unified_dashboard():
                             <a href="javascript:refreshPage()" class="button">Refresh Now</a>
                         </div>
                         <div style="margin-bottom: 20px;">
-                            <h4>Authentication</h4>
-                            <a href="/login" class="button">Spotify Login</a>
-                            <a href="/google-login" class="button">Google Login</a>
+                            <h4>Authentication (SSO)</h4>
+                            {'<span class="status-badge">Both Authenticated</span>' if (spotify_working and google_working) else ''}
+                            {'<a href="/login" class="button">Spotify Login</a>' if not spotify_working else '<span class="status-badge">Spotify ✓</span>'}
+                            {'<a href="/google-login" class="button">Google Login</a>' if not google_working else '<span class="status-badge">Google ✓</span>'}
                             <a href="/setup-all-auto-auth" class="button">Setup Auto-Auth</a>
+                        </div>
+                        <div style="margin-bottom: 20px;">
+                            <h4>Task Management</h4>
+                            <a href="/test-tasks" class="button">View Tasks</a>
+                            <a href="/test-google-notes" class="button">Google Keep Sync Status</a>
                         </div>
                         <div style="margin-bottom: 20px;">
                             <h4>Testing & Diagnostics</h4>

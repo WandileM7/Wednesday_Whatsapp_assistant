@@ -102,8 +102,8 @@ class TaskManager:
             logger.error(f"Error saving reminders: {e}")
     
     def create_task(self, title: str, description: str = "", due_date: Optional[str] = None, 
-                   priority: str = "medium", tags: List[str] = None) -> str:
-        """Create a new task"""
+                   priority: str = "medium", tags: List[str] = None, auto_sync: bool = True) -> str:
+        """Create a new task with optional real-time sync to Google Keep/Tasks"""
         import uuid
         
         task_id = str(uuid.uuid4())[:8]
@@ -119,7 +119,21 @@ class TaskManager:
         self.tasks[task_id] = task
         self._save_tasks()
         
-        return f"✅ Task created: '{title}' (ID: {task_id})"
+        response = f"✅ Task created: '{title}' (ID: {task_id})"
+        
+        # Automatically sync to Google Keep/Tasks if enabled
+        if auto_sync:
+            try:
+                sync_result = self._sync_single_task_to_google(task)
+                if "✅" in sync_result:
+                    response += f"\n☁️ Synced to Google Tasks/Keep"
+                else:
+                    response += f"\n⚠️ Local only (Google sync failed)"
+            except Exception as e:
+                logger.warning(f"Auto-sync to Google failed: {e}")
+                response += f"\n⚠️ Local only (Google unavailable)"
+        
+        return response
     
     def list_tasks(self, filter_completed: bool = False, filter_priority: Optional[str] = None) -> str:
         """List all tasks"""
@@ -339,6 +353,41 @@ class TaskManager:
         except:
             return remind_at
 
+    def _sync_single_task_to_google(self, task: Task) -> str:
+        """Sync a single task to Google Keep/Tasks (internal helper)"""
+        try:
+            from handlers.google_notes import google_notes_service
+            
+            # Skip completed tasks
+            if task.completed:
+                return "⏭️ Skipped (completed)"
+            
+            # Create task content with details
+            content = f"Description: {task.description}\n" if task.description else ""
+            if task.priority != "medium":
+                content += f"Priority: {task.priority}\n"
+            if task.due_date:
+                content += f"Due: {task.due_date}\n"
+            if task.tags:
+                content += f"Tags: {', '.join(task.tags)}\n"
+            content += f"Created: {task.created_at}\n"
+            content += f"Local ID: {task.id}"
+            
+            # Create note in Google Tasks
+            result = google_notes_service.create_note(
+                title=task.title,
+                content=content,
+                tags=task.tags + ["auto_synced"]
+            )
+            
+            return result
+            
+        except ImportError:
+            return "❌ Google Notes service not available"
+        except Exception as e:
+            logger.error(f"Error syncing single task: {e}")
+            return f"❌ Sync failed: {str(e)}"
+    
     def sync_to_google_keep(self) -> str:
         """Sync local tasks to Google Keep (via Google Tasks API)"""
         try:

@@ -31,9 +31,6 @@ class Config:
     GREETING_PROMPT = os.getenv("GREETING_PROMPT", "Give a brief, friendly greeting.")
     INITIAL_MESSAGE_PROMPT = os.getenv("INITIAL_MESSAGE_PROMPT", "Send a friendly message under 50 words.")
     
-    # ChromaDB settings
-    ENABLE_CHROMADB = os.getenv("ENABLE_CHROMADB", "false").lower() == "true"
-    
     # Speech settings
     ENABLE_VOICE_RESPONSES = os.getenv("ENABLE_VOICE_RESPONSES", "true").lower() == "true"
     MAX_VOICE_RESPONSE_LENGTH = int(os.getenv("MAX_VOICE_RESPONSE_LENGTH", "200"))
