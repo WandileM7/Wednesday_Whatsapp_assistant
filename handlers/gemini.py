@@ -926,14 +926,9 @@ def _make_api_call_with_timeout(prompt: str, timeout: int = API_TIMEOUT) -> tupl
             import google.generativeai as genai_lib
             from google.generativeai.types import content_types
             
-            # Build function declarations using converter (handles dict -> proto)
-            function_declarations = [content_types.to_function_declaration(fd) for fd in FUNCTIONS]
-            tool = content_types.Tool(function_declarations=function_declarations)
-            
+            # Temporarily disable tools to avoid SDK Tool construction errors
             response = model.generate_content(
-                contents=full_prompt,
-                tools=[tool],
-                tool_config={"function_calling_config": {"mode": "AUTO"}}
+                contents=full_prompt
             )
             # Check for empty or blocked response
             if response is None:
