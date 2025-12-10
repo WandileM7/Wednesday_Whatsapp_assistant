@@ -917,11 +917,10 @@ def _make_api_call_with_timeout(prompt: str, timeout: int = API_TIMEOUT) -> tupl
     def api_call():
         nonlocal response, exception_info
         try:
+            # Build the content with system instruction separate
+            full_prompt = f"{PERSONALITY_PROMPT}\n\n{prompt}"
             response = model.generate_content(
-                contents=[
-                    {"role": "model", "parts": [PERSONALITY_PROMPT]},
-                    {"role": "user", "parts": [prompt]}
-                ],
+                contents=full_prompt,
                 tools=[{"function_declarations": FUNCTIONS}],
                 tool_config={"function_calling_config": {"mode": "auto"}}
             )
