@@ -695,18 +695,6 @@ FUNCTIONS = [
         }
     },
     {
-        "name": "analyze_image",
-        "description": "Analyze an image using computer vision",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "image_description": {"type": "string", "description": "Description of image to analyze"},
-                "analysis_type": {"type": "string", "description": "Type of analysis: comprehensive, objects, text, faces, scene (defaults to comprehensive)"}
-            },
-            "required": ["image_description"]
-        }
-    },
-    {
         "name": "predict_user_behavior",
         "description": "Predict user behavior and provide recommendations",
         "parameters": {
@@ -1535,47 +1523,6 @@ def execute_function(call: dict, phone: str = "") -> str:
                 return f"🗣️ Voice synthesized successfully!\n\n📝 Text: {params['text'][:100]}{'...' if len(params['text']) > 100 else ''}\n🎤 Voice: {params.get('voice_id', 'default')}\n🎭 Style: {params.get('style', 'natural')}\n💾 File: {result.get('audio_path', 'Unknown')}\n🤖 Generator: {result.get('generator', 'Unknown')}"
             else:
                 return f"❌ Voice synthesis failed: {result.get('error', 'Unknown error')}"
-        
-        if name == "analyze_image":
-            from handlers.advanced_ai import advanced_ai
-            import asyncio
-            
-            # For demo purposes, create a placeholder image path
-            # In real implementation, this would be an actual uploaded image
-            placeholder_path = "generated_media/placeholder_analysis.jpg"
-            
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            result = loop.run_until_complete(
-                advanced_ai.analyze_image(
-                    placeholder_path,
-                    params.get("analysis_type", "comprehensive")
-                )
-            )
-            loop.close()
-            
-            if result.get('success'):
-                analysis = result
-                response = f"🔍 **Image Analysis Complete**\n\n"
-                response += f"📊 **Properties**: {analysis.get('properties', {}).get('width', 'Unknown')}x{analysis.get('properties', {}).get('height', 'Unknown')} pixels\n"
-                
-                if analysis.get('color_analysis'):
-                    colors = analysis['color_analysis']
-                    response += f"🎨 **Colors**: {colors.get('color_palette', 'Unknown')} palette, {colors.get('brightness', 0):.0f}% brightness\n"
-                
-                if analysis.get('objects'):
-                    response += f"🎯 **Objects**: {len(analysis['objects'])} detected\n"
-                
-                if analysis.get('faces'):
-                    response += f"👤 **Faces**: {len(analysis['faces'])} detected\n"
-                
-                if analysis.get('scene'):
-                    scene = analysis['scene']
-                    response += f"🌍 **Scene**: {scene.get('scene_type', 'Unknown')} ({scene.get('lighting', 'Unknown')} lighting)\n"
-                
-                return response
-            else:
-                return f"❌ Image analysis failed: {result.get('error', 'Unknown error')}"
         
         if name == "predict_user_behavior":
             from handlers.advanced_ai import advanced_ai
