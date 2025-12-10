@@ -3198,6 +3198,13 @@ def unified_dashboard():
             status_class = 'healthy' if status == 'healthy' else 'error' if status in ['error', 'unhealthy'] else 'warning'
             critical_badge = '<span class="critical-badge">CRITICAL</span>' if service_info.get('critical') else ''
             
+            # Convert last_check to string if it's a datetime object
+            last_check = service_info.get('last_check', 'Never')
+            if last_check and last_check != 'Never':
+                last_check_str = str(last_check)[:19]
+            else:
+                last_check_str = 'Never'
+            
             service_cards += f"""
                 <div class="service-card {status_class}">
                     <div class="service-header">
@@ -3208,7 +3215,7 @@ def unified_dashboard():
                         <span class="status-dot {status_class}"></span>
                         <span>{status.title()}</span>
                     </div>
-                    <div class="service-meta">Last check: {service_info.get('last_check', 'Never')[:19] if service_info.get('last_check') else 'Never'}</div>
+                    <div class="service-meta">Last check: {last_check_str}</div>
                 </div>
             """
         
