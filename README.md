@@ -85,6 +85,11 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
+### Persisting Logins (Recommended)
+- **Google**: After completing `/authorize`, tokens are saved to `task_data/google_tokens.json`. Keep `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in env; the app will refresh and reuse the stored refresh token on restart.
+- **Spotify**: Tokens are saved to `task_data/spotify_tokens.json` after OAuth/refresh. Set `SPOTIFY_CLIENT_ID`/`SPOTIFY_SECRET`/`SPOTIFY_REDIRECT_URI`; the app refreshes from storage or `SPOTIFY_REFRESH_TOKEN` if provided.
+- **WhatsApp (Baileys/WAHA)**: Persist the `whatsapp-service/session/` directory (or your configured session path). On Render, mount a persistent disk and point the session dir there. Set `WAHA_URL`/`WAHA_HEALTH_URL` to your deployed service (e.g., `https://whatsapp-service-8vgb.onrender.com`).
+
 ### 2. Configure Environment
 ```bash
 # Essential Configuration

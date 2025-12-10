@@ -3,6 +3,7 @@ import logging
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from flask import session
+from helpers.token_storage import token_storage
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +22,25 @@ def get_token_info():
     """Get token info from session and refresh if needed"""
     token_info = session.get("token_info", {})
     
-    # If no token info in session, try environment refresh token (but only if it exists and looks valid)
+    # If no token info in session, try persistent storage, then environment refresh token
     if not token_info:
+        stored = token_storage.load_spotify_tokens()
+        if stored and stored.get("refresh_token"):
+            logger.info("No session token, trying stored Spotify refresh token...")
+            try:
+                sp_oauth = make_spotify_oauth()
+                token_info = sp_oauth.refresh_access_token(stored["refresh_token"])
+                session["token_info"] = token_info
+                token_storage.save_spotify_tokens(
+                    refresh_token=token_info.get("refresh_token", stored["refresh_token"]),
+                    access_token=token_info.get("access_token")
+                )
+                logger.info("Successfully refreshed token from storage")
+                return token_info
+            except Exception as e:
+                logger.warning(f"Stored Spotify refresh token failed: {e}")
+                token_storage.clear_spotify_tokens()
+
         refresh_token = os.getenv("SPOTIFY_REFRESH_TOKEN")
         if refresh_token and len(refresh_token) > 20:  # Basic validation
             logger.info("No session token, trying environment refresh token...")
@@ -30,10 +48,13 @@ def get_token_info():
                 sp_oauth = make_spotify_oauth()
                 token_info = sp_oauth.refresh_access_token(refresh_token)
                 session["token_info"] = token_info
+                token_storage.save_spotify_tokens(
+                    refresh_token=token_info.get("refresh_token", refresh_token),
+                    access_token=token_info.get("access_token")
+                )
                 logger.info("Successfully refreshed token from environment")
                 return token_info
             except Exception as e:
-                # Only log as warning since this is a fallback mechanism
                 logger.warning(f"Environment refresh token failed (expected if old): {e}")
                 return None
         else:
@@ -47,6 +68,10 @@ def get_token_info():
         try:
             token_info = sp_oauth.refresh_access_token(token_info["refresh_token"])
             session["token_info"] = token_info
+            token_storage.save_spotify_tokens(
+                refresh_token=token_info.get("refresh_token", token_info.get("refresh_token")),
+                access_token=token_info.get("access_token")
+            )
             logger.info("Successfully refreshed session token")
         except Exception as e:
             logger.error(f"Error refreshing session token: {e}")

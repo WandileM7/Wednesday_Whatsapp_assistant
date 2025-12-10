@@ -53,9 +53,15 @@ class ServiceMonitor:
         """Register default services to monitor"""
         
         # WhatsApp Service
+        whatsapp_base = os.getenv("WAHA_HEALTH_URL") or os.getenv("WAHA_URL") or "http://localhost:3000"
+        # Normalize when WAHA_URL points to sendText endpoint
+        if whatsapp_base.endswith("/api/sendText"):
+            whatsapp_base = whatsapp_base.rsplit("/api/sendText", 1)[0]
+        whatsapp_health = f"{whatsapp_base.rstrip('/')}/health"
+
         self.register_service(
             name="whatsapp_service",
-            health_check_url="http://localhost:3000/health",
+            health_check_url=whatsapp_health,
             critical=True,
             restart_command=None,  # No docker restart available in production
             description="WhatsApp messaging service"
@@ -289,8 +295,8 @@ class ServiceMonitor:
                     apis.append('Stability')
                 return True, f"Available APIs: {', '.join(apis)}"
             else:
-                # Not critical - just informational
-                return False, "Media generation APIs not configured (OPENAI_API_KEY or STABILITY_API_KEY required)"
+                # Not critical - treat as informational only
+                return True, "Media generation APIs not configured (OPENAI_API_KEY or STABILITY_API_KEY missing)"
                 
         except Exception as e:
             return False, str(e)

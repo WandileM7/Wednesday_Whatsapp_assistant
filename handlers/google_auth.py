@@ -26,6 +26,7 @@ SCOPES = [
 
 # Global variable to store credentials for automation
 _cached_credentials = None
+_env_refresh_failed = False
 
 def initialize_google_auto_auth():
     """Initialize automatic Google authentication on startup"""
@@ -49,6 +50,7 @@ def initialize_google_auto_auth():
 def load_tokens_from_env():
     """Load Google tokens from environment variables with persistent storage fallback"""
     try:
+        global _env_refresh_failed
         # First try environment variables
         refresh_token = os.getenv('GOOGLE_REFRESH_TOKEN')
         if refresh_token:
@@ -66,7 +68,7 @@ def load_tokens_from_env():
                 creds = Credentials.from_authorized_user_info(creds_info, SCOPES)
                 
                 # Refresh if needed
-                if creds.expired and creds.refresh_token:
+                if creds.expired and creds.refresh_token and not _env_refresh_failed:
                     logger.info("Refreshing Google credentials from environment...")
                     try:
                         creds.refresh(Request())
@@ -74,6 +76,7 @@ def load_tokens_from_env():
                         logger.info("Google credentials refreshed successfully")
                     except RefreshError as e:
                         logger.error(f"Failed to refresh Google credentials from environment: {e}")
+                        _env_refresh_failed = True  # avoid repeated invalid_grant noise
                         return None
                     
                 return creds

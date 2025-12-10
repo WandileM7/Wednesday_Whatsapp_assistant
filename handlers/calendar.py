@@ -153,6 +153,9 @@ def parse_datetime(dt_input):
             return dt_input.astimezone(timezone.utc)
     
     if isinstance(dt_input, str):
+        dt_input = dt_input.strip()
+        if not dt_input:
+            raise ValueError("Empty datetime string")
         # Common formats to try
         formats = [
             '%Y-%m-%d %H:%M:%S',
@@ -163,6 +166,7 @@ def parse_datetime(dt_input):
             '%Y-%m-%dT%H:%M:%S.%fZ',
             '%m/%d/%Y %H:%M',
             '%d/%m/%Y %H:%M',
+            '%Y-%m-%d',
         ]
         
         for fmt in formats:
@@ -177,6 +181,16 @@ def parse_datetime(dt_input):
             dt = datetime.fromisoformat(dt_input.replace('Z', '+00:00'))
             return dt.astimezone(timezone.utc)
         except ValueError:
+            pass
+
+        # Best-effort fallback using dateutil if available
+        try:
+            from dateutil import parser as date_parser
+            dt = date_parser.parse(dt_input)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc)
+        except Exception:
             pass
     
     raise ValueError(f"Unable to parse datetime: {dt_input}")
