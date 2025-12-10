@@ -190,54 +190,146 @@ system_state: Service configuration
 
 ### Core Endpoints
 
-#### **Health & Monitoring**
-```http
-GET /health                    # System health check
-GET /api/services/health       # Detailed service status
-GET /api/services/status       # Individual service metrics
-POST /api/services/ping/{name} # Manual service ping
-```
+#### **Health & Status**
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | Home - redirects to setup |
+| GET | `/health` | System health check with memory/CPU stats |
+| GET | `/status` | Basic status check |
+| GET | `/services` | Overview of all configured services |
+| GET | `/assistant/status` | Full assistant status with all capabilities |
 
-#### **Database Operations**
-```http
-GET /api/database/stats        # Database statistics
-POST /api/database/cleanup     # Cleanup old data
-GET /api/database/backup       # Create backup
-POST /api/database/restore     # Restore from backup
-```
+#### **Setup & Dashboard**
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/quick-setup` | Interactive setup wizard |
+| GET | `/dashboard` | Main monitoring dashboard |
+| GET | `/auth-dashboard` | Authentication dashboard |
+| GET | `/google-services-dashboard` | Google services management |
 
-#### **Media Generation**
-```http
-POST /api/media/generate-image # AI image generation
-POST /api/media/create-avatar  # Avatar creation
-GET /api/media/gallery         # Generated content gallery
-DELETE /api/media/{id}         # Remove generated content
-```
+#### **WhatsApp Integration**
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/webhook` | WhatsApp message webhook receiver |
+| POST | `/send` | Send a WhatsApp message |
+| GET | `/whatsapp-status` | WhatsApp connection status |
+| GET | `/whatsapp-qr` | QR code page for WhatsApp login |
+| GET | `/whatsapp-qr-image` | Raw QR code image |
+| GET | `/waha-status` | WAHA service status |
+| POST | `/waha-restart-keepalive` | Restart WAHA keepalive |
+| GET | `/waha-config-test` | Test WAHA configuration |
+| POST | `/api/whatsapp/send` | API endpoint to send WhatsApp messages |
+| POST | `/api/make-call` | Initiate WhatsApp call |
+| POST | `/api/end-call` | End active call |
 
-#### **Communication**
-```http
-POST /api/whatsapp/send        # Send WhatsApp message
-POST /api/whatsapp/broadcast   # Broadcast to multiple contacts
-GET /api/whatsapp/contacts     # List available contacts
-POST /api/whatsapp/group       # Group message management
-```
+#### **Google Services**
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/google-login` | Start Google OAuth flow |
+| GET | `/google-status` | Google authentication status |
+| GET | `/google-auth-status` | Detailed auth status |
+| GET | `/google-debug` | Debug Google credentials |
+| GET | `/test-google-services` | Test all Google services |
+| GET | `/test-gmail` | Test Gmail integration |
+| GET | `/test-email-send` | Send test email |
+| GET | `/test-current-email` | Test current email configuration |
+| GET | `/refresh-google-token` | Refresh Google OAuth token |
+| GET | `/force-google-auth` | Force re-authentication |
+| GET | `/setup-google-auto-auth` | Setup automatic auth |
+| GET | `/save-current-google-tokens` | Save tokens for auto-refresh |
 
-#### **Task Management**
-```http
-GET /api/tasks                 # List tasks
-POST /api/tasks                # Create new task
-PUT /api/tasks/{id}            # Update task
-DELETE /api/tasks/{id}         # Delete task
-POST /api/tasks/{id}/complete  # Mark complete
-```
+#### **Spotify Integration**
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/login` | Start Spotify OAuth flow |
+| GET | `/callback` | OAuth callback |
+| GET | `/spotify-callback` | Spotify OAuth callback |
+| GET | `/spotify-status` | Spotify connection status |
+| GET | `/test-spotify` | Test Spotify integration |
+| GET | `/clear-spotify-tokens` | Clear stored tokens |
 
-### Authentication Endpoints
-```http
-GET /google-login              # Google OAuth flow
-GET /spotify-login             # Spotify authentication
-POST /api/auth/refresh         # Refresh tokens
-GET /api/auth/status           # Authentication status
-```
+#### **Tasks & Reminders**
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/tasks` | List all tasks |
+| POST | `/tasks` | Create new task |
+| POST | `/tasks/<id>/complete` | Mark task complete |
+| DELETE | `/tasks/<id>` | Delete task |
+| GET | `/tasks/summary` | Get tasks summary |
+| GET | `/tasks/sync-status` | Check sync status |
+| GET | `/reminders` | List reminders |
+| POST | `/reminders` | Create reminder |
+
+#### **Contacts**
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/contacts` | List contacts |
+| POST | `/contacts` | Add contact |
+| GET | `/contacts/search` | Search contacts |
+| GET | `/contacts/google` | List Google contacts |
+| GET | `/contacts/summary` | Contacts summary |
+
+#### **Weather & News**
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/weather` | Current weather |
+| GET | `/weather/forecast` | Weather forecast |
+| GET | `/news` | Latest news |
+| GET | `/news/search` | Search news |
+| GET | `/news/briefing` | News briefing |
+
+#### **Media Generation (API)**
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/media/generate-image` | Generate AI image |
+| POST | `/api/media/create-avatar` | Create avatar |
+
+#### **Service Monitoring (API)**
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/services/status` | All services status |
+| GET | `/api/services/health` | Health check details |
+| POST | `/api/services/ping/<name>` | Ping specific service |
+| GET | `/api/notifications/stats` | Notification statistics |
+
+#### **Database Management (API)**
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/database/stats` | Database statistics |
+| POST | `/api/database/cleanup` | Cleanup old data |
+
+#### **Advanced Features (API)**
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/advanced/generate-video` | Generate video content |
+| POST | `/api/advanced/synthesize-voice` | Voice synthesis |
+| POST | `/api/advanced/analyze-image` | Analyze image |
+| POST | `/api/advanced/predict-behavior` | Behavior prediction |
+| GET | `/api/advanced/test-suite` | Run test suite |
+| GET | `/api/advanced/test-results` | Get test results |
+| GET | `/api/advanced/diagnostics` | System diagnostics |
+| POST | `/api/advanced/optimize` | Run optimization |
+| POST | `/api/advanced/backup` | Create backup |
+| GET | `/api/advanced/status` | Advanced features status |
+
+#### **Testing & Debug**
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/test-speech` | Test speech synthesis |
+| GET | `/test-new-services` | Test new services |
+| GET | `/test-all-services` | Comprehensive service test |
+| GET | `/demo-new-features` | Demo all features |
+| POST | `/test-webhook-simple` | Test webhook |
+| GET | `/test-webhook-auth` | Test webhook authentication |
+| POST | `/voice-preprocessor` | Process voice message |
+
+#### **Session & Cache**
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/session-cache` | View session cache |
+| POST | `/session-cache` | Update session cache |
+| GET | `/auth-status` | Authentication status |
+| GET | `/setup-all-auto-auth` | Setup all auto authentication |
 
 ## 📈 Performance Metrics
 
