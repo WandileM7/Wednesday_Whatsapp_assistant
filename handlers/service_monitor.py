@@ -236,7 +236,7 @@ class ServiceMonitor:
             return False, str(e)
     
     def _check_gemini_health(self) -> tuple:
-        """Check Gemini AI service health"""
+        """Check Gemini AI service health - lightweight check without API call"""
         try:
             import google.generativeai as genai
             from config import GEMINI_API_KEY
@@ -244,15 +244,17 @@ class ServiceMonitor:
             if not GEMINI_API_KEY or GEMINI_API_KEY == "test_key_123":
                 return False, "No valid API key configured"
             
-            # Simple test query
+            # Just verify the API key is configured and model can be initialized
+            # Don't make actual API calls to avoid burning quota!
             genai.configure(api_key=GEMINI_API_KEY)
             model = genai.GenerativeModel('gemini-2.0-flash')
-            response = model.generate_content("Hello")
             
-            if response and response.text:
+            # If we get here without exception, the setup is valid
+            # Actual API availability will be tested when user sends a message
+            if model:
                 return True, None
             else:
-                return False, "No response from Gemini"
+                return False, "Model initialization failed"
                 
         except Exception as e:
             return False, str(e)
