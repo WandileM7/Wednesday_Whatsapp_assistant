@@ -243,6 +243,7 @@ async function forwardToWebhook(message) {
         let body = '';
         let hasMedia = false;
         let mediaType = null;
+        const mediaId = message.key.id;
 
         if (messageContent?.conversation) {
             body = messageContent.conversation;
@@ -266,9 +267,16 @@ async function forwardToWebhook(message) {
             mediaType = 'document';
         }
 
+        // Build media URL if available so downstream can fetch
+        let mediaUrl = null;
+        if (hasMedia) {
+            const base = process.env.MEDIA_BASE_URL || process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
+            mediaUrl = `${base.replace(/\/$/, '')}/api/media/${mediaId}`;
+        }
+
         const webhookPayload = {
             payload: {
-                id: message.key.id,
+                id: mediaId,
                 from: message.key.remoteJid,
                 to: message.key.participant || message.key.remoteJid,
                 body: body,
@@ -276,6 +284,7 @@ async function forwardToWebhook(message) {
                 timestamp: message.messageTimestamp,
                 fromMe: message.key.fromMe || false,
                 hasMedia: hasMedia,
+                mediaUrl: mediaUrl,
                 pushName: message.pushName || null
             }
         };

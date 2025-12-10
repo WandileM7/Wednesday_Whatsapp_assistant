@@ -1194,11 +1194,12 @@ def execute_function(call: dict, phone: str = "") -> str:
         # Calendar functions
         if name == "create_event":
             return create_event(
-                params["summary"],
-                params.get("location", ""),
-                params["start_time"],
-                params["end_time"],
-                params.get("attendees", [])
+                summary=params["summary"],
+                start_time=params["start_time"],
+                end_time=params["end_time"],
+                description=params.get("description", ""),
+                location=params.get("location", ""),
+                attendees=params.get("attendees", [])
             )
         
         # Weather functions

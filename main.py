@@ -736,7 +736,8 @@ def voice_preprocessor():
             resp = requests.get(media_url, timeout=60)
             if resp.status_code != 200:
                 logger.error(f"Voice preprocessor: Media download failed {resp.status_code} {resp.text}")
-                raise RuntimeError(f"Media download failed: {resp.status_code}")
+                transcript = f"[Media message received but media fetch failed (status {resp.status_code})]"
+                raise requests.exceptions.RequestException(f"Media download failed: {resp.status_code}")
             
             # If mock mode returns JSON, handle gracefully
             content_type = resp.headers.get('content-type', '').lower()
@@ -849,16 +850,18 @@ def webhook():
         user_msg = payload.get('body') or payload.get('text') or payload.get('message', '')
         was_originally_voice = payload.get('original_type') == 'voice'
         message_type = payload.get('type', 'text')
+        media_url = payload.get('mediaUrl') or payload.get('media_url')
         
         # Enhanced voice message detection
         # Check multiple indicators for voice messages
         is_voice_message = (
-            message_type == 'voice' or 
-            payload.get('hasMedia') or 
-            user_msg == '[Media]' or  # Common WhatsApp voice message indicator
-            payload.get('mediaUrl') or 
-            payload.get('url')
+            message_type in ['voice', 'audio', 'ptt'] or
+            user_msg == '[Media]'
         )
+
+        # If non-voice media, append media URL hint so Gemini can analyze
+        if media_url and not is_voice_message:
+            user_msg = f"{user_msg}\nMedia URL: {media_url}"
         
         # If this is a voice message that hasn't been transcribed yet, redirect to preprocessor
         if is_voice_message and not was_originally_voice:
