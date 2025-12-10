@@ -264,6 +264,61 @@ def cmd_status(args: str, phone: str) -> Dict[str, Any]:
         return {'response': "✅ Wednesday is online and ready!"}
 
 
+def cmd_expense(args: str, phone: str) -> Dict[str, Any]:
+    """Track an expense."""
+    if not args:
+        # Show spending report
+        try:
+            from handlers.expenses import expense_service
+            report = expense_service.get_report(phone, 30)
+            return {'response': report}
+        except Exception as e:
+            return {'response': f"Error: {e}"}
+    
+    try:
+        from handlers.expenses import parse_expense_from_text
+        result = parse_expense_from_text(args, phone)
+        if result.get('error'):
+            return {'response': f"❌ {result['error']}"}
+        return {'response': result.get('message', 'Expense recorded')}
+    except Exception as e:
+        return {'response': f"Error: {e}"}
+
+
+def cmd_mood(args: str, phone: str) -> Dict[str, Any]:
+    """Play music matching your mood."""
+    try:
+        from handlers.mood_music import mood_music_service
+        if args:
+            return {'response': mood_music_service.play_for_mood(args.strip(), phone)}
+        else:
+            return {'response': mood_music_service.get_suggestions('relaxed')}
+    except Exception as e:
+        return {'response': f"Error: {e}"}
+
+
+def cmd_memory(args: str, phone: str) -> Dict[str, Any]:
+    """Search conversation memory."""
+    if not args:
+        return {'response': "What would you like to search for?\n\nUsage: /memory <search query>"}
+    
+    try:
+        from handlers.memory_search import memory_service
+        return {'response': memory_service.format_search(phone, args)}
+    except Exception as e:
+        return {'response': f"Error: {e}"}
+
+
+def cmd_recall(args: str, phone: str) -> Dict[str, Any]:
+    """Recall past conversations."""
+    query = args if args else "what did we discuss recently"
+    try:
+        from handlers.memory_search import memory_service
+        return {'response': memory_service.recall(phone, query)}
+    except Exception as e:
+        return {'response': f"Error: {e}"}
+
+
 # ============ REGISTER ALL COMMANDS ============
 
 register_command('help', 'Show all available commands', cmd_help, ['h', '?'])
@@ -278,6 +333,10 @@ register_command('remind', 'Set a reminder', cmd_remind, ['r', 'reminder'])
 register_command('email', 'Check recent emails', cmd_email, ['mail'])
 register_command('time', 'Get current time', cmd_time)
 register_command('status', 'Check system status', cmd_status, ['ping'])
+register_command('expense', 'Track expenses (usage: /expense R50 groceries)', cmd_expense, ['spent', 'money'])
+register_command('mood', 'Play music for your mood (usage: /mood happy)', cmd_mood, ['vibe', 'feeling'])
+register_command('memory', 'Search past conversations', cmd_memory, ['search', 'find'])
+register_command('recall', 'Recall what we discussed', cmd_recall, ['remember'])
 
 # Count unique commands (excluding aliases)
 _unique_commands = len([name for name, cmd in COMMANDS.items() if name not in cmd.get('aliases', [])])

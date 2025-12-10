@@ -25,6 +25,10 @@ from handlers.accommodation import accommodation_service
 from handlers.fitness import fitness_service
 from handlers.google_notes import google_notes_service
 from handlers.daily_briefing import send_briefing_now, schedule_daily_briefing, cancel_daily_briefing
+from handlers.image_analysis import analyze_whatsapp_image
+from handlers.expenses import expense_service
+from handlers.mood_music import mood_music_service
+from handlers.memory_search import memory_service
 from database import add_to_conversation_history, query_conversation_history, retrieve_conversation_history
 
 # Configure logging
@@ -777,6 +781,101 @@ FUNCTIONS = [
             "properties": {},
             "required": []
         }
+    },
+    # Image Analysis functions
+    {
+        "name": "analyze_image",
+        "description": "Analyze an image to describe what it shows, read text, or answer questions about it",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "image_url": {"type": "string", "description": "URL of the image to analyze"},
+                "question": {"type": "string", "description": "Optional specific question about the image"}
+            },
+            "required": ["image_url"]
+        }
+    },
+    # Expense Tracking functions
+    {
+        "name": "add_expense",
+        "description": "Record an expense or spending (e.g., 'I spent R50 on groceries')",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "amount": {"type": "number", "description": "Amount spent"},
+                "category": {"type": "string", "description": "Category: food, groceries, transport, entertainment, shopping, utilities, health, other"},
+                "description": {"type": "string", "description": "Optional description of the expense"}
+            },
+            "required": ["amount", "category"]
+        }
+    },
+    {
+        "name": "get_spending_report",
+        "description": "Get a spending report showing expenses by category",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "Number of days to analyze (default: 30)"}
+            },
+            "required": []
+        }
+    },
+    # Mood Music functions
+    {
+        "name": "play_mood_music",
+        "description": "Play music matching a mood or feeling",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "mood": {"type": "string", "description": "Mood: happy, sad, energetic, relaxed, focused, romantic, angry, nostalgic, party"}
+            },
+            "required": ["mood"]
+        }
+    },
+    {
+        "name": "detect_mood_and_play",
+        "description": "Analyze the user's message mood and play matching music automatically",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "message": {"type": "string", "description": "The user's message to analyze for mood"}
+            },
+            "required": ["message"]
+        }
+    },
+    # Conversation Memory functions
+    {
+        "name": "search_memory",
+        "description": "Search past conversations for specific information or topics",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "What to search for in past conversations"}
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "recall_conversation",
+        "description": "Recall what was discussed previously (e.g., 'What did we talk about last week?')",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "What to recall from past conversations"}
+            },
+            "required": ["question"]
+        }
+    },
+    {
+        "name": "summarize_conversations",
+        "description": "Get a summary of recent conversations or conversations about a topic",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string", "description": "Optional topic to focus the summary on"}
+            },
+            "required": []
+        }
     }
 ]
 
@@ -1514,6 +1613,48 @@ def execute_function(call: dict, phone: str = "") -> str:
         if name == "cancel_daily_briefing":
             result = cancel_daily_briefing(phone)
             return f"{'✅' if result['status'] == 'cancelled' else '⚠️'} {result['message']}"
+
+        # Image Analysis functions
+        if name == "analyze_image":
+            image_url = params.get("image_url", "")
+            question = params.get("question")
+            return analyze_whatsapp_image(image_url, question)
+        
+        # Expense Tracking functions
+        if name == "add_expense":
+            result = expense_service.add(
+                phone,
+                params["amount"],
+                params["category"],
+                params.get("description", "")
+            )
+            return result.get('message', 'Expense recorded')
+        
+        if name == "get_spending_report":
+            days = params.get("days", 30)
+            return expense_service.get_report(phone, days)
+        
+        # Mood Music functions
+        if name == "play_mood_music":
+            mood = params["mood"]
+            return mood_music_service.play_for_mood(mood, phone)
+        
+        if name == "detect_mood_and_play":
+            message = params["message"]
+            return mood_music_service.analyze_and_play(message, phone)
+        
+        # Conversation Memory functions
+        if name == "search_memory":
+            query = params["query"]
+            return memory_service.format_search(phone, query)
+        
+        if name == "recall_conversation":
+            question = params["question"]
+            return memory_service.recall(phone, question)
+        
+        if name == "summarize_conversations":
+            topic = params.get("topic")
+            return memory_service.summarize(phone, topic)
 
         # Function not found
         logger.warning(f"Unknown function called: {name}")
