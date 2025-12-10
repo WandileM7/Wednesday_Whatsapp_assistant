@@ -247,7 +247,7 @@ class ServiceMonitor:
             # Just verify the API key is configured and model can be initialized
             # Don't make actual API calls to avoid burning quota!
             genai.configure(api_key=GEMINI_API_KEY)
-            model = genai.GenerativeModel('gemini-2.0-flash')
+            model = genai.GenerativeModel('gemini-2.5-flash')
             
             # If we get here without exception, the setup is valid
             # Actual API availability will be tested when user sends a message

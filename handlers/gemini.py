@@ -80,8 +80,8 @@ if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     # Use Gemini 2.0 Flash - stable model with function calling support
     # Note: gemini-2.5-flash requires newer google-genai SDK
-    model = genai.GenerativeModel("gemini-2.0-flash")
-    logger.info("Gemini model initialized successfully (gemini-2.0-flash)")
+    model = genai.GenerativeModel("gemini-2.5-flash")
+    logger.info("Gemini model initialized successfully (gemini-2.5-flash)")
 else:
     model = None
     logger.warning("GEMINI_API_KEY not configured - AI features disabled")

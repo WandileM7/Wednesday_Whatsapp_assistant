@@ -114,7 +114,7 @@ def analyze_image_data(image_data: bytes, mime_type: str, question: str = None) 
         genai.configure(api_key=GEMINI_API_KEY)
         
         # Use Gemini Pro Vision model
-        model = genai.GenerativeModel('gemini-2.0-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         
         # Encode image to base64
         image_b64 = base64.standard_b64encode(image_data).decode('utf-8')
