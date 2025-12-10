@@ -1027,6 +1027,30 @@ def chat_with_functions(user_message: str, phone: str) -> dict:
     if not model:
         logger.error("Gemini model not initialized - check GEMINI_API_KEY")
         return {"name": None, "content": "Sorry, AI features are currently unavailable."}
+
+    # Quick rule-based handler to unblock calendar event commands while tools are disabled
+    def _handle_direct_calendar_command(msg: str) -> Optional[str]:
+        lower = msg.lower()
+        if "calendar" in lower and "event" in lower and "subject" in lower:
+            import re
+            subject_match = re.search(r"subject\s*(?:=|equals)\s*([^\.]+)", msg, re.IGNORECASE)
+            start_match = re.search(r"start[_\s]*time\s*(?:=|equals)\s*([^\.]+)", msg, re.IGNORECASE)
+            subject = subject_match.group(1).strip() if subject_match else "Untitled"
+            start_time = start_match.group(1).strip() if start_match else "today 12am"
+            end_time = "today 1am"
+            try:
+                result = create_event(summary=subject, start_time=start_time, end_time=end_time)
+                return f"✅ Created calendar event: {subject} ({start_time} - {end_time}). {result if isinstance(result, str) else ''}".strip()
+            except Exception as e:
+                logger.error(f"Direct calendar command failed: {e}")
+                return f"❌ Could not create calendar event: {e}"
+        return None
+
+    direct_response = _handle_direct_calendar_command(user_message)
+    if direct_response:
+        add_to_conversation_history(phone, "user", user_message)
+        add_to_conversation_history(phone, "assistant", direct_response)
+        return {"name": None, "content": direct_response}
     
     # Retrieve conversation history
     try:
