@@ -18,7 +18,8 @@ const {
     DisconnectReason,
     useMultiFileAuthState,
     fetchLatestBaileysVersion,
-    makeCacheableSignalKeyStore
+    makeCacheableSignalKeyStore,
+    downloadContentFromMessage
 } = require('@whiskeysockets/baileys');
 
 const app = express();
@@ -50,6 +51,8 @@ let lastQRTime = null;
 let reconnectAttempts = 0;
 const maxReconnectAttempts = parseInt(process.env.MAX_RECONNECT_ATTEMPTS) || 5;
 let isReconnecting = false;
+const mediaStore = new Map();
+const MAX_MEDIA_CACHE = 200;
 
 const WEBHOOK_URL = process.env.WHATSAPP_HOOK_URL;
 const SESSION_PATH = process.env.SESSION_PATH || './session';
@@ -277,6 +280,10 @@ async function forwardToWebhook(message) {
             }
         };
 
+        if (hasMedia) {
+            storeMediaMessage(message, mediaType);
+        }
+
         const response = await fetch(WEBHOOK_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -290,6 +297,14 @@ async function forwardToWebhook(message) {
         }
     } catch (error) {
         console.error('❌ Webhook error:', error.message);
+    }
+}
+
+function storeMediaMessage(message, mediaType) {
+    mediaStore.set(message.key.id, { message, mediaType, savedAt: Date.now() });
+    if (mediaStore.size > MAX_MEDIA_CACHE) {
+        const oldestKey = mediaStore.keys().next().value;
+        mediaStore.delete(oldestKey);
     }
 }
 
@@ -516,6 +531,63 @@ app.post('/api/sendVoice', upload.single('audio'), async (req, res) => {
         if (audioFile?.path && fs.existsSync(audioFile.path)) {
             fs.unlinkSync(audioFile.path);
         }
+    }
+});
+
+// Media download endpoint (needed by voice preprocessor)
+app.get('/api/media/:messageId', async (req, res) => {
+    const { messageId } = req.params;
+
+    if (!ENABLE_REAL_WHATSAPP) {
+        return res.status(200).json({ message: 'Mock media download - no actual file' });
+    }
+
+    const cached = mediaStore.get(messageId);
+    if (!cached) {
+        return res.status(404).json({ error: 'Media not found or expired' });
+    }
+
+    try {
+        const messageContent = cached.message.message;
+        let node = null;
+        let mediaType = cached.mediaType;
+
+        if (messageContent?.imageMessage) {
+            node = messageContent.imageMessage;
+            mediaType = 'image';
+        } else if (messageContent?.videoMessage) {
+            node = messageContent.videoMessage;
+            mediaType = 'video';
+        } else if (messageContent?.audioMessage) {
+            node = messageContent.audioMessage;
+            mediaType = 'audio';
+        } else if (messageContent?.documentMessage) {
+            node = messageContent.documentMessage;
+            mediaType = 'document';
+        }
+
+        if (!node) {
+            return res.status(404).json({ error: 'Media payload unavailable' });
+        }
+
+        const stream = await downloadContentFromMessage(node, mediaType || 'unknown');
+        const chunks = [];
+        for await (const chunk of stream) {
+            chunks.push(chunk);
+        }
+        const buffer = Buffer.concat(chunks);
+
+        const mime = node.mimetype || 'application/octet-stream';
+        const filename = node.fileName || `${mediaType || 'media'}-${messageId}`;
+
+        res.set({
+            'Content-Type': mime,
+            'Content-Disposition': `attachment; filename="${filename}"`
+        });
+        return res.send(buffer);
+    } catch (error) {
+        console.error('❌ Media download error:', error.message);
+        return res.status(500).json({ error: 'Media download failed' });
     }
 });
 
