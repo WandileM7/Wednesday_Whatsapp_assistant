@@ -939,6 +939,14 @@ def _make_api_call_with_timeout(prompt: str, timeout: int = API_TIMEOUT) -> tupl
                 else:
                     exception_info = Exception("No candidates in response")
                 return
+        except ValueError as ve:
+            # Specific handling for ValueError - often means response parsing issue
+            exception_info = ve
+            error_str = str(ve) if str(ve) else "empty ValueError"
+            logger.error(f"ValueError during API call: {error_str}")
+            logger.error(f"This may indicate a response parsing issue or API format change")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
         except Exception as e:
             exception_info = e
             # Log the full exception details
