@@ -166,7 +166,7 @@ class _DummyModel:
 if gemini_api_key and genai:
     try:
         genai.configure(api_key=gemini_api_key)
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        model = genai.GenerativeModel('gemini-2.0-flash')
         logger.info("Gemini client initialized")
     except Exception as e:
         logger.warning(f"Gemini init failed; using dummy model: {e}")
@@ -1415,7 +1415,7 @@ def services_overview():
             }),
             "gemini": {
                 "status": "active" if os.getenv("GEMINI_API_KEY") else "not_configured",
-                "model": "gemini-2.5-flash"
+                "model": "gemini-2.0-flash"
             },
             "weather": {
                 "status": "active" if weather_service.is_configured() else "not_configured",

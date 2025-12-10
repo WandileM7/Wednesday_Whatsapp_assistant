@@ -246,7 +246,7 @@ class ServiceMonitor:
             
             # Simple test query
             genai.configure(api_key=GEMINI_API_KEY)
-            model = genai.GenerativeModel('gemini-2.5-flash')
+            model = genai.GenerativeModel('gemini-2.0-flash')
             response = model.generate_content("Hello")
             
             if response and response.text:

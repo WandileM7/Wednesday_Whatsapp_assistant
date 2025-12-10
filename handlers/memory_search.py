@@ -107,7 +107,7 @@ def summarize_past_conversations(phone: str, topic: str = None) -> str:
         
         # Use Gemini to summarize
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        model = genai.GenerativeModel('gemini-2.0-flash')
         
         prompt = f"""Summarize the following conversation history. Focus on:
 1. Key topics discussed
@@ -163,7 +163,7 @@ def recall_information(phone: str, question: str) -> str:
         
         # Use Gemini to answer the question
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        model = genai.GenerativeModel('gemini-2.0-flash')
         
         prompt = f"""Based on the following conversation history, answer the user's question.
         
