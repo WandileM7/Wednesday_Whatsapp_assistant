@@ -6,13 +6,16 @@ WORKDIR /app
 # Minimal system dependencies - NO Chromium needed!
 RUN apk add --no-cache \
     ca-certificates \
+    python3 \
+    make \
+    g++ \
     && rm -rf /var/cache/apk/*
 
 # Copy package files
 COPY whatsapp-service/package.json ./
 
-# Install dependencies - production only
-RUN npm install --only=production --silent && npm cache clean --force
+# Install dependencies (without --silent to see errors)
+RUN npm install --omit=dev && npm cache clean --force
 
 # Environment variables
 ENV NODE_ENV=production \
