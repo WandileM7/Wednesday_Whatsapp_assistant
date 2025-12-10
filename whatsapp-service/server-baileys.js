@@ -18,8 +18,7 @@ const {
     DisconnectReason,
     useMultiFileAuthState,
     fetchLatestBaileysVersion,
-    makeCacheableSignalKeyStore,
-    makeInMemoryStore
+    makeCacheableSignalKeyStore
 } = require('@whiskeysockets/baileys');
 
 const app = express();
@@ -28,12 +27,8 @@ const ENABLE_REAL_WHATSAPP = process.env.ENABLE_REAL_WHATSAPP === 'true';
 
 // Setup logging - minimal for production
 const logger = pino({ 
-    level: process.env.LOG_LEVEL || 'warn',
-    transport: {
-        target: 'pino-pretty',
-        options: { colorize: true }
-    }
-}).child({ module: 'whatsapp-service' });
+    level: process.env.LOG_LEVEL || 'warn'
+});
 
 // Silent logger for Baileys (reduce noise)
 const baileysLogger = pino({ level: 'silent' });
@@ -55,16 +50,12 @@ let lastQRTime = null;
 let reconnectAttempts = 0;
 const maxReconnectAttempts = parseInt(process.env.MAX_RECONNECT_ATTEMPTS) || 5;
 let isReconnecting = false;
-let store = null;
 
 const WEBHOOK_URL = process.env.WHATSAPP_HOOK_URL;
 const SESSION_PATH = process.env.SESSION_PATH || './session';
 
 // Ensure session directory exists
 fs.ensureDirSync(SESSION_PATH);
-
-// In-memory store for messages (optional, helps with message history)
-store = makeInMemoryStore({ logger: baileysLogger });
 
 // Log memory info
 function logMemoryInfo() {
@@ -116,9 +107,6 @@ async function initializeClient() {
             keepAliveIntervalMs: 30000,
             retryRequestDelayMs: 250
         });
-
-        // Bind store to socket
-        store?.bind(sock.ev);
 
         // Handle connection updates
         sock.ev.on('connection.update', async (update) => {
