@@ -15,13 +15,11 @@ RUN apk add --no-cache \
 # Copy package files
 COPY whatsapp-service/package.json ./
 
-# Install dependencies with verbose output
-RUN npm install --loglevel verbose 2>&1 || (cat /root/.npm/_logs/*.log && exit 1)
-RUN npm cache clean --force
+# Install dependencies
+RUN npm install && npm cache clean --force
 
-# Environment variables
+# Environment variables - keep simple, no experimental flags
 ENV NODE_ENV=production \
-    NODE_OPTIONS="--max-old-space-size=256" \
     SESSION_PATH=/app/session \
     SHOW_QR=false \
     MAX_RECONNECT_ATTEMPTS=5 \
