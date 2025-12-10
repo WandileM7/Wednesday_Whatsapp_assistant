@@ -21,6 +21,8 @@ from database import db_manager
 import os
 from google import genai
 from config import GEMINI_API_KEY
+from handlers.google_auth import load_tokens_from_env, get_credentials_path, validate_credentials_file
+from flask import has_request_context
 
 logger = logging.getLogger(__name__)
 
@@ -296,13 +298,25 @@ class ServiceMonitor:
     def _check_google_services_health(self) -> tuple:
         """Check Google services health"""
         try:
-            from handlers.google_auth import load_credentials
-            
-            creds = load_credentials()
+            # Avoid Flask session access when no request context is active
+            if not has_request_context():
+                creds = load_tokens_from_env()
+            else:
+                from handlers.google_auth import load_credentials
+                creds = load_credentials()
+
             if creds and creds.valid:
                 return True, None
-            else:
-                return False, "Google authentication invalid"
+
+            # If no valid creds, check if service account file exists to guide setup
+            creds_path = get_credentials_path()
+            if creds_path:
+                is_valid, msg = validate_credentials_file(creds_path)
+                if not is_valid:
+                    return False, f"Credentials file invalid: {msg}"
+                return False, "Google authentication not authorized (run /authorize)"
+
+            return False, "Google authentication not configured"
                 
         except Exception as e:
             return False, str(e)

@@ -969,10 +969,17 @@ def _make_api_call_with_timeout(prompt: str, timeout: int = API_TIMEOUT) -> tupl
         try:
             # Build the content with system instruction separate
             full_prompt = f"{PERSONALITY_PROMPT}\n\n{prompt}"
+            config = None
+            if FUNCTION_TOOLS:
+                try:
+                    config = genai_types.GenerateContentConfig(tools=FUNCTION_TOOLS)
+                except Exception as e:
+                    logger.warning(f"Unable to attach tools to request, continuing without tools: {e}")
+
             response = client.models.generate_content(
                 model=GENERATION_MODEL,
                 contents=full_prompt,
-                tools=FUNCTION_TOOLS if FUNCTION_TOOLS else None,
+                config=config,
             )
             # Check for empty or blocked response
             if response is None:

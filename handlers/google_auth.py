@@ -68,9 +68,13 @@ def load_tokens_from_env():
                 # Refresh if needed
                 if creds.expired and creds.refresh_token:
                     logger.info("Refreshing Google credentials from environment...")
-                    creds.refresh(Request())
-                    os.environ['GOOGLE_ACCESS_TOKEN'] = creds.token
-                    logger.info("Google credentials refreshed successfully")
+                    try:
+                        creds.refresh(Request())
+                        os.environ['GOOGLE_ACCESS_TOKEN'] = creds.token
+                        logger.info("Google credentials refreshed successfully")
+                    except RefreshError as e:
+                        logger.error(f"Failed to refresh Google credentials from environment: {e}")
+                        return None
                     
                 return creds
             else:
