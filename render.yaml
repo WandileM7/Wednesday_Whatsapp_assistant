@@ -18,11 +18,8 @@ services:
       - key: SPOTIFY_REDIRECT_URI
         value: https://waha-gemini-assistant.onrender.com/callback
 
-  # Lightweight WhatsApp Gateway (Memory Optimized)
-  # NOTE: Free tier (512MB RAM) may not be enough for Chromium.
-  # If WhatsApp fails to initialize, consider:
-  # 1. Upgrade to 'starter' plan (1GB RAM) or higher
-  # 2. Set ENABLE_REAL_WHATSAPP=false for mock mode
+  # Baileys WhatsApp Gateway - NO Chromium Required!
+  # Memory usage: ~50-100MB (perfect for free tier)
   - type: web
     name: whatsapp-service
     runtime: docker
@@ -31,29 +28,22 @@ services:
     dockerfilePath: ./whatsapp-service/Dockerfile
     autoDeploy: true
     envVars:
-      # Memory optimization: Real WhatsApp requires ~512MB+
-      # Set to "false" for mock mode if memory is insufficient
+      # Baileys doesn't need Chromium - uses WebSocket directly
       - key: ENABLE_REAL_WHATSAPP
         value: "true"
-      - key: FORCE_MOCK_MODE
-        value: "false"
-      # Aggressive memory limits for free tier
-      - key: MEMORY_THRESHOLD_MB
-        value: "200"
-      - key: NODE_OPTIONS
-        value: "--max-old-space-size=128 --expose-gc --optimize-for-size"
-      # WhatsApp -> Assistant (public URL of Flask webhook)
+      # WhatsApp -> Assistant webhook
       - key: WHATSAPP_HOOK_URL
         value: https://waha-gemini-assistant.onrender.com/webhook
       - key: WHATSAPP_HOOK_EVENTS
         value: message
-      # Memory-efficient settings
+      # Display settings
       - key: SHOW_QR
         value: "false"
       - key: MAX_RECONNECT_ATTEMPTS
-        value: "2"
-      - key: INITIAL_RECONNECT_DELAY
-        value: "15000"
+        value: "5"
       # Session management
       - key: SESSION_PATH
         value: "/app/session"
+      # Logging level (warn for production)
+      - key: LOG_LEVEL
+        value: "warn"

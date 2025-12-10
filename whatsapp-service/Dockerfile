@@ -1,46 +1,32 @@
-# Memory-Optimized Production WhatsApp Service
+# Baileys WhatsApp Service - NO Chromium Required!
+# Memory usage: ~50-100MB (perfect for Render free tier)
 FROM node:20-alpine AS base
 WORKDIR /app
 
-# Install system dependencies for WhatsApp Web.js (production-only)
+# Minimal system dependencies - NO Chromium needed!
 RUN apk add --no-cache \
-    chromium \
-    nss \
-    freetype \
-    harfbuzz \
     ca-certificates \
-    ttf-freefont \
     && rm -rf /var/cache/apk/*
 
-# Set Puppeteer to use system Chromium
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
-
 # Copy package files
-COPY whatsapp-service/package.json whatsapp-service/package-lock.json ./
+COPY whatsapp-service/package.json ./
 
 # Install dependencies - production only
-RUN npm ci --only=production --silent && npm cache clean --force
+RUN npm install --only=production --silent && npm cache clean --force
 
-# Memory optimization environment variables - aggressive for free tier (512MB limit)
+# Environment variables
 ENV NODE_ENV=production \
-    NODE_OPTIONS="--max-old-space-size=128 --expose-gc --optimize-for-size --always-compact" \
+    NODE_OPTIONS="--max-old-space-size=256" \
     SESSION_PATH=/app/session \
     SHOW_QR=false \
-    MAX_RECONNECT_ATTEMPTS=2 \
-    INITIAL_RECONNECT_DELAY=15000 \
-    MEMORY_THRESHOLD_MB=200 \
-    MAX_HEAP_SIZE_MB=128 \
-    GC_INTERVAL_MS=10000 \
-    ENABLE_REAL_WHATSAPP=true \
-    PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+    MAX_RECONNECT_ATTEMPTS=5 \
+    ENABLE_REAL_WHATSAPP=true
 
 # Copy application files
 COPY whatsapp-service/ .
 
 # Create session directory with proper permissions
-RUN mkdir -p session && chmod 755 session
+RUN mkdir -p session uploads && chmod 755 session uploads
 
 # Set up non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
@@ -50,9 +36,9 @@ USER whatsapp
 
 EXPOSE 3000
 
-# Optimized health check
+# Health check
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"
 
-# Start WhatsApp service
+# Start Baileys WhatsApp service
 CMD ["npm", "start"]

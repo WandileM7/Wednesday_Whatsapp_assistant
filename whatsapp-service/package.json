@@ -1,25 +1,30 @@
 {
   "name": "wednesday-whatsapp-service",
-  "version": "1.0.0",
-  "description": "WhatsApp service for Wednesday AI Assistant",
-  "main": "server-production.js",
+  "version": "2.0.0",
+  "description": "Lightweight WhatsApp service using Baileys - NO Chromium required!",
+  "main": "server-baileys.js",
   "scripts": {
-    "start": "node server-production.js",
-    "start:production": "node server-production.js"
+    "start": "node server-baileys.js",
+    "start:baileys": "node server-baileys.js",
+    "start:legacy": "node server-production.js"
   },
   "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.16",
     "express": "^4.18.2",
-    "whatsapp-web.js": "^1.32.0",
     "qrcode-terminal": "^0.12.0",
     "fs-extra": "^11.2.0",
-    "multer": "^1.4.5-lts.1"
+    "multer": "^1.4.5-lts.1",
+    "pino": "^8.16.2",
+    "pino-pretty": "^10.2.3"
   },
   "engines": {
     "node": ">=18.0.0"
   },
   "keywords": [
     "whatsapp",
+    "baileys",
     "minimal",
-    "memory-efficient"
+    "memory-efficient",
+    "no-chromium"
   ]
 }
