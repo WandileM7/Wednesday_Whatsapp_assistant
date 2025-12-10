@@ -2094,6 +2094,57 @@ def task_summary():
     """Get task and reminder summary"""
     return task_manager.get_task_summary()
 
+@app.route("/tasks/view")
+def tasks_view():
+    """HTML view for tasks"""
+    tasks = task_manager.list_tasks(filter_completed=False)
+    tasks_list = tasks.get('tasks', []) if isinstance(tasks, dict) else []
+    
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Wednesday - Tasks</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #fff; min-height: 100vh; padding: 20px; }}
+            .container {{ max-width: 800px; margin: 0 auto; }}
+            h1 {{ margin-bottom: 20px; color: #00d4ff; }}
+            .back-link {{ color: #00d4ff; text-decoration: none; margin-bottom: 20px; display: inline-block; }}
+            .task-card {{ background: rgba(255,255,255,0.1); border-radius: 12px; padding: 15px; margin-bottom: 15px; border-left: 4px solid #00d4ff; }}
+            .task-card.high {{ border-left-color: #ff4757; }}
+            .task-card.medium {{ border-left-color: #ffa502; }}
+            .task-card.low {{ border-left-color: #2ed573; }}
+            .task-title {{ font-size: 18px; font-weight: 600; margin-bottom: 8px; }}
+            .task-meta {{ color: #888; font-size: 14px; }}
+            .priority {{ padding: 2px 8px; border-radius: 4px; font-size: 12px; text-transform: uppercase; }}
+            .priority.high {{ background: #ff4757; }}
+            .priority.medium {{ background: #ffa502; }}
+            .priority.low {{ background: #2ed573; }}
+            .empty {{ text-align: center; padding: 40px; color: #888; }}
+            .add-btn {{ background: #00d4ff; color: #000; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; margin-top: 20px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <a href="/dashboard" class="back-link">← Back to Dashboard</a>
+            <h1>📋 Tasks</h1>
+            {''.join([f'''
+            <div class="task-card {t.get('priority', 'medium')}">
+                <div class="task-title">{t.get('title', 'Untitled')}</div>
+                <div class="task-meta">
+                    <span class="priority {t.get('priority', 'medium')}">{t.get('priority', 'medium')}</span>
+                    {f" • Due: {t.get('due_date')}" if t.get('due_date') else ""}
+                    {f" • {t.get('description')}" if t.get('description') else ""}
+                </div>
+            </div>
+            ''' for t in tasks_list]) if tasks_list else '<div class="empty">No tasks yet! Send a message like "Add task: Buy groceries" to create one.</div>'}
+        </div>
+    </body>
+    </html>
+    """
+
 @app.route("/tasks/sync-status")
 def task_sync_status():
     """Get background task sync status"""
@@ -2286,7 +2337,7 @@ def quick_setup():
             <a href="/weather?location=Johannesburg" class="button">Test Weather</a>
             <a href="/news" class="button">Test News</a>
             <a href="/news/briefing" class="button">Daily Briefing</a>
-            <a href="/tasks" class="button">View Tasks</a>
+            <a href="/tasks/view" class="button">View Tasks</a>
             <a href="/reminders" class="button">View Reminders</a>
             <a href="/tasks/summary" class="button">Task Summary</a>
             <a href="/contacts" class="button">View Contacts</a>
@@ -3800,8 +3851,8 @@ def unified_dashboard():
                 <div class="action-section">
                     <h4>Tasks & Notes</h4>
                     <div class="btn-group">
-                        <a href="/test-tasks" class="btn btn-outline">View Tasks</a>
-                        <a href="/test-google-notes" class="btn btn-outline">Google Sync</a>
+                        <a href="/tasks/view" class="btn btn-outline">View Tasks</a>
+                        <a href="/google-status" class="btn btn-outline">Google Status</a>
                     </div>
                 </div>
                 <div class="action-section">

@@ -907,6 +907,10 @@ Current Request: {user_message}
 
 def _make_api_call_with_timeout(prompt: str, timeout: int = API_TIMEOUT) -> tuple:
     """Make Gemini API call with thread-safe timeout."""
+    # Check if model is initialized
+    if model is None:
+        raise GeminiAPIError("Gemini model not initialized - check GEMINI_API_KEY")
+    
     response = None
     exception_info = None
     
@@ -921,8 +925,24 @@ def _make_api_call_with_timeout(prompt: str, timeout: int = API_TIMEOUT) -> tupl
                 tools=[{"function_declarations": FUNCTIONS}],
                 tool_config={"function_calling_config": {"mode": "auto"}}
             )
+            # Check for empty or blocked response
+            if response is None:
+                exception_info = Exception("Empty response from Gemini API")
+                return
+            if not response.candidates:
+                # Check prompt feedback for block reason
+                if hasattr(response, 'prompt_feedback'):
+                    feedback = response.prompt_feedback
+                    block_reason = getattr(feedback, 'block_reason', 'Unknown')
+                    exception_info = Exception(f"Response blocked: {block_reason}")
+                else:
+                    exception_info = Exception("No candidates in response")
+                return
         except Exception as e:
             exception_info = e
+            # Log the full exception details
+            logger.error(f"API call exception type: {type(e).__name__}")
+            logger.error(f"API call exception details: {repr(e)}")
     
     api_thread = threading.Thread(target=api_call)
     api_thread.daemon = True
@@ -933,7 +953,9 @@ def _make_api_call_with_timeout(prompt: str, timeout: int = API_TIMEOUT) -> tupl
         raise GeminiTimeoutError(f"API call timed out after {timeout} seconds")
     
     if exception_info:
-        raise GeminiAPIError(str(exception_info))
+        # Include more details in the error
+        error_msg = f"{type(exception_info).__name__}: {str(exception_info) or repr(exception_info)}"
+        raise GeminiAPIError(error_msg)
     
     return response
 
