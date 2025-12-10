@@ -24,6 +24,7 @@ from handlers.uber import uber_service
 from handlers.accommodation import accommodation_service
 from handlers.fitness import fitness_service
 from handlers.google_notes import google_notes_service
+from handlers.daily_briefing import send_briefing_now, schedule_daily_briefing, cancel_daily_briefing
 from database import add_to_conversation_history, query_conversation_history, retrieve_conversation_history
 
 # Configure logging
@@ -742,6 +743,40 @@ FUNCTIONS = [
             },
             "required": []
         }
+    },
+    # Daily Briefing functions
+    {
+        "name": "get_daily_briefing",
+        "description": "Get a comprehensive daily briefing with weather, calendar, tasks, and news",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "Location for weather (defaults to Johannesburg)"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "schedule_daily_briefing",
+        "description": "Schedule a daily morning briefing at a specific time",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "hour": {"type": "integer", "description": "Hour to send briefing (0-23, defaults to 7)"},
+                "minute": {"type": "integer", "description": "Minute to send briefing (0-59, defaults to 0)"},
+                "location": {"type": "string", "description": "Location for weather (defaults to Johannesburg)"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "cancel_daily_briefing",
+        "description": "Cancel the scheduled daily briefing",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
     }
 ]
 
@@ -750,7 +785,7 @@ FUNCTION_HANDLERS: Dict[str, Callable] = {}
 
 
 def _build_conversation_prompt(user_message: str, conversation_history: List[str]) -> str:
-    """Build the conversation prompt with history context."""
+    """Build the conversation prompt with history context and language detection."""
     # Limit conversation history to prevent token overflow
     recent_history = conversation_history[-MAX_CONVERSATION_HISTORY:] if conversation_history else []
     history_text = '\n'.join(recent_history) if recent_history else "No previous conversation."
@@ -761,6 +796,8 @@ IMPORTANT RULES:
 1. When the user asks to perform an action (play music, send email, create event, etc.), ALWAYS use the appropriate function
 2. Be concise but helpful in your responses
 3. Use your personality to make interactions engaging
+4. **LANGUAGE**: Detect the language of the user's message and ALWAYS respond in the SAME language. If they write in Spanish, respond in Spanish. If they write in Zulu, respond in Zulu. If they write in French, respond in French. Match their language exactly.
+5. If the user mixes languages, respond in the primary language they used
 
 Recent Conversation:
 {history_text}
@@ -1461,6 +1498,22 @@ def execute_function(call: dict, phone: str = "") -> str:
             except Exception as e:
                 logger.error(f"Performance optimization failed: {e}")
                 return f"❌ Performance optimization failed: {str(e)}"
+
+        # Daily Briefing functions
+        if name == "get_daily_briefing":
+            location = params.get("location", "Johannesburg")
+            return send_briefing_now(phone, location)
+        
+        if name == "schedule_daily_briefing":
+            hour = params.get("hour", 7)
+            minute = params.get("minute", 0)
+            location = params.get("location", "Johannesburg")
+            result = schedule_daily_briefing(phone, hour, minute, location)
+            return f"✅ {result['message']}\n\n⏰ Time: {result['time']}\n📍 Location: {result['location']}"
+        
+        if name == "cancel_daily_briefing":
+            result = cancel_daily_briefing(phone)
+            return f"{'✅' if result['status'] == 'cancelled' else '⚠️'} {result['message']}"
 
         # Function not found
         logger.warning(f"Unknown function called: {name}")

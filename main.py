@@ -899,20 +899,33 @@ def webhook():
         if len(user_conversations) % 10 == 0:
             cleanup_conversations()
 
+        # Check for quick commands first (messages starting with /)
+        if user_msg.startswith('/'):
+            try:
+                from handlers.quick_commands import process_quick_command
+                cmd_result = process_quick_command(user_msg, phone)
+                if cmd_result:
+                    reply = cmd_result.get('response', 'Command executed.')
+                    logger.info(f"Quick command processed: {user_msg[:20]}")
+                else:
+                    reply = "Unknown command. Type /help for available commands."
+            except Exception as e:
+                logger.error(f"Quick command error: {e}")
+                reply = f"Error processing command: {e}"
         # Process with Gemini
-        try:
-            if GEMINI_API_KEY and not GEMINI_API_KEY.startswith('test_'):
+        elif GEMINI_API_KEY and not GEMINI_API_KEY.startswith('test_'):
+            try:
                 call = chat_with_functions(user_msg, phone)
                 
                 if call.get("name"):
                     reply = execute_function(call, phone)
                 else:
                     reply = call.get("content", "Sorry, no idea what that was.")
-            else:
-                reply = f"Echo: {user_msg}"
-        except Exception as e:
-            logger.error(f"Gemini processing error: {e}")
-            reply = "I'm having trouble processing your message right now. Please try again later."
+            except Exception as e:
+                logger.error(f"Gemini processing error: {e}")
+                reply = "I'm having trouble processing your message right now. Please try again later."
+        else:
+            reply = f"Echo: {user_msg}"
 
         # Save conversation
         conversation['messages'].append({
