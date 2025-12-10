@@ -215,15 +215,6 @@ FUNCTIONS = [
         }
     },
     {
-        "name": "get_daily_briefing",
-        "description": "Get a daily news briefing with mixed categories",
-        "parameters": {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
-    },
-    {
         "name": "create_task",
         "description": "Create a new task or todo item",
         "parameters": {
@@ -1234,9 +1225,6 @@ def execute_function(call: dict, phone: str = "") -> str:
         
         if name == "search_news":
             return news_service.search_news(params["query"], params.get("limit", 5))
-        
-        if name == "get_daily_briefing":
-            return news_service.get_daily_briefing()
         
         # Task management functions
         if name == "create_task":
