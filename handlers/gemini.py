@@ -921,10 +921,27 @@ def _make_api_call_with_timeout(prompt: str, timeout: int = API_TIMEOUT) -> tupl
         try:
             # Build the content with system instruction separate
             full_prompt = f"{PERSONALITY_PROMPT}\n\n{prompt}"
+            
+            # Use proper protobuf Tool format for legacy google-generativeai SDK
+            import google.generativeai as genai_lib
+            from google.generativeai.types import content_types
+            
+            # Build function declarations using the SDK's expected format
+            function_declarations = []
+            for func in FUNCTIONS:
+                fd = content_types.FunctionDeclaration(
+                    name=func["name"],
+                    description=func.get("description", ""),
+                    parameters=func.get("parameters")
+                )
+                function_declarations.append(fd)
+            
+            tool = content_types.Tool(function_declarations=function_declarations)
+            
             response = model.generate_content(
                 contents=full_prompt,
-                tools=[{"function_declarations": FUNCTIONS}],
-                tool_config={"function_calling_config": {"mode": "auto"}}
+                tools=[tool],
+                tool_config={"function_calling_config": {"mode": "AUTO"}}
             )
             # Check for empty or blocked response
             if response is None:
