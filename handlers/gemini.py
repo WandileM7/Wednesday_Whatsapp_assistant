@@ -4,7 +4,8 @@ This module provides AI-powered conversation handling with integrated function c
 for various services like Spotify, Gmail, Calendar, Weather, and more.
 """
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types as genai_types
 import json
 import threading
 import time
@@ -31,6 +32,8 @@ from handlers.mood_music import mood_music_service
 from handlers.memory_search import memory_service
 from database import add_to_conversation_history, query_conversation_history, retrieve_conversation_history
 
+GENERATION_MODEL = "gemini-2.5-flash"
+
 # Configure logging
 logger = logging.getLogger("GeminiHandler")
 
@@ -39,6 +42,10 @@ API_TIMEOUT = 30  # seconds
 MAX_RETRIES = 3
 RETRY_DELAY = 1  # seconds
 MAX_CONVERSATION_HISTORY = 10  # messages to include
+
+# Gemini client state
+client: Optional[genai.Client] = None
+FUNCTION_TOOLS: List[genai_types.Tool] = []
 
 
 class GeminiError(Exception):
@@ -75,16 +82,7 @@ def retry_on_failure(max_retries: int = MAX_RETRIES, delay: float = RETRY_DELAY)
     return decorator
 
 
-# Initialize Gemini
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    # Use Gemini 2.0 Flash - stable model with function calling support
-    # Note: gemini-2.5-flash requires newer google-genai SDK
-    model = genai.GenerativeModel("gemini-2.5-flash")
-    logger.info("Gemini model initialized successfully (gemini-2.5-flash)")
-else:
-    model = None
-    logger.warning("GEMINI_API_KEY not configured - AI features disabled")
+# Gemini client initialized after tool setup
 
 # Define functions for Gemini to call
 FUNCTIONS = [
@@ -881,6 +879,56 @@ FUNCTIONS = [
     }
 ]
 
+
+def _build_function_tools() -> List[genai_types.Tool]:
+    """Create function declarations for Gemini tools."""
+    declarations: List[genai_types.FunctionDeclaration] = []
+    for fn in FUNCTIONS:
+        try:
+            declarations.append(
+                genai_types.FunctionDeclaration(
+                    name=fn.get("name", ""),
+                    description=fn.get("description", ""),
+                    parameters=fn.get("parameters", {}),
+                )
+            )
+        except Exception as e:
+            logger.warning(f"Skipping function declaration for {fn.get('name', 'unknown')}: {e}")
+
+    if not declarations:
+        return []
+
+    try:
+        return [genai_types.Tool(function_declarations=declarations)]
+    except Exception as e:
+        logger.warning(f"Failed to build function toolset: {e}")
+        return []
+
+
+def _initialize_gemini_client() -> None:
+    """Initialize the Gemini client and tools using the new google-genai SDK."""
+    global client, FUNCTION_TOOLS
+
+    if not GEMINI_API_KEY:
+        logger.warning("GEMINI_API_KEY not configured - AI features disabled")
+        client = None
+        FUNCTION_TOOLS = []
+        return
+
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        FUNCTION_TOOLS = _build_function_tools()
+        logger.info(
+            f"Gemini client initialized ({GENERATION_MODEL}) with {len(FUNCTION_TOOLS[0].function_declarations) if FUNCTION_TOOLS else 0} functions"
+        )
+    except Exception as e:
+        logger.error(f"Failed to initialize Gemini client: {e}")
+        client = None
+        FUNCTION_TOOLS = []
+
+
+_initialize_gemini_client()
+
 # Create a function name to handler mapping for cleaner execution
 FUNCTION_HANDLERS: Dict[str, Callable] = {}
 
@@ -910,8 +958,8 @@ Current Request: {user_message}
 def _make_api_call_with_timeout(prompt: str, timeout: int = API_TIMEOUT) -> tuple:
     """Make Gemini API call with thread-safe timeout."""
     # Check if model is initialized
-    if model is None:
-        raise GeminiAPIError("Gemini model not initialized - check GEMINI_API_KEY")
+    if client is None:
+        raise GeminiAPIError("Gemini client not initialized - check GEMINI_API_KEY")
     
     response = None
     exception_info = None
@@ -921,14 +969,10 @@ def _make_api_call_with_timeout(prompt: str, timeout: int = API_TIMEOUT) -> tupl
         try:
             # Build the content with system instruction separate
             full_prompt = f"{PERSONALITY_PROMPT}\n\n{prompt}"
-            
-            # Use proper protobuf Tool format for legacy google-generativeai SDK
-            import google.generativeai as genai_lib
-            from google.generativeai.types import content_types
-            
-            # Temporarily disable tools to avoid SDK Tool construction errors
-            response = model.generate_content(
-                contents=full_prompt
+            response = client.models.generate_content(
+                model=GENERATION_MODEL,
+                contents=full_prompt,
+                tools=FUNCTION_TOOLS if FUNCTION_TOOLS else None,
             )
             # Check for empty or blocked response
             if response is None:
@@ -984,6 +1028,10 @@ def _parse_gemini_response(response) -> dict:
             # Convert MapComposite to dict if needed
             if hasattr(args, "to_dict"):
                 params = args.to_dict()
+            elif isinstance(args, dict):
+                params = args
+            elif hasattr(args, "items"):
+                params = dict(args)
             elif isinstance(args, str):
                 params = json.loads(args)
             else:
@@ -1024,8 +1072,8 @@ def chat_with_functions(user_message: str, phone: str) -> dict:
               or a response dict with 'name'=None and 'content'
     """
     # Check if model is initialized
-    if not model:
-        logger.error("Gemini model not initialized - check GEMINI_API_KEY")
+    if not client:
+        logger.error("Gemini client not initialized - check GEMINI_API_KEY")
         return {"name": None, "content": "Sorry, AI features are currently unavailable."}
 
     # Quick rule-based handler to unblock calendar event commands while tools are disabled

@@ -19,8 +19,18 @@ from typing import Dict, List, Optional, Any, Callable
 from datetime import datetime, timedelta
 from database import db_manager
 import os
+from google import genai
+from config import GEMINI_API_KEY
 
 logger = logging.getLogger(__name__)
+
+GENERATION_MODEL = "gemini-2.5-flash"
+
+try:
+    gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+except Exception as e:
+    logger.warning(f"Gemini client unavailable for service monitor: {e}")
+    gemini_client = None
 
 class ServiceMonitor:
     """Advanced service monitoring and recovery system"""
@@ -238,23 +248,14 @@ class ServiceMonitor:
     def _check_gemini_health(self) -> tuple:
         """Check Gemini AI service health - lightweight check without API call"""
         try:
-            import google.generativeai as genai
-            from config import GEMINI_API_KEY
-            
             if not GEMINI_API_KEY or GEMINI_API_KEY == "test_key_123":
                 return False, "No valid API key configured"
             
-            # Just verify the API key is configured and model can be initialized
+            # Just verify the API key is configured and client can be created
             # Don't make actual API calls to avoid burning quota!
-            genai.configure(api_key=GEMINI_API_KEY)
-            model = genai.GenerativeModel('gemini-2.5-flash')
-            
-            # If we get here without exception, the setup is valid
-            # Actual API availability will be tested when user sends a message
-            if model:
+            if gemini_client:
                 return True, None
-            else:
-                return False, "Model initialization failed"
+            return False, "Gemini client not initialized"
                 
         except Exception as e:
             return False, str(e)
@@ -379,11 +380,10 @@ class ServiceMonitor:
         """Attempt to recover Gemini service"""
         try:
             # Reinitialize Gemini client
-            import google.generativeai as genai
-            from config import GEMINI_API_KEY
-            
+            global gemini_client
+
             if GEMINI_API_KEY and GEMINI_API_KEY != "test_key_123":
-                genai.configure(api_key=GEMINI_API_KEY)
+                gemini_client = genai.Client(api_key=GEMINI_API_KEY)
                 logger.info("Gemini service recovery attempted")
             
         except Exception as e:

@@ -26,9 +26,9 @@ except ImportError:
     logger.warning("QR code generation not available")
     QR_AVAILABLE = False
 
-# Import Google Generative AI
+# Import Google Gemini SDK (new google-genai)
 try:
-    import google.generativeai as genai
+    from google import genai
 except ImportError:
     genai = None
 
@@ -157,26 +157,41 @@ except Exception as e:
 
 # Initialize Gemini (non-fatal if missing)
 gemini_api_key = os.getenv("GEMINI_API_KEY")
+GENERATION_MODEL = "gemini-2.5-flash"
+
 class _DummyModel:
     def generate_content(self, prompt: str):
         class _R:
             text = "Hello. Gemini is not configured; using a dummy response."
         return _R()
 
+gemini_client = None
 if gemini_api_key and genai:
     try:
-        genai.configure(api_key=gemini_api_key)
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        gemini_client = genai.Client(api_key=gemini_api_key)
         logger.info("Gemini client initialized")
     except Exception as e:
         logger.warning(f"Gemini init failed; using dummy model: {e}")
-        model = _DummyModel()
 else:
     if not gemini_api_key:
         logger.warning("GEMINI_API_KEY not set. Using dummy model; app will still start.")
     elif not genai:
-        logger.warning("google-generativeai not available. Using dummy model; app will still start.")
-    model = _DummyModel()
+        logger.warning("google-genai not available. Using dummy model; app will still start.")
+
+
+def _generate_initial_message(prompt: str) -> str:
+    """Generate initial WhatsApp message using Gemini when available."""
+    if gemini_client:
+        try:
+            response = gemini_client.models.generate_content(
+                model=GENERATION_MODEL,
+                contents=prompt,
+            )
+            if response and getattr(response, "text", None):
+                return response.text
+        except Exception as e:
+            logger.error(f"Gemini initial message failed: {e}")
+    return _DummyModel().generate_content(prompt).text
 
 PERSONALITY_PROMPT = os.getenv("PERSONALITY_PROMPT", "You are a sarcastic and sassy assistant.")
 GREETING_PROMPT = os.getenv("GREETING_PROMPT", "Give a brief, sarcastic greeting.")
@@ -1666,8 +1681,7 @@ def initiate_conversation(phone):
     logger.info(f"INITIATING chat with {phone}")
     try:
         prompt = f"{PERSONALITY_PROMPT}\n{INITIAL_MESSAGE_PROMPT}"
-        response = model.generate_content(prompt)
-        initial_message = response.text.strip()
+        initial_message = _generate_initial_message(prompt).strip()
         typing_indicator(phone, 3)
         return send_message(phone, initial_message)
     except Exception as e:

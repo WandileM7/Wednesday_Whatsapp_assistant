@@ -7,7 +7,18 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 
+from google import genai
+from config import GEMINI_API_KEY
+
 logger = logging.getLogger(__name__)
+
+GENERATION_MODEL = "gemini-2.5-flash"
+
+try:
+    genai_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+except Exception as e:
+    logger.warning(f"Gemini client unavailable: {e}")
+    genai_client = None
 
 
 def search_conversation_history(
@@ -86,10 +97,7 @@ def summarize_past_conversations(phone: str, topic: str = None) -> str:
         Summary string
     """
     try:
-        import google.generativeai as genai
-        from config import GEMINI_API_KEY
-        
-        if not GEMINI_API_KEY:
+        if not genai_client:
             return "AI summarization not available"
         
         # Get conversation history
@@ -105,10 +113,6 @@ def summarize_past_conversations(phone: str, topic: str = None) -> str:
         messages = [h.get('content', str(h)) for h in history]
         conversation_text = '\n'.join(messages[-20:])  # Last 20 messages
         
-        # Use Gemini to summarize
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        
         prompt = f"""Summarize the following conversation history. Focus on:
 1. Key topics discussed
 2. Important information shared
@@ -121,13 +125,14 @@ Conversation:
 {conversation_text}
 
 Provide a concise summary in 3-5 bullet points."""
+        response = genai_client.models.generate_content(
+            model=GENERATION_MODEL,
+            contents=prompt,
+        )
 
-        response = model.generate_content(prompt)
-        
-        if response and response.text:
+        if response and getattr(response, "text", None):
             return response.text
-        else:
-            return "Could not generate summary"
+        return "Could not generate summary"
             
     except Exception as e:
         logger.error(f"Error summarizing conversations: {e}")
@@ -146,10 +151,7 @@ def recall_information(phone: str, question: str) -> str:
         Recalled information
     """
     try:
-        import google.generativeai as genai
-        from config import GEMINI_API_KEY
-        
-        if not GEMINI_API_KEY:
+        if not genai_client:
             return "AI recall not available"
         
         # Search for relevant history
@@ -161,10 +163,6 @@ def recall_information(phone: str, question: str) -> str:
         messages = [r.get('content', str(r)) for r in results]
         history_text = '\n'.join(messages)
         
-        # Use Gemini to answer the question
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        
         prompt = f"""Based on the following conversation history, answer the user's question.
         
 User's question: {question}
@@ -175,12 +173,14 @@ Conversation history:
 Answer the question based on the conversation history. If the information isn't in the history, say so.
 Be specific and include relevant details from the conversations."""
 
-        response = model.generate_content(prompt)
-        
-        if response and response.text:
+        response = genai_client.models.generate_content(
+            model=GENERATION_MODEL,
+            contents=prompt,
+        )
+
+        if response and getattr(response, "text", None):
             return response.text
-        else:
-            return "Could not recall that information"
+        return "Could not recall that information"
             
     except Exception as e:
         logger.error(f"Error recalling information: {e}")

@@ -9,8 +9,18 @@ import os
 import tempfile
 from typing import Dict, Any, Optional
 import requests
+from google import genai
+from config import GEMINI_API_KEY
 
 logger = logging.getLogger(__name__)
+
+GENERATION_MODEL = "gemini-2.5-flash"
+
+try:
+    genai_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+except Exception as e:
+    logger.warning(f"Gemini client unavailable for image analysis: {e}")
+    genai_client = None
 
 
 def analyze_image_from_url(image_url: str, question: str = None) -> Dict[str, Any]:
@@ -25,10 +35,7 @@ def analyze_image_from_url(image_url: str, question: str = None) -> Dict[str, An
         Analysis result dictionary
     """
     try:
-        import google.generativeai as genai
-        from config import GEMINI_API_KEY
-        
-        if not GEMINI_API_KEY:
+        if not genai_client:
             return {'error': 'Gemini API key not configured'}
         
         # Download the image
@@ -105,16 +112,8 @@ def analyze_image_data(image_data: bytes, mime_type: str, question: str = None) 
         Analysis result dictionary
     """
     try:
-        import google.generativeai as genai
-        from config import GEMINI_API_KEY
-        
-        if not GEMINI_API_KEY:
+        if not genai_client:
             return {'error': 'Gemini API key not configured'}
-        
-        genai.configure(api_key=GEMINI_API_KEY)
-        
-        # Use Gemini Pro Vision model
-        model = genai.GenerativeModel('gemini-2.5-flash')
         
         # Encode image to base64
         image_b64 = base64.standard_b64encode(image_data).decode('utf-8')
@@ -143,9 +142,12 @@ Be concise but thorough."""
                 "data": image_b64
             }
         }
-        
+
         # Generate response
-        response = model.generate_content([prompt, image_part])
+        response = genai_client.models.generate_content(
+            model=GENERATION_MODEL,
+            contents=[prompt, image_part],
+        )
         
         if response and response.text:
             return {

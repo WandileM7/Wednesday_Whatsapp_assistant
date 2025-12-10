@@ -123,7 +123,7 @@ class WednesdaySetupValidator:
     def check_dependencies(self):
         """Check required dependencies"""
         required_packages = [
-            'flask', 'requests', 'google-generativeai', 'openai',
+            'flask', 'requests', 'google-genai', 'openai',
             'pillow', 'psutil', 'sqlite3', 'opencv-cv2', 'scikit-learn'
         ]
         
@@ -135,8 +135,8 @@ class WednesdaySetupValidator:
                     import cv2
                     results['installed'].append(package)
                     print(f"   ✅ {package}")
-                elif package == 'google-generativeai':
-                    import google.generativeai
+                elif package == 'google-genai':
+                    from google import genai
                     results['installed'].append(package)
                     print(f"   ✅ {package}")
                 elif package == 'scikit-learn':
