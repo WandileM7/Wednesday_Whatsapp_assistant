@@ -3,19 +3,21 @@
 FROM node:20-alpine AS base
 WORKDIR /app
 
-# Minimal system dependencies - NO Chromium needed!
+# Minimal system dependencies for native modules
 RUN apk add --no-cache \
     ca-certificates \
     python3 \
     make \
     g++ \
+    git \
     && rm -rf /var/cache/apk/*
 
 # Copy package files
 COPY whatsapp-service/package.json ./
 
-# Install dependencies (without --silent to see errors)
-RUN npm install --omit=dev && npm cache clean --force
+# Install dependencies with verbose output
+RUN npm install --loglevel verbose 2>&1 || (cat /root/.npm/_logs/*.log && exit 1)
+RUN npm cache clean --force
 
 # Environment variables
 ENV NODE_ENV=production \
