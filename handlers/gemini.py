@@ -1,6 +1,17 @@
+"""Gemini AI Integration Handler with Function Calling Support.
+
+This module provides AI-powered conversation handling with integrated function calling
+for various services like Spotify, Gmail, Calendar, Weather, and more.
+"""
+
 import google.generativeai as genai
 import json
 import threading
+import time
+import logging
+from typing import Dict, Any, Optional, Callable, List
+from functools import wraps
+
 from config import GEMINI_API_KEY, PERSONALITY_PROMPT
 from handlers.spotify import play_album, play_playlist, play_song, get_current_song
 from handlers.gmail import send_email, summarize_emails
@@ -13,15 +24,60 @@ from handlers.uber import uber_service
 from handlers.accommodation import accommodation_service
 from handlers.fitness import fitness_service
 from handlers.google_notes import google_notes_service
-import logging
 from database import add_to_conversation_history, query_conversation_history, retrieve_conversation_history
 
-# Timeout handler for thread-safe timeout
-class TimeoutException(Exception):
+# Configure logging
+logger = logging.getLogger("GeminiHandler")
+
+# Constants
+API_TIMEOUT = 30  # seconds
+MAX_RETRIES = 3
+RETRY_DELAY = 1  # seconds
+MAX_CONVERSATION_HISTORY = 10  # messages to include
+
+
+class GeminiError(Exception):
+    """Base exception for Gemini-related errors."""
     pass
+
+
+class GeminiTimeoutError(GeminiError):
+    """Raised when Gemini API call times out."""
+    pass
+
+
+class GeminiAPIError(GeminiError):
+    """Raised when Gemini API returns an error."""
+    pass
+
+
+def retry_on_failure(max_retries: int = MAX_RETRIES, delay: float = RETRY_DELAY):
+    """Decorator to retry function calls on failure."""
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    logger.warning(f"Attempt {attempt + 1}/{max_retries} failed: {e}")
+                    if attempt < max_retries - 1:
+                        time.sleep(delay * (attempt + 1))  # Exponential backoff
+            raise last_exception
+        return wrapper
+    return decorator
+
+
 # Initialize Gemini
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-2.0-flash")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel("gemini-2.0-flash")
+    logger.info("Gemini model initialized successfully")
+else:
+    model = None
+    logger.warning("GEMINI_API_KEY not configured - AI features disabled")
 
 # Define functions for Gemini to call
 FUNCTIONS = [
@@ -577,7 +633,7 @@ FUNCTIONS = [
             "type": "object",
             "properties": {
                 "prompt": {"type": "string", "description": "Description of the image to generate"},
-                "style": {"type": "string", "description": "Image style: realistic, artistic, cartoon, professional, avatar", "default": "realistic"}
+                "style": {"type": "string", "description": "Image style: realistic, artistic, cartoon, professional, avatar (defaults to realistic)"}
             },
             "required": ["prompt"]
         }
@@ -588,8 +644,8 @@ FUNCTIONS = [
         "parameters": {
             "type": "object",
             "properties": {
-                "personality": {"type": "string", "description": "Personality type for avatar", "default": "wednesday"},
-                "style": {"type": "string", "description": "Avatar style", "default": "professional"}
+                "personality": {"type": "string", "description": "Personality type for avatar (defaults to wednesday)"},
+                "style": {"type": "string", "description": "Avatar style (defaults to professional)"}
             },
             "required": []
         }
@@ -623,8 +679,8 @@ FUNCTIONS = [
             "type": "object",
             "properties": {
                 "prompt": {"type": "string", "description": "Description of the video to generate"},
-                "style": {"type": "string", "description": "Video style: realistic, animated, cinematic", "default": "realistic"},
-                "duration": {"type": "integer", "description": "Video duration in seconds (1-10)", "default": 5}
+                "style": {"type": "string", "description": "Video style: realistic, animated, cinematic (defaults to realistic)"},
+                "duration": {"type": "integer", "description": "Video duration in seconds 1-10 (defaults to 5)"}
             },
             "required": ["prompt"]
         }
@@ -636,8 +692,8 @@ FUNCTIONS = [
             "type": "object",
             "properties": {
                 "text": {"type": "string", "description": "Text to convert to speech"},
-                "voice_id": {"type": "string", "description": "Voice ID to use", "default": "default"},
-                "style": {"type": "string", "description": "Voice style: natural, expressive, calm", "default": "natural"}
+                "voice_id": {"type": "string", "description": "Voice ID to use (defaults to default)"},
+                "style": {"type": "string", "description": "Voice style: natural, expressive, calm (defaults to natural)"}
             },
             "required": ["text"]
         }
@@ -649,7 +705,7 @@ FUNCTIONS = [
             "type": "object",
             "properties": {
                 "image_description": {"type": "string", "description": "Description of image to analyze"},
-                "analysis_type": {"type": "string", "description": "Type of analysis: comprehensive, objects, text, faces, scene", "default": "comprehensive"}
+                "analysis_type": {"type": "string", "description": "Type of analysis: comprehensive, objects, text, faces, scene (defaults to comprehensive)"}
             },
             "required": ["image_description"]
         }
@@ -671,7 +727,7 @@ FUNCTIONS = [
         "parameters": {
             "type": "object",
             "properties": {
-                "test_type": {"type": "string", "description": "Type of test: quick, comprehensive, performance", "default": "quick"}
+                "test_type": {"type": "string", "description": "Type of test: quick, comprehensive, performance (defaults to quick)"}
             },
             "required": []
         }
@@ -682,31 +738,39 @@ FUNCTIONS = [
         "parameters": {
             "type": "object",
             "properties": {
-                "optimization_type": {"type": "string", "description": "Type of optimization: memory, cpu, database, all", "default": "all"}
+                "optimization_type": {"type": "string", "description": "Type of optimization: memory, cpu, database, all (defaults to all)"}
             },
             "required": []
         }
     }
-
 ]
-def chat_with_functions(user_message: str, phone: str) -> dict:
-    """Handles the conversation with Gemini, including function calling and conversation history."""
 
-    # Retrieve conversation history
-    conversation_history = retrieve_conversation_history(phone)
+# Create a function name to handler mapping for cleaner execution
+FUNCTION_HANDLERS: Dict[str, Callable] = {}
 
-    # Construct the prompt with conversation history
-    prompt = f"""
-You are a helpful personal assistant. You have the personality of Jarvis from Iron Man, but with a tiny bit of sarcasm and sass when the mood calls for it. You can perform tasks like playing music, sending emails, and creating calendar events.
-If the user asks you to play music, send an email, or create a calendar event, you MUST Always use the available functions 1st before instead of replying with text. Your name is Wednesday
-Here's the conversation history:
-{' '.join(conversation_history)}
 
-User: {user_message}
+def _build_conversation_prompt(user_message: str, conversation_history: List[str]) -> str:
+    """Build the conversation prompt with history context."""
+    # Limit conversation history to prevent token overflow
+    recent_history = conversation_history[-MAX_CONVERSATION_HISTORY:] if conversation_history else []
+    history_text = '\n'.join(recent_history) if recent_history else "No previous conversation."
+    
+    return f"""You are Wednesday, a helpful personal assistant with the personality of Jarvis from Iron Man - witty, efficient, and occasionally sarcastic.
+
+IMPORTANT RULES:
+1. When the user asks to perform an action (play music, send email, create event, etc.), ALWAYS use the appropriate function
+2. Be concise but helpful in your responses
+3. Use your personality to make interactions engaging
+
+Recent Conversation:
+{history_text}
+
+Current Request: {user_message}
 """
 
-    # Thread-safe timeout for Gemini API call
-    timeout_occurred = threading.Event()
+
+def _make_api_call_with_timeout(prompt: str, timeout: int = API_TIMEOUT) -> tuple:
+    """Make Gemini API call with thread-safe timeout."""
     response = None
     exception_info = None
     
@@ -724,34 +788,26 @@ User: {user_message}
         except Exception as e:
             exception_info = e
     
-    # Start API call in thread
     api_thread = threading.Thread(target=api_call)
     api_thread.daemon = True
     api_thread.start()
-    
-    # Wait for completion or timeout
-    api_thread.join(timeout=30)
+    api_thread.join(timeout=timeout)
     
     if api_thread.is_alive():
-        # Timeout occurred
-        logging.getLogger("WhatsAppAssistant").error("Gemini API call timed out")
-        add_to_conversation_history(phone, "user", user_message)
-        add_to_conversation_history(phone, "assistant", "Sorry, I'm experiencing delays. Please try again.")
-        return {"name": None, "content": "Sorry, I'm experiencing delays. Please try again."}
+        raise GeminiTimeoutError(f"API call timed out after {timeout} seconds")
     
     if exception_info:
-        # API call failed
-        logging.getLogger("WhatsAppAssistant").error(f"Gemini API error: {exception_info}")
-        add_to_conversation_history(phone, "user", user_message)
-        add_to_conversation_history(phone, "assistant", f"API Error: {exception_info}")
-        return {"name": None, "content": "Sorry, I encountered an API error."}
+        raise GeminiAPIError(str(exception_info))
     
-    if response:
-        logging.getLogger("WhatsAppAssistant").debug(f"Gemini raw response: {response}")
+    return response
 
-    # Try to extract function call or text robustly
+
+def _parse_gemini_response(response) -> dict:
+    """Parse Gemini response and extract function call or text content."""
     try:
         part = response.candidates[0].content.parts[0]
+        
+        # Check for function call
         if hasattr(part, "function_call") and part.function_call:
             args = part.function_call.args
             # Convert MapComposite to dict if needed
@@ -761,44 +817,122 @@ User: {user_message}
                 params = json.loads(args)
             else:
                 params = args or {}
-            call = {
+            
+            return {
                 "name": part.function_call.name,
-                "parameters": params
+                "parameters": params,
+                "type": "function_call"
             }
-            # Add the user message and Gemini's response to the conversation history *before* returning
-            add_to_conversation_history(phone, "user", user_message)
-            add_to_conversation_history(phone, "assistant", f"Function call: {part.function_call.name}({params})")
-            return call
-        # Try to get text content robustly
+        
+        # Check for text content
         text = getattr(part, "text", None)
         if text:
-            # Add the user message and Gemini's response to the conversation history *before* returning
-            add_to_conversation_history(phone, "user", user_message)
-            add_to_conversation_history(phone, "assistant", text)
-            return {"name": None, "content": text}
-    except Exception as e:
-        logging.getLogger("WhatsAppAssistant").error(f"Error parsing Gemini response: {e}")
-        # Add the user message and error message to the conversation history
-        add_to_conversation_history(phone, "user", user_message)
-        add_to_conversation_history(phone, "assistant", f"Error: {e}")
-        return {"name": None, "content": "Sorry, I encountered an error."}
-
-    # Try fallback: check for .text on response itself
+            return {"name": None, "content": text, "type": "text"}
+            
+    except (IndexError, AttributeError) as e:
+        logger.warning(f"Error parsing response parts: {e}")
+    
+    # Fallback: check for .text on response itself
     text = getattr(response, "text", None)
     if text:
-        # Add the user message and Gemini's response to the conversation history *before* returning
-        add_to_conversation_history(phone, "user", user_message)
-        add_to_conversation_history(phone, "assistant", text)
-        return {"name": None, "content": text}
+        return {"name": None, "content": text, "type": "text"}
+    
+    return {"name": None, "content": "Sorry, I couldn't understand or generate a response.", "type": "error"}
 
-    # Add the user message and default response to the conversation history
+
+def chat_with_functions(user_message: str, phone: str) -> dict:
+    """
+    Handle conversation with Gemini AI, including function calling and conversation history.
+    
+    Args:
+        user_message: The user's input message
+        phone: The user's phone identifier for conversation history
+        
+    Returns:
+        dict: Either a function call dict with 'name' and 'parameters', 
+              or a response dict with 'name'=None and 'content'
+    """
+    # Check if model is initialized
+    if not model:
+        logger.error("Gemini model not initialized - check GEMINI_API_KEY")
+        return {"name": None, "content": "Sorry, AI features are currently unavailable."}
+    
+    # Retrieve conversation history
+    try:
+        conversation_history = retrieve_conversation_history(phone)
+    except Exception as e:
+        logger.warning(f"Could not retrieve conversation history: {e}")
+        conversation_history = []
+
+    # Build the prompt
+    prompt = _build_conversation_prompt(user_message, conversation_history)
+    
+    # Make API call with retry logic
+    response = None
+    last_error = None
+    
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = _make_api_call_with_timeout(prompt, API_TIMEOUT)
+            break  # Success, exit retry loop
+        except GeminiTimeoutError as e:
+            last_error = e
+            logger.warning(f"Attempt {attempt + 1}/{MAX_RETRIES}: API timeout")
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_DELAY * (attempt + 1))
+        except GeminiAPIError as e:
+            last_error = e
+            logger.error(f"Attempt {attempt + 1}/{MAX_RETRIES}: API error - {e}")
+            # Don't retry on certain errors (e.g., schema errors)
+            if "schema" in str(e).lower() or "field" in str(e).lower():
+                break
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_DELAY * (attempt + 1))
+    
+    # Handle complete failure
+    if response is None:
+        error_msg = "Sorry, I'm experiencing technical difficulties. Please try again."
+        logger.error(f"All {MAX_RETRIES} attempts failed: {last_error}")
+        add_to_conversation_history(phone, "user", user_message)
+        add_to_conversation_history(phone, "assistant", error_msg)
+        return {"name": None, "content": error_msg}
+    
+    # Parse the response
+    result = _parse_gemini_response(response)
+    
+    # Log the interaction
+    if result.get("type") == "function_call":
+        log_content = f"Function call: {result['name']}({result.get('parameters', {})})"
+    else:
+        log_content = result.get("content", "No response")
+    
     add_to_conversation_history(phone, "user", user_message)
-    add_to_conversation_history(phone, "assistant", "Sorry, I couldn't understand or generate a response.")
-    return {"name": None, "content": "Sorry, I couldn't understand or generate a response."}
+    add_to_conversation_history(phone, "assistant", log_content)
+    
+    logger.debug(f"Gemini response type: {result.get('type')}")
+    
+    return result
+
 
 def execute_function(call: dict, phone: str = "") -> str:
+    """
+    Execute a function called by Gemini AI.
+    
+    Args:
+        call: Dict containing 'name' and 'parameters' of the function to execute
+        phone: The user's phone identifier for context
+        
+    Returns:
+        str: The result of the function execution
+    """
     name = call.get("name")
     params = call.get("parameters", {})
+    
+    if not name:
+        return "No function specified."
+    
+    logger.info(f"Executing function: {name} with params: {params}")
+    
     try:
         # Spotify functions
         if name == "play_song":
@@ -1042,12 +1176,6 @@ def execute_function(call: dict, phone: str = "") -> str:
             return google_notes_service.sync_with_local_tasks()
         
         # Enhanced contact and WhatsApp functions
-        if name == "send_whatsapp_message":
-            return contact_manager.send_whatsapp_message(
-                params["contact_query"],
-                params["message"]
-            )
-        
         if name == "get_contact_for_whatsapp":
             return contact_manager.get_contact_for_whatsapp(params["contact_query"])
         
@@ -1306,8 +1434,11 @@ def execute_function(call: dict, phone: str = "") -> str:
                 if optimization_type in ["database", "all"]:
                     # Database optimization
                     try:
-                        db_manager.cleanup_old_data(7)  # Clean data older than 7 days
+                        from database import cleanup_old_data
+                        cleanup_old_data(7)  # Clean data older than 7 days
                         response += "🗃️ Database optimization completed\n"
+                    except ImportError:
+                        response += "🗃️ Database optimization skipped (not available)\n"
                     except Exception as e:
                         response += f"⚠️ Database optimization failed: {str(e)}\n"
                 
@@ -1328,8 +1459,59 @@ def execute_function(call: dict, phone: str = "") -> str:
                 return response
                 
             except Exception as e:
+                logger.error(f"Performance optimization failed: {e}")
                 return f"❌ Performance optimization failed: {str(e)}"
 
-        return "I couldn't handle that function call."
+        # Function not found
+        logger.warning(f"Unknown function called: {name}")
+        return f"I don't know how to handle the function '{name}'. Please try a different request."
+        
+    except KeyError as e:
+        logger.error(f"Missing required parameter for {name}: {e}")
+        return f"Missing required information for {name}: {e}"
     except Exception as e:
+        logger.error(f"Error executing function {name}: {e}", exc_info=True)
         return f"Error executing {name}: {e}"
+
+
+def validate_function_schemas() -> List[str]:
+    """
+    Validate all function schemas for Gemini API compatibility.
+    
+    Returns:
+        List of validation error messages (empty if all valid)
+    """
+    errors = []
+    invalid_fields = ["default", "examples", "pattern"]  # Fields not supported by Gemini
+    
+    for func in FUNCTIONS:
+        func_name = func.get("name", "unknown")
+        params = func.get("parameters", {})
+        properties = params.get("properties", {})
+        
+        for prop_name, prop_def in properties.items():
+            for invalid_field in invalid_fields:
+                if invalid_field in prop_def:
+                    errors.append(f"Function '{func_name}', property '{prop_name}': invalid field '{invalid_field}'")
+    
+    if errors:
+        logger.error(f"Schema validation found {len(errors)} errors")
+        for error in errors:
+            logger.error(f"  - {error}")
+    else:
+        logger.info(f"All {len(FUNCTIONS)} function schemas validated successfully")
+    
+    return errors
+
+
+def get_available_functions() -> List[str]:
+    """Get a list of all available function names."""
+    return [f.get("name") for f in FUNCTIONS if f.get("name")]
+
+
+# Validate schemas on module load (development check)
+if __name__ != "__main__":
+    # Only run validation in non-main contexts (when imported)
+    _validation_errors = validate_function_schemas()
+    if _validation_errors:
+        logger.warning(f"Function schema validation found {len(_validation_errors)} issues")

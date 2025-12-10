@@ -281,7 +281,7 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
         temp_file.write(audio_content)
         temp_file.close()
         
-        logger.info(f"Generated streaming speech audio with {voice.name}: {temp_file.name}")
+        logger.info(f"Generated streaming speech audio: {temp_file.name}")
         return temp_file.name
         
     except Exception as e:

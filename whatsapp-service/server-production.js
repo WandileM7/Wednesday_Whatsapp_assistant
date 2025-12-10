@@ -1,10 +1,16 @@
 const express = require('express');
 const fs = require('fs-extra');
 const path = require('path');
+const multer = require('multer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ENABLE_REAL_WHATSAPP = process.env.ENABLE_REAL_WHATSAPP === 'true';
+
+// Setup multer for file uploads
+const uploadDir = path.join(__dirname, 'uploads');
+fs.ensureDirSync(uploadDir);
+const upload = multer({ dest: uploadDir });
 
 // Memory optimization: Even more aggressive settings
 app.use(express.json({ limit: '5mb' })); // Further reduced to save memory
@@ -931,13 +937,10 @@ process.on('SIGTERM', async () => {
     process.exit(0);
 });
 
-const { MessageMedia } = require('whatsapp-web.js');
-const multer = require('multer');
-const upload = multer({ dest: 'uploads/' });
-
+// Voice message endpoint - using multer from top of file
 app.post('/api/sendVoice', upload.single('audio'), async (req, res) => {
     if (!isClientReady) {
-        return res.status(503).json({ error: 'WhatsApp client not ready' });
+        return res.status(503).json({ error: 'WhatsApp client not ready', mode: ENABLE_REAL_WHATSAPP ? 'production' : 'mock' });
     }
 
     const { chatId } = req.body;
@@ -950,6 +953,7 @@ app.post('/api/sendVoice', upload.single('audio'), async (req, res) => {
     try {
         if (ENABLE_REAL_WHATSAPP && whatsappClient) {
             // Production mode - send real voice message
+            const { MessageMedia } = require('whatsapp-web.js');
             const media = MessageMedia.fromFilePath(audioFile.path);
             media.mimetype = 'audio/ogg; codecs=opus';
             media.filename = null; // Remove filename to send as voice note
@@ -979,7 +983,7 @@ app.post('/api/sendVoice', upload.single('audio'), async (req, res) => {
 // Send image/video message endpoint
 app.post('/api/sendMedia', upload.single('media'), async (req, res) => {
     if (!isClientReady) {
-        return res.status(503).json({ error: 'WhatsApp client not ready' });
+        return res.status(503).json({ error: 'WhatsApp client not ready', mode: ENABLE_REAL_WHATSAPP ? 'production' : 'mock' });
     }
 
     const { chatId, caption } = req.body;
@@ -992,6 +996,7 @@ app.post('/api/sendMedia', upload.single('media'), async (req, res) => {
     try {
         if (ENABLE_REAL_WHATSAPP && whatsappClient) {
             // Production mode - send real media
+            const { MessageMedia } = require('whatsapp-web.js');
             const media = MessageMedia.fromFilePath(mediaFile.path);
             
             // Set proper mimetype based on file type
