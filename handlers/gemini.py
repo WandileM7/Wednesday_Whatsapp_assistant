@@ -12,6 +12,8 @@ import time
 import logging
 from typing import Dict, Any, Optional, Callable, List
 from functools import wraps
+from datetime import datetime
+import pytz
 
 from config import GEMINI_API_KEY, PERSONALITY_PROMPT
 from handlers.spotify import play_album, play_playlist, play_song, get_current_song
@@ -188,6 +190,15 @@ FUNCTIONS = [
                 "days": {"type": "integer", "description": "Number of days (1-5)"}
             },
             "required": ["location"]
+        }
+    },
+    {
+        "name": "get_current_time",
+        "description": "Get the current date and time (local and UTC)",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
         }
     },
     {
@@ -1296,10 +1307,10 @@ def execute_function(call: dict, phone: str = "") -> str:
         if name == "search_web":
             from handlers.search import web_search
             return web_search.search_and_summarize(
-                params["query"], 
+                params["query"],
                 params.get("num_results", 3)
             )
-        
+
         # Enhanced calendar functions
         if name == "get_calendar_summary":
             from handlers.calendar import get_smart_calendar_brief
@@ -1309,6 +1320,24 @@ def execute_function(call: dict, phone: str = "") -> str:
         if name == "get_smart_email_brief":
             from handlers.gmail import get_smart_email_brief
             return get_smart_email_brief()
+
+        # Time function
+        if name == "get_current_time":
+            tz_name = os.getenv("TIMEZONE", "Africa/Johannesburg")
+            try:
+                local_tz = pytz.timezone(tz_name)
+            except Exception:
+                local_tz = pytz.UTC
+                tz_name = "UTC"
+
+            now_utc = datetime.now(pytz.UTC)
+            now_local = now_utc.astimezone(local_tz)
+
+            return (
+                f"🕒 Current time:\n"
+                f"• Local ({tz_name}): {now_local.strftime('%Y-%m-%d %H:%M:%S %Z')}\n"
+                f"• UTC: {now_utc.strftime('%Y-%m-%d %H:%M:%S %Z')}"
+            )
         
         # Voice control functions
         if name == "toggle_voice_responses":
