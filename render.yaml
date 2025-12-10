@@ -19,6 +19,10 @@ services:
         value: https://waha-gemini-assistant.onrender.com/callback
 
   # Lightweight WhatsApp Gateway (Memory Optimized)
+  # NOTE: Free tier (512MB RAM) may not be enough for Chromium.
+  # If WhatsApp fails to initialize, consider:
+  # 1. Upgrade to 'starter' plan (1GB RAM) or higher
+  # 2. Set ENABLE_REAL_WHATSAPP=false for mock mode
   - type: web
     name: whatsapp-service
     runtime: docker
@@ -26,18 +30,18 @@ services:
     plan: free
     dockerfilePath: ./whatsapp-service/Dockerfile
     autoDeploy: true
-    buildCommand: "docker build --build-arg DOCKER_MODE=mock -t whatsapp-service -f ./whatsapp-service/Dockerfile ."
     envVars:
-      # Memory optimization: Use mock mode for maximum efficiency
+      # Memory optimization: Real WhatsApp requires ~512MB+
+      # Set to "false" for mock mode if memory is insufficient
       - key: ENABLE_REAL_WHATSAPP
         value: "true"
       - key: FORCE_MOCK_MODE
         value: "false"
-      # Memory monitoring
+      # Aggressive memory limits for free tier
       - key: MEMORY_THRESHOLD_MB
-        value: "350"
+        value: "200"
       - key: NODE_OPTIONS
-        value: "--max-old-space-size=256"
+        value: "--max-old-space-size=128 --expose-gc --optimize-for-size"
       # WhatsApp -> Assistant (public URL of Flask webhook)
       - key: WHATSAPP_HOOK_URL
         value: https://waha-gemini-assistant.onrender.com/webhook
@@ -49,7 +53,7 @@ services:
       - key: MAX_RECONNECT_ATTEMPTS
         value: "2"
       - key: INITIAL_RECONNECT_DELAY
-        value: "10000"
+        value: "15000"
       # Session management
       - key: SESSION_PATH
         value: "/app/session"

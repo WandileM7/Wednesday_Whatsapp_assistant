@@ -53,11 +53,38 @@ try {
     process.exit(1);
 }
 
+// Log system memory info at startup
+function logMemoryInfo() {
+    const os = require('os');
+    const totalMem = Math.round(os.totalmem() / 1024 / 1024);
+    const freeMem = Math.round(os.freemem() / 1024 / 1024);
+    const usedMem = totalMem - freeMem;
+    
+    console.log(`📊 System Memory: ${usedMem}MB used / ${totalMem}MB total (${freeMem}MB free)`);
+    
+    if (totalMem < 512) {
+        console.warn('⚠️ WARNING: Less than 512MB total memory detected!');
+        console.warn('⚠️ WhatsApp Web.js with Chromium requires at least 512MB RAM');
+        console.warn('⚠️ Consider upgrading to a paid plan or using mock mode');
+    } else if (totalMem < 1024 && ENABLE_REAL_WHATSAPP) {
+        console.warn('⚠️ Running with limited memory - using aggressive optimization');
+    }
+    
+    return { totalMem, freeMem, usedMem };
+}
+
+const memInfo = logMemoryInfo();
+
 console.log(`🔧 WhatsApp Service Mode: ${ENABLE_REAL_WHATSAPP ? 'PRODUCTION (Real WhatsApp)' : 'MOCK (Testing)'}`);
 
 // Initialize WhatsApp client
 async function initializeClient() {
     console.log('🚀 Initializing WhatsApp client...');
+    
+    // Check if we have enough memory
+    if (memInfo.freeMem < 200 && ENABLE_REAL_WHATSAPP) {
+        console.warn('⚠️ Very low free memory detected, WhatsApp initialization may fail');
+    }
       const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/chromium-browser";
 
     if (ENABLE_REAL_WHATSAPP) {
@@ -305,16 +332,44 @@ async function initializeRealClient() {
 
   const puppeteerOptions = {
     headless: true,
-    timeout: 60000,
+    timeout: 120000, // Extended timeout for resource-constrained environments
     executablePath,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--no-zygote',
+      '--single-process', // Critical for low-memory environments
       '--disable-gpu',
       '--disable-software-rasterizer',
-      '--mute-audio'
+      '--disable-accelerated-2d-canvas',
+      '--disable-canvas-aa',
+      '--disable-2d-canvas-clip-aa',
+      '--disable-gl-drawing-for-tests',
+      '--mute-audio',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-default-apps',
+      '--disable-extensions',
+      '--disable-plugins',
+      '--disable-sync',
+      '--disable-translate',
+      '--disable-background-networking',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-breakpad',
+      '--disable-component-update',
+      '--disable-domain-reliability',
+      '--disable-features=AudioServiceOutOfProcess,IsolateOrigins,site-per-process',
+      '--disable-hang-monitor',
+      '--disable-ipc-flooding-protection',
+      '--disable-popup-blocking',
+      '--disable-prompt-on-repost',
+      '--disable-renderer-backgrounding',
+      '--disable-client-side-phishing-detection',
+      '--metrics-recording-only',
+      '--safebrowsing-disable-auto-update',
+      '--js-flags=--max-old-space-size=128' // Limit JS heap to 128MB
     ],
     handleSIGINT: false,
     handleSIGTERM: false,
@@ -468,29 +523,34 @@ async function initializeRealClientWithFallback() {
     
     console.log('🔄 Attempting WhatsApp client initialization with fallback settings...');
     
-    // More conservative Puppeteer configuration for problematic environments
+    // Ultra-conservative Puppeteer configuration for free tier / low memory environments
     const fallbackPuppeteerOptions = {
         headless: true,
-        timeout: 120000, // Extended timeout for resource-constrained environments
+        timeout: 180000, // Extended timeout for very slow environments
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
+            '--no-zygote',
+            '--single-process', // Critical: run in single process mode
             '--disable-gpu',
+            '--disable-software-rasterizer',
+            '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--disable-extensions',
             '--disable-plugins',
             '--disable-default-apps',
             '--no-default-browser-check',
-            '--disable-web-security',
-            '--disable-features=VizDisplayCompositor',
-            '--disable-software-rasterizer',
+            '--disable-features=VizDisplayCompositor,AudioServiceOutOfProcess,IsolateOrigins,site-per-process',
             '--disable-background-timer-throttling',
             '--disable-backgrounding-occluded-windows',
             '--disable-renderer-backgrounding',
-            '--memory-pressure-off',
-            '--max_old_space_size=4096',
-            '--disable-ipc-flooding-protection'
+            '--disable-ipc-flooding-protection',
+            '--disable-client-side-phishing-detection',
+            '--disable-sync',
+            '--disable-translate',
+            '--disable-component-update',
+            '--js-flags=--max-old-space-size=64' // Even more aggressive JS heap limit
         ],
         handleSIGINT: false,
         handleSIGTERM: false,
