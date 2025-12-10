@@ -78,8 +78,9 @@ def retry_on_failure(max_retries: int = MAX_RETRIES, delay: float = RETRY_DELAY)
 # Initialize Gemini
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel("gemini-2.0-flash")
-    logger.info("Gemini model initialized successfully")
+    # Use the latest Gemini 2.0 Flash model with improved capabilities
+    model = genai.GenerativeModel("gemini-2.0-flash-exp")
+    logger.info("Gemini model initialized successfully (gemini-2.0-flash-exp)")
 else:
     model = None
     logger.warning("GEMINI_API_KEY not configured - AI features disabled")
