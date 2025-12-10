@@ -52,5 +52,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"
 
-# Start with memory-optimized production server
-CMD ["npm", "run", "start:optimized"]
+# Start WhatsApp service
+CMD ["npm", "start"]

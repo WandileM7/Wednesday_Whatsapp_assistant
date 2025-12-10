@@ -1,13 +1,11 @@
 {
-  "name": "ultra-minimal-whatsapp-service",
+  "name": "wednesday-whatsapp-service",
   "version": "1.0.0",
-  "description": "Ultra memory-efficient WhatsApp service with minimal dependencies",
-  "main": "server-minimal.js",
+  "description": "WhatsApp service for Wednesday AI Assistant",
+  "main": "server-production.js",
   "scripts": {
-    "start": "node server-minimal.js",
-    "start:optimized": "node server-memory-optimized.js",
-    "start:production": "node server-production.js",
-    "start:minimal": "node server-minimal.js"
+    "start": "node server-production.js",
+    "start:production": "node server-production.js"
   },
   "dependencies": {
     "express": "^4.18.2",
