@@ -1,0 +1,82 @@
+# ============================================
+# Cloud Run Optimized Dockerfile
+# ============================================
+# Optimized for Google Cloud Run deployment
+# - Multi-stage build for smaller image
+# - Non-root user for security
+# - Health check endpoint
+# - Proper signal handling
+
+# Stage 1: Build dependencies
+FROM python:3.10-slim-bookworm AS builder
+
+WORKDIR /build
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libprotobuf-dev \
+    protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python packages
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Stage 2: Production image
+FROM python:3.10-slim-bookworm AS production
+
+# Labels
+LABEL maintainer="Wednesday Assistant"
+LABEL version="2.0"
+LABEL description="Wednesday WhatsApp Assistant - Cloud Run Edition"
+
+ARG BUILD_DATE
+ARG GIT_SHA
+LABEL build_date=$BUILD_DATE
+LABEL git_sha=$GIT_SHA
+
+# Create non-root user for security
+RUN groupadd -r wednesday && useradd -r -g wednesday wednesday
+
+WORKDIR /app
+
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Copy Python packages from builder
+COPY --from=builder /root/.local /home/wednesday/.local
+
+# Copy application code
+COPY --chown=wednesday:wednesday . .
+
+# Create necessary directories with proper permissions
+RUN mkdir -p /app/flask_session /app/session /app/task_data \
+    && chown -R wednesday:wednesday /app
+
+# Switch to non-root user
+USER wednesday
+
+# Add local bin to PATH
+ENV PATH=/home/wednesday/.local/bin:$PATH
+
+# Environment variables for Cloud Run
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PORT=5000 \
+    FLASK_DEBUG=false \
+    USE_MEMORY_DB=false
+
+# Expose the port (Cloud Run uses PORT env variable)
+EXPOSE 5000
+
+# Health check for Cloud Run
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/health || exit 1
+
+# Use exec form for proper signal handling
+CMD ["python", "main.py"]

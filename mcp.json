@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "wednesday-assistant": {
+      "command": "python",
+      "args": ["-m", "mcp_server.server"],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "BYTEZ_API_KEY": "${env:BYTEZ_API_KEY}",
+        "GEMINI_API_KEY": "${env:GEMINI_API_KEY}",
+        "SPOTIFY_CLIENT_ID": "${env:SPOTIFY_CLIENT_ID}",
+        "SPOTIFY_SECRET": "${env:SPOTIFY_SECRET}",
+        "WAHA_URL": "${env:WAHA_URL}"
+      }
+    }
+  }
+}

@@ -23,6 +23,11 @@ token.pickle
 tokens/
 *.pickle
 
+# GCP Service Account Keys (NEVER commit these!)
+gcp-sa-key.json
+*-sa-key.json
+*.serviceaccount.json
+
 # ChromaDB/Spotipy caches
 .cache/
 .cache

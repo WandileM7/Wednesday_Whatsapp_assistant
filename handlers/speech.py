@@ -3,13 +3,49 @@ import logging
 import tempfile
 import requests
 import json
+import base64
 from typing import Optional, Tuple
 from pathlib import Path
-from google.cloud import speech, texttospeech
-from google.oauth2 import service_account
-from handlers.google_auth import load_credentials
+
+# Try Google Cloud Speech (legacy fallback)
+try:
+    from google.cloud import speech, texttospeech
+    from google.oauth2 import service_account
+    GOOGLE_CLOUD_AVAILABLE = True
+except ImportError:
+    GOOGLE_CLOUD_AVAILABLE = False
+    speech = None
+    texttospeech = None
+
+# Try Bytez for AI-powered speech (primary)
+try:
+    from bytez import Bytez
+    BYTEZ_AVAILABLE = True
+except ImportError:
+    BYTEZ_AVAILABLE = False
+    Bytez = None
+
+try:
+    from handlers.google_auth import load_credentials
+except ImportError:
+    load_credentials = lambda: None
 
 logger = logging.getLogger(__name__)
+
+# Configuration - Best models for speech
+BYTEZ_API_KEY = os.getenv("BYTEZ_API_KEY")
+BYTEZ_TTS_MODEL = os.getenv("BYTEZ_TTS_MODEL", "suno/bark")  # Full bark for quality
+BYTEZ_TTS_MODEL_FAST = os.getenv("BYTEZ_TTS_MODEL_FAST", "suno/bark-small")  # Fast alternative
+BYTEZ_AUDIO_MODEL = os.getenv("BYTEZ_AUDIO_MODEL", "Qwen/Qwen2-Audio-7B-Instruct")  # Best STT
+
+# Initialize Bytez client for speech
+bytez_client = None
+if BYTEZ_API_KEY and BYTEZ_AVAILABLE:
+    try:
+        bytez_client = Bytez(BYTEZ_API_KEY)
+        logger.info(f"Bytez speech client ready - TTS: {BYTEZ_TTS_MODEL}, STT: {BYTEZ_AUDIO_MODEL}")
+    except Exception as e:
+        logger.warning(f"Bytez speech client unavailable: {e}")
 
 # User voice preferences storage
 VOICE_PREFS_FILE = Path("voice_preferences.json")
@@ -173,11 +209,108 @@ def download_voice_message(voice_url: str, session: str) -> Optional[str]:
         logger.error(f"Error downloading voice message: {e}")
         return None
 
-def speech_to_text(audio_file_path: str) -> Optional[str]:
-    """Convert audio file to text using Google Speech-to-Text"""
+def speech_to_text(audio_file_path: str, audio_url: str = None) -> Optional[str]:
+    """
+    Convert audio file to text using Bytez Qwen2-Audio (primary) or Google Speech-to-Text (fallback).
+    
+    Args:
+        audio_file_path: Local path to audio file
+        audio_url: Optional URL to audio (preferred for Bytez)
+    
+    Returns:
+        Transcribed text or None
+    """
+    # Try Bytez Qwen2-Audio first (best quality audio understanding)
+    if bytez_client:
+        result = speech_to_text_bytez(audio_file_path, audio_url)
+        if result:
+            return result
+        logger.warning("Bytez STT failed, trying Google Cloud fallback")
+    
+    # Fallback to Google Cloud Speech-to-Text
+    return speech_to_text_google(audio_file_path)
+
+
+def speech_to_text_bytez(audio_file_path: str, audio_url: str = None) -> Optional[str]:
+    """
+    Convert audio to text using Bytez Qwen2-Audio-7B-Instruct.
+    This model provides audio-text-to-text capabilities for contextual understanding.
+    
+    Args:
+        audio_file_path: Local path to audio file
+        audio_url: Optional URL to audio (preferred)
+    
+    Returns:
+        Transcribed text or None
+    """
+    if not bytez_client:
+        return None
+    
+    try:
+        model = bytez_client.model(BYTEZ_AUDIO_MODEL)
+        
+        # Prefer URL if available, otherwise encode file as base64
+        if audio_url:
+            audio_input = {"type": "audio", "url": audio_url}
+        else:
+            # Read and encode audio file
+            with open(audio_file_path, 'rb') as f:
+                audio_data = base64.b64encode(f.read()).decode('utf-8')
+            
+            # Determine MIME type
+            if audio_file_path.lower().endswith('.mp3'):
+                mime_type = "audio/mpeg"
+            elif audio_file_path.lower().endswith('.ogg'):
+                mime_type = "audio/ogg"
+            elif audio_file_path.lower().endswith('.wav'):
+                mime_type = "audio/wav"
+            else:
+                mime_type = "audio/ogg"  # Default for WhatsApp
+            
+            audio_input = {
+                "type": "audio",
+                "data": audio_data,
+                "mime_type": mime_type
+            }
+        
+        # Build multimodal input for audio-text-to-text
+        input_content = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Transcribe this audio message accurately. Capture exactly what is being said."
+                    },
+                    audio_input
+                ]
+            }
+        ]
+        
+        result = model.run(input_content)
+        
+        if result.error:
+            logger.error(f"Bytez audio transcription failed: {result.error}")
+            return None
+        
+        # Extract transcription
+        transcription = result.output
+        if isinstance(transcription, dict):
+            transcription = transcription.get("text", str(transcription))
+        
+        logger.info(f"Bytez Qwen2-Audio transcription: {transcription}")
+        return str(transcription).strip()
+        
+    except Exception as e:
+        logger.error(f"Bytez STT error: {e}")
+        return None
+
+
+def speech_to_text_google(audio_file_path: str) -> Optional[str]:
+    """Convert audio file to text using Google Speech-to-Text (fallback)"""
     client = get_speech_client()
     if not client:
-        logger.error("Speech client not available")
+        logger.error("Google Speech client not available")
         return None
     
     try:
@@ -228,14 +361,95 @@ def speech_to_text(audio_file_path: str) -> Optional[str]:
             pass
 
 def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
-    """Convert text to speech using streaming synthesis with Chirp3-HD Sulafat voice"""
-    # Streaming API currently rejects our request shape; use the stable fallback path directly
-    return text_to_speech_fallback(text, language_code)
+    """Convert text to speech using Bytez (primary) or Google Cloud TTS (fallback)"""
+    # Try Bytez first (it has amazing models like suno/bark)
+    if bytez_client:
+        result = text_to_speech_bytez(text)
+        if result:
+            return result
+        logger.warning("Bytez TTS failed, trying Google Cloud fallback")
+    
+    # Fallback to Google Cloud TTS
+    return text_to_speech_google(text, language_code)
 
-def text_to_speech_fallback(text: str, language_code: str = "en-US") -> Optional[str]:
-    """Fallback to regular text-to-speech synthesis with Chirp3-HD voices"""
+
+def text_to_speech_bytez(text: str) -> Optional[str]:
+    """Convert text to speech using Bytez TTS models (suno/bark-small)"""
+    if not bytez_client:
+        return None
+    
+    try:
+        model = bytez_client.model(BYTEZ_TTS_MODEL)
+        result = model.run(text)
+        
+        if result.error:
+            logger.error(f"Bytez TTS error: {result.error}")
+            return None
+        
+        # Bytez returns a URL to the audio file
+        audio_url = result.output
+        
+        if not audio_url:
+            logger.error("Bytez TTS returned empty output")
+            return None
+        
+        # If it's a URL, download and save to temp file
+        if isinstance(audio_url, str) and audio_url.startswith('http'):
+            try:
+                response = requests.get(audio_url, timeout=60)
+                response.raise_for_status()
+                
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_file:
+                    temp_file.write(response.content)
+                    logger.info(f"Bytez TTS audio saved: {temp_file.name}")
+                    return temp_file.name
+            except Exception as e:
+                logger.error(f"Error downloading Bytez audio: {e}")
+                return None
+        else:
+            # If it's raw audio data
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_file:
+                if isinstance(audio_url, bytes):
+                    temp_file.write(audio_url)
+                else:
+                    temp_file.write(str(audio_url).encode())
+                logger.info(f"Bytez TTS audio saved: {temp_file.name}")
+                return temp_file.name
+        
+    except Exception as e:
+        logger.error(f"Bytez TTS error: {e}")
+        return None
+
+
+def text_to_speech_google(text: str, language_code: str = "en-US") -> Optional[str]:
+    """Fallback to Google Cloud text-to-speech synthesis"""
     client = get_tts_client()
     if not client:
+        return None
+    
+    # Prepare text for TTS by removing emojis and problematic characters
+    try:
+        from helpers.text_utils import prepare_text_for_tts
+        processed_text = prepare_text_for_tts(text)
+        logger.debug(f"TTS text processing: '{text[:50]}...' -> '{processed_text[:50]}...'")
+    except ImportError:
+        logger.warning("Text utils not available for TTS, using original text")
+        processed_text = text
+    except Exception as e:
+        logger.warning(f"Error processing text for TTS: {e}, using original text")
+        processed_text = text
+    
+    return text_to_speech_fallback(processed_text, language_code)
+
+
+def text_to_speech_fallback(text: str, language_code: str = "en-US") -> Optional[str]:
+    """Fallback to regular text-to-speech synthesis with Chirp3-HD voices (Google Cloud)"""
+    client = get_tts_client()
+    if not client:
+        return None
+    
+    if not GOOGLE_CLOUD_AVAILABLE:
+        logger.warning("Google Cloud TTS not available")
         return None
     
     # Prepare text for TTS by removing emojis and problematic characters

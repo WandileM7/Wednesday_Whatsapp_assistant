@@ -1,0 +1,72 @@
+# Rancher Fleet Configuration
+# ============================
+# GitOps deployment configuration for Rancher Fleet.
+# Fleet will automatically deploy changes when pushed to the repository.
+
+defaultNamespace: wednesday
+
+# Helm-style configuration
+helm:
+  releaseName: wednesday-assistant
+  
+# Target clusters (customize for your environment)
+targetCustomizations:
+  - name: production
+    clusterSelector:
+      matchLabels:
+        env: production
+    helm:
+      values:
+        replicas: 2
+        resources:
+          assistant:
+            limits:
+              memory: "1Gi"
+              cpu: "1"
+        ingress:
+          enabled: true
+          host: wednesday.prod.example.com
+          
+  - name: staging
+    clusterSelector:
+      matchLabels:
+        env: staging
+    helm:
+      values:
+        replicas: 1
+        resources:
+          assistant:
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+        ingress:
+          enabled: true
+          host: wednesday.staging.example.com
+
+  - name: development
+    clusterSelector:
+      matchLabels:
+        env: development
+    helm:
+      values:
+        replicas: 1
+        resources:
+          assistant:
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+        ingress:
+          enabled: false
+
+# Diff options - don't show secrets in diff
+diff:
+  comparePatches:
+    - apiVersion: v1
+      kind: Secret
+      operations:
+        - op: remove
+          path: /data
+
+# Deploy order
+dependsOn:
+  - name: cert-manager  # If using cert-manager for TLS

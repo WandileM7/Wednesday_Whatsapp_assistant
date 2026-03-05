@@ -1,0 +1,92 @@
+# Wednesday MCP Server Deployment
+# ================================
+# Model Context Protocol server exposing Wednesday's capabilities
+# to AI models in a structured, tool-based format.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-server
+  namespace: wednesday
+  labels:
+    app.kubernetes.io/name: wednesday-assistant
+    app.kubernetes.io/component: mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcp-server
+  template:
+    metadata:
+      labels:
+        app: mcp-server
+        app.kubernetes.io/name: wednesday-assistant
+        app.kubernetes.io/component: mcp-server
+    spec:
+      containers:
+        - name: mcp-server
+          image: wednesday-assistant:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "mcp_server.server"]
+          ports:
+            - containerPort: 8080
+              name: http
+          envFrom:
+            - configMapRef:
+                name: wednesday-config
+            - secretRef:
+                name: wednesday-secrets
+          env:
+            - name: MCP_MODE
+              value: "http"
+            - name: MCP_PORT
+              value: "8080"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: session-data
+              mountPath: /app/session
+            - name: task-data
+              mountPath: /app/task_data
+      volumes:
+        - name: session-data
+          persistentVolumeClaim:
+            claimName: wednesday-session-pvc
+        - name: task-data
+          persistentVolumeClaim:
+            claimName: wednesday-task-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-server
+  namespace: wednesday
+  labels:
+    app.kubernetes.io/name: wednesday-assistant
+    app.kubernetes.io/component: mcp-server
+spec:
+  selector:
+    app: mcp-server
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+  type: ClusterIP

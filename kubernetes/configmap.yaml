@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: wednesday
+  labels:
+    app.kubernetes.io/name: wednesday-assistant
+    app.kubernetes.io/component: namespace
+---
+# ConfigMap for non-sensitive configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wednesday-config
+  namespace: wednesday
+  labels:
+    app.kubernetes.io/name: wednesday-assistant
+data:
+  # AI Configuration
+  BYTEZ_CHAT_MODEL: "Qwen/Qwen3-4B"
+  BYTEZ_CHAT_MODEL_LARGE: "microsoft/Phi-3-mini-4k-instruct"
+  BYTEZ_IMAGE_MODEL: "dreamlike-art/dreamlike-photoreal-2.0"
+  BYTEZ_TTS_MODEL: "suno/bark-small"
+  BYTEZ_VISION_MODEL: "google/gemma-3-4b-it"
+  
+  # Flask Configuration
+  FLASK_DEBUG: "false"
+  USE_MEMORY_DB: "false"
+  
+  # WhatsApp Service URL (internal)
+  WAHA_URL: "http://whatsapp-service:3000/api/sendText"
+  WAHA_SESSION: "default"
+  
+  # Webhook Configuration
+  WHATSAPP_HOOK_URL: "http://assistant:5000/webhook"
+  WHATSAPP_HOOK_EVENTS: "message"
+  
+  # Session Configuration
+  SESSION_PATH: "/app/session"
+  
+  # Logging
+  LOG_LEVEL: "info"

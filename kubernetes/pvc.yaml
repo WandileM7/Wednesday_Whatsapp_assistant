@@ -1,0 +1,71 @@
+# Persistent Volume Claims for Wednesday Assistant
+# =================================================
+# These PVCs provide persistent storage for session data,
+# database, and task data across pod restarts.
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wednesday-session-pvc
+  namespace: wednesday
+  labels:
+    app.kubernetes.io/name: wednesday-assistant
+    app.kubernetes.io/component: storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+  storageClassName: standard  # Rancher default, adjust as needed
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wednesday-task-pvc
+  namespace: wednesday
+  labels:
+    app.kubernetes.io/name: wednesday-assistant
+    app.kubernetes.io/component: storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wednesday-db-pvc
+  namespace: wednesday
+  labels:
+    app.kubernetes.io/name: wednesday-assistant
+    app.kubernetes.io/component: storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Mi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: whatsapp-session-pvc
+  namespace: wednesday
+  labels:
+    app.kubernetes.io/name: wednesday-assistant
+    app.kubernetes.io/component: storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+  storageClassName: standard

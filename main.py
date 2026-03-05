@@ -9,7 +9,7 @@ import uuid
 from dotenv import load_dotenv
 from datetime import datetime
 from urllib.parse import urlparse
-from config import GEMINI_API_KEY
+from config import GEMINI_API_KEY, BYTEZ_API_KEY
 import io
 import base64
 
@@ -26,7 +26,15 @@ except ImportError:
     logger.warning("QR code generation not available")
     QR_AVAILABLE = False
 
-# Import Google Gemini SDK (new google-genai)
+# Import Bytez SDK (primary AI - 175k+ models)
+try:
+    from bytez import Bytez
+    BYTEZ_SDK_AVAILABLE = True
+except ImportError:
+    BYTEZ_SDK_AVAILABLE = False
+    Bytez = None
+
+# Import Google Gemini SDK (fallback)
 try:
     from google import genai
 except ImportError:
@@ -114,7 +122,7 @@ def check_rate_limit(phone):
 
 # Session cache for user preferences
 def cache_user_session(phone, gemini_url=None):
-    """Cache user session data including phone number and Gemini service URL"""
+    """Cache user session data including phone number and AI service URL"""
     if not phone:
         return
     
@@ -124,7 +132,7 @@ def cache_user_session(phone, gemini_url=None):
     session_data['phone'] = phone
     session_data['last_seen'] = datetime.now().isoformat()
     
-    # Cache Gemini service URL if provided
+    # Cache AI service URL if provided
     if gemini_url:
         session_data['gemini_url'] = gemini_url
     
@@ -139,44 +147,71 @@ def get_cached_session():
     """Get cached session data"""
     return session.get('user_cache', {})
 
-# Try to import Gemini helpers; fallback to simple stubs if missing
+# AI Handler Priority: Bytez (175k+ models) -> Gemini (fallback) -> Stubs
+BYTEZ_HELPERS_AVAILABLE = False
+GEMINI_HELPERS_AVAILABLE = False
+
+# Try to import Bytez handler first (primary AI)
 try:
-    from handlers.gemini import chat_with_functions, execute_function
-    GEMINI_HELPERS_AVAILABLE = True
+    from handlers.bytez_handler import chat_with_functions, execute_function, get_bytez_status
+    if BYTEZ_SDK_AVAILABLE and os.getenv("BYTEZ_API_KEY"):
+        BYTEZ_HELPERS_AVAILABLE = True
+        logger.info("✨ Bytez AI handler loaded - 175,000+ models available!")
+    else:
+        raise ImportError("Bytez SDK or API key not available")
 except Exception as e:
-    GEMINI_HELPERS_AVAILABLE = False
-    logger.warning(f"Using fallback Gemini stubs: {e}")
+    logger.info(f"Bytez handler not available, trying Gemini fallback: {e}")
+    
+    # Try Gemini as fallback
+    try:
+        from handlers.gemini import chat_with_functions, execute_function
+        GEMINI_HELPERS_AVAILABLE = True
+        logger.info("Using Gemini AI handler as fallback")
+    except Exception as e2:
+        logger.warning(f"Using stub AI handlers: {e2}")
+        
+        def chat_with_functions(user_message: str, phone: str):
+            return {"content": f"AI not configured. You said: {user_message}"}
+        
+        def execute_function(call, phone=""):
+            return call.get("content") or "AI function calling not available."
 
-    def chat_with_functions(user_message: str, phone: str):
-        # Simple echo-style fallback
-        return {"content": f"I'm running in fallback mode. You said: {user_message}"}
-
-    def execute_function(call, phone=""):
-        # No function calling in fallback
-        return call.get("content") or "Function calling is disabled in fallback mode."
-
-# Initialize Gemini (non-fatal if missing)
+# Initialize AI clients
+bytez_api_key = os.getenv("BYTEZ_API_KEY")
 gemini_api_key = os.getenv("GEMINI_API_KEY")
 GENERATION_MODEL = "gemini-2.5-flash"
+
+# Bytez client (primary)
+bytez_client = None
+if bytez_api_key and BYTEZ_SDK_AVAILABLE:
+    try:
+        bytez_client = Bytez(bytez_api_key)
+        logger.info("✨ Bytez client initialized - Access to 175,000+ AI models!")
+    except Exception as e:
+        logger.warning(f"Bytez init failed: {e}")
 
 class _DummyModel:
     def generate_content(self, prompt: str):
         class _R:
-            text = "Hello. Gemini is not configured; using a dummy response."
+            text = "AI is not configured. Please set BYTEZ_API_KEY or GEMINI_API_KEY."
         return _R()
 
+# Gemini client (fallback)
 gemini_client = None
-if gemini_api_key and genai:
+if gemini_api_key and genai and not bytez_client:
     try:
         gemini_client = genai.Client(api_key=gemini_api_key)
-        logger.info("Gemini client initialized")
+        logger.info("Gemini client initialized as fallback")
     except Exception as e:
-        logger.warning(f"Gemini init failed; using dummy model: {e}")
+        logger.warning(f"Gemini init failed: {e}")
+
+# Log AI status
+if bytez_client:
+    logger.info("🚀 AI Status: Bytez (Primary) - 175k+ models ready")
+elif gemini_client:
+    logger.info("🤖 AI Status: Gemini (Fallback)")
 else:
-    if not gemini_api_key:
-        logger.warning("GEMINI_API_KEY not set. Using dummy model; app will still start.")
-    elif not genai:
-        logger.warning("google-genai not available. Using dummy model; app will still start.")
+    logger.warning("⚠️ AI Status: No AI configured - Set BYTEZ_API_KEY or GEMINI_API_KEY")
 
 
 def _generate_initial_message(prompt: str) -> str:
@@ -1413,6 +1448,28 @@ def services_overview():
     # Get authentication status from auth manager
     auth_status = auth_manager.get_auth_status()
     
+    # Determine AI status (Bytez primary, Gemini fallback)
+    ai_status = {
+        "status": "not_configured",
+        "provider": None,
+        "model": None
+    }
+    
+    if bytez_client:
+        ai_status = {
+            "status": "active",
+            "provider": "bytez",
+            "model": os.getenv("BYTEZ_CHAT_MODEL", "Qwen/Qwen3-4B"),
+            "models_available": "175,000+",
+            "features": ["chat", "image_generation", "text_to_speech", "vision"]
+        }
+    elif gemini_client:
+        ai_status = {
+            "status": "active", 
+            "provider": "gemini",
+            "model": "gemini-2.5-flash"
+        }
+    
     return {
         "services": {
             "whatsapp": {
@@ -1431,9 +1488,22 @@ def services_overview():
                 "test_endpoint": "/test-gmail",
                 "dashboard": "/google-services-dashboard"
             }),
+            "ai": ai_status,
+            "bytez": {
+                "status": "active" if bytez_client else "not_configured",
+                "configured": bool(bytez_client),
+                "models_available": "175,000+",
+                "chat_model": os.getenv("BYTEZ_CHAT_MODEL", "Qwen/Qwen3-4B"),
+                "image_model": os.getenv("BYTEZ_IMAGE_MODEL", "dreamlike-art/dreamlike-photoreal-2.0"),
+                "tts_model": os.getenv("BYTEZ_TTS_MODEL", "suno/bark-small"),
+                "vision_model": os.getenv("BYTEZ_VISION_MODEL", "google/gemma-3-4b-it"),
+                "required_env": "BYTEZ_API_KEY",
+                "docs": "https://docs.bytez.com"
+            },
             "gemini": {
-                "status": "active" if os.getenv("GEMINI_API_KEY") else "not_configured",
-                "model": "gemini-2.5-flash"
+                "status": "active" if gemini_client else "not_configured",
+                "model": "gemini-2.5-flash",
+                "note": "Fallback when Bytez not configured"
             },
             "weather": {
                 "status": "active" if weather_service.is_configured() else "not_configured",
@@ -1468,6 +1538,7 @@ def services_overview():
             "auth_status": "/auth-status",
             "test_webhook": "/test-webhook-auth",
             "assistant_status": "/assistant/status",
+            "test_ai": "/test-ai",
             "test_all": "/health",
             "webhook": "/webhook"
         },
@@ -1482,9 +1553,35 @@ def services_overview():
             "task_summary": "/tasks/summary",
             "contact_management": "/contacts",
             "contact_search": "/contacts/search?query=<name>",
-            "google_contacts": "/contacts/google"
+            "google_contacts": "/contacts/google",
+            "ai_chat": "/test-ai",
+            "generate_image": "/generate-image?prompt=<description>",
+            "text_to_speech": "/synthesize-speech?text=<text>"
         }
     }
+
+
+@app.route("/test-ai")
+def test_ai():
+    """Test AI functionality (Bytez or Gemini)"""
+    test_message = request.args.get("message", "Hello! What AI model are you using?")
+    
+    result = {
+        "bytez_available": bool(bytez_client),
+        "gemini_available": bool(gemini_client),
+        "primary_ai": "bytez" if bytez_client else ("gemini" if gemini_client else "none")
+    }
+    
+    try:
+        response = chat_with_functions(test_message, "test_user")
+        result["response"] = response.get("content") or response.get("name", "Function call triggered")
+        result["status"] = "success"
+    except Exception as e:
+        result["error"] = str(e)
+        result["status"] = "error"
+    
+    return jsonify(result)
+
 
 # Spotify endpoints
 @app.route("/test-spotify")

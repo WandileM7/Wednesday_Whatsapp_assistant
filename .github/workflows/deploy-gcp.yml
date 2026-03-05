@@ -1,0 +1,352 @@
+# ============================================
+# Wednesday WhatsApp Assistant - GCP Deployment
+# ============================================
+# Deploys the main Flask assistant to Google Cloud Run
+#
+# Prerequisites:
+# 1. Create a GCP project
+# 2. Enable Cloud Run, Artifact Registry, Secret Manager APIs
+# 3. Create a service account with these roles:
+#    - Cloud Run Admin
+#    - Artifact Registry Writer
+#    - Service Account User
+#    - Secret Manager Secret Accessor
+# 4. Add these GitHub secrets:
+#    - GCP_PROJECT_ID: Your GCP project ID
+#    - GCP_SA_KEY: Service account JSON key (base64 encoded)
+#    - GCP_REGION: e.g., us-central1
+#
+# Optional secrets (will be stored in Secret Manager):
+#    - BYTEZ_API_KEY, SPOTIFY_CLIENT_ID, SPOTIFY_SECRET, etc.
+
+name: Deploy to Google Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths-ignore:
+      - '**.md'
+      - '.github/copilot-instructions.md'
+      - 'whatsapp-service/**'  # Separate workflow for WhatsApp service
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: ${{ secrets.GCP_REGION || 'us-central1' }}
+  SERVICE_NAME: wednesday-assistant
+  MCP_SERVICE_NAME: wednesday-mcp
+  ARTIFACT_REGISTRY: wednesday-registry
+  IMAGE_NAME: assistant
+  MCP_IMAGE_NAME: mcp-server
+
+jobs:
+  # ============================================
+  # JOB 1: Build and Test
+  # ============================================
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run linting (optional)
+        continue-on-error: true
+        run: |
+          pip install flake8
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+      - name: Test imports
+        run: |
+          python -c "from handlers.bytez_handler import chat_with_functions; print('✅ Bytez handler OK')"
+          python -c "from handlers.speech import speech_to_text; print('✅ Speech handler OK')"
+          python -c "import main; print('✅ Main app OK')"
+
+  # ============================================
+  # JOB 2: Build Docker Image
+  # ============================================
+  build-image:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+      image_digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Create Artifact Registry (if not exists)
+        continue-on-error: true
+        run: |
+          gcloud artifacts repositories create ${{ env.ARTIFACT_REGISTRY }} \
+            --repository-format=docker \
+            --location=${{ env.REGION }} \
+            --description="Wednesday Assistant Docker images" \
+            --quiet || true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.cloudrun
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            GIT_SHA=${{ github.sha }}
+
+      - name: Build and push MCP Docker image
+        id: build-mcp
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.mcp
+          push: true
+          tags: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY }}/${{ env.MCP_IMAGE_NAME }}:${{ github.sha }},${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY }}/${{ env.MCP_IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================
+  # JOB 3: Deploy to Cloud Run
+  # ============================================
+  deploy:
+    name: Deploy to Cloud Run
+    runs-on: ubuntu-latest
+    needs: build-image
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    
+    environment:
+      name: ${{ github.event.inputs.environment || 'production' }}
+      url: ${{ steps.deploy.outputs.url }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Create/Update Secrets in Secret Manager
+        run: |
+          # Function to create or update a secret
+          create_or_update_secret() {
+            local secret_name=$1
+            local secret_value=$2
+            
+            if [ -n "$secret_value" ]; then
+              # Check if secret exists
+              if gcloud secrets describe $secret_name --project=${{ env.PROJECT_ID }} >/dev/null 2>&1; then
+                echo "Updating secret: $secret_name"
+                echo -n "$secret_value" | gcloud secrets versions add $secret_name --data-file=- --project=${{ env.PROJECT_ID }}
+              else
+                echo "Creating secret: $secret_name"
+                echo -n "$secret_value" | gcloud secrets create $secret_name --data-file=- --project=${{ env.PROJECT_ID }}
+              fi
+            fi
+          }
+          
+          # Create/update secrets from GitHub secrets
+          create_or_update_secret "BYTEZ_API_KEY" "${{ secrets.BYTEZ_API_KEY }}"
+          create_or_update_secret "GEMINI_API_KEY" "${{ secrets.GEMINI_API_KEY }}"
+          create_or_update_secret "SPOTIFY_CLIENT_ID" "${{ secrets.SPOTIFY_CLIENT_ID }}"
+          create_or_update_secret "SPOTIFY_SECRET" "${{ secrets.SPOTIFY_SECRET }}"
+          create_or_update_secret "SPOTIFY_REFRESH_TOKEN" "${{ secrets.SPOTIFY_REFRESH_TOKEN }}"
+          create_or_update_secret "GOOGLE_CLIENT_ID" "${{ secrets.GOOGLE_CLIENT_ID }}"
+          create_or_update_secret "GOOGLE_CLIENT_SECRET" "${{ secrets.GOOGLE_CLIENT_SECRET }}"
+          create_or_update_secret "GOOGLE_REFRESH_TOKEN" "${{ secrets.GOOGLE_REFRESH_TOKEN }}"
+          create_or_update_secret "NEWS_API_KEY" "${{ secrets.NEWS_API_KEY }}"
+          create_or_update_secret "WEATHERAPI_KEY" "${{ secrets.WEATHERAPI_KEY }}"
+          create_or_update_secret "FLASK_SECRET_KEY" "${{ secrets.FLASK_SECRET_KEY }}"
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          flags: |
+            --platform=managed
+            --allow-unauthenticated
+            --memory=512Mi
+            --cpu=1
+            --min-instances=0
+            --max-instances=10
+            --concurrency=80
+            --timeout=300
+            --port=5000
+            --set-env-vars=FLASK_DEBUG=false,USE_MEMORY_DB=false,PYTHONUNBUFFERED=1
+            --set-secrets=BYTEZ_API_KEY=BYTEZ_API_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,SPOTIFY_CLIENT_ID=SPOTIFY_CLIENT_ID:latest,SPOTIFY_SECRET=SPOTIFY_SECRET:latest,FLASK_SECRET_KEY=FLASK_SECRET_KEY:latest
+
+      - name: Show deployment URL
+        run: |
+          echo "🚀 Deployed to: ${{ steps.deploy.outputs.url }}"
+          echo ""
+          echo "📋 Service Details:"
+          gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --format='table(status.url, status.conditions[0].status)'
+
+      - name: Health Check
+        run: |
+          echo "🏥 Running health check..."
+          SERVICE_URL="${{ steps.deploy.outputs.url }}"
+          
+          for i in {1..5}; do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$SERVICE_URL/health" || echo "000")
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "✅ Health check passed!"
+              curl -s "$SERVICE_URL/health" | jq . || true
+              exit 0
+            fi
+            echo "Attempt $i: HTTP $HTTP_STATUS - Waiting..."
+            sleep 10
+          done
+          
+          echo "⚠️ Health check didn't pass, but deployment completed"
+
+      - name: Deploy MCP Server to Cloud Run
+        id: deploy-mcp
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.MCP_SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY }}/${{ env.MCP_IMAGE_NAME }}:${{ github.sha }}
+          flags: |
+            --platform=managed
+            --allow-unauthenticated
+            --memory=256Mi
+            --cpu=1
+            --min-instances=0
+            --max-instances=3
+            --concurrency=100
+            --timeout=60
+            --port=8080
+            --set-env-vars=MCP_PORT=8080,WAHA_URL=${{ steps.deploy.outputs.url }}/api/sendText,PYTHONUNBUFFERED=1
+            --set-secrets=BYTEZ_API_KEY=BYTEZ_API_KEY:latest
+
+      - name: Show MCP deployment URL
+        run: |
+          echo "🤖 MCP Server deployed to: ${{ steps.deploy-mcp.outputs.url }}"
+          echo ""
+          echo "📋 MCP Endpoints:"
+          echo "  - Tools: ${{ steps.deploy-mcp.outputs.url }}/tools"
+          echo "  - Health: ${{ steps.deploy-mcp.outputs.url }}/health"
+          echo "  - Status: ${{ steps.deploy-mcp.outputs.url }}/status"
+
+  # ============================================
+  # JOB 4: Update WhatsApp Webhook
+  # ============================================
+  configure-webhook:
+    name: Configure Webhook
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: success()
+    
+    steps:
+      - name: Update WAHA webhook URL
+        run: |
+          SERVICE_URL="${{ needs.deploy.outputs.url || '' }}"
+          
+          if [ -n "$SERVICE_URL" ] && [ -n "${{ secrets.WAHA_URL }}" ]; then
+            echo "📱 Configuring WhatsApp webhook to: $SERVICE_URL/webhook"
+            # This would need to be customized based on your WAHA setup
+            # curl -X POST "${{ secrets.WAHA_URL }}/api/sessions/default/config" \
+            #   -H "Content-Type: application/json" \
+            #   -d "{\"webhook\": \"$SERVICE_URL/webhook\"}"
+          else
+            echo "ℹ️ Skipping webhook configuration"
+          fi
+
+  # ============================================
+  # JOB 5: Notify on completion
+  # ============================================
+  notify:
+    name: Notify
+    runs-on: ubuntu-latest
+    needs: [deploy, configure-webhook]
+    if: always()
+    
+    steps:
+      - name: Deployment Summary
+        run: |
+          echo "============================================"
+          echo "📦 Deployment Summary"
+          echo "============================================"
+          echo "Service: ${{ env.SERVICE_NAME }}"
+          echo "Region: ${{ env.REGION }}"
+          echo "Status: ${{ needs.deploy.result }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Triggered by: ${{ github.actor }}"
+          echo "============================================"

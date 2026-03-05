@@ -17,3 +17,10 @@ qrcode==8.0
 Pillow==11.0.0
 requests-oauthlib
 python-dateutil
+firebase-admin
+# Bytez - Unified AI API for 175,000+ models
+# Chat, Image Generation, Text-to-Speech, Vision, and more
+# Get your API key at https://bytez.com/settings
+bytez>=3.0.0
+# MCP - Model Context Protocol for AI tool integration
+mcp>=1.0.0
