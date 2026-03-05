@@ -246,7 +246,7 @@ jobs:
             --timeout=300
             --port=5000
             --set-env-vars=FLASK_DEBUG=false,USE_MEMORY_DB=false,PYTHONUNBUFFERED=1
-            --set-secrets=BYTEZ_API_KEY=BYTEZ_API_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,SPOTIFY_CLIENT_ID=SPOTIFY_CLIENT_ID:latest,SPOTIFY_SECRET=SPOTIFY_SECRET:latest,FLASK_SECRET_KEY=FLASK_SECRET_KEY:latest
+            --set-secrets=BYTEZ_API_KEY=BYTEZ_API_KEY:latest
 
       - name: Show deployment URL
         run: |
