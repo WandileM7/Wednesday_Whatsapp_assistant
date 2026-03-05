@@ -13,7 +13,7 @@ RUN apk add --no-cache \
     && rm -rf /var/cache/apk/*
 
 # Copy package files
-COPY whatsapp-service/package.json ./
+COPY package.json ./
 
 # Install dependencies
 RUN npm install && npm cache clean --force
@@ -26,7 +26,7 @@ ENV NODE_ENV=production \
     ENABLE_REAL_WHATSAPP=true
 
 # Copy application files
-COPY whatsapp-service/ .
+COPY . .
 
 # Create session directory with proper permissions
 RUN mkdir -p session uploads && chmod 755 session uploads
