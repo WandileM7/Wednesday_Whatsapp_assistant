@@ -147,32 +147,32 @@ def get_cached_session():
     """Get cached session data"""
     return session.get('user_cache', {})
 
-# AI Handler Priority: Bytez (175k+ models) -> Gemini (fallback) -> Stubs
+# AI Handler Priority: Gemini/Vertex AI (primary, native tool use) -> Bytez (fallback) -> Stubs
 BYTEZ_HELPERS_AVAILABLE = False
 GEMINI_HELPERS_AVAILABLE = False
 
-# Try to import Bytez handler first (primary AI)
+# Try Gemini/Vertex AI first — native function calling, runs on GCP service account
 try:
-    from handlers.bytez_handler import chat_with_functions, execute_function, get_bytez_status
-    if BYTEZ_SDK_AVAILABLE and os.getenv("BYTEZ_API_KEY"):
-        BYTEZ_HELPERS_AVAILABLE = True
-        logger.info("✨ Bytez AI handler loaded - 175,000+ models available!")
-    else:
-        raise ImportError("Bytez SDK or API key not available")
+    from handlers.gemini import chat_with_functions, execute_function
+    GEMINI_HELPERS_AVAILABLE = True
+    logger.info("Gemini AI handler loaded (Vertex AI or API key)")
 except Exception as e:
-    logger.info(f"Bytez handler not available, trying Gemini fallback: {e}")
-    
-    # Try Gemini as fallback
+    logger.info(f"Gemini handler not available, trying Bytez fallback: {e}")
+
+    # Fall back to Bytez for open-source model access
     try:
-        from handlers.gemini import chat_with_functions, execute_function
-        GEMINI_HELPERS_AVAILABLE = True
-        logger.info("Using Gemini AI handler as fallback")
+        from handlers.bytez_handler import chat_with_functions, execute_function, get_bytez_status
+        if BYTEZ_SDK_AVAILABLE and os.getenv("BYTEZ_API_KEY"):
+            BYTEZ_HELPERS_AVAILABLE = True
+            logger.info("Bytez AI handler loaded as fallback")
+        else:
+            raise ImportError("Bytez SDK or API key not available")
     except Exception as e2:
-        logger.warning(f"Using stub AI handlers: {e2}")
-        
+        logger.warning(f"No AI handler available, using stubs: {e2}")
+
         def chat_with_functions(user_message: str, phone: str):
             return {"content": f"AI not configured. You said: {user_message}"}
-        
+
         def execute_function(call, phone=""):
             return call.get("content") or "AI function calling not available."
 
@@ -1801,35 +1801,6 @@ def typing_indicator(phone, seconds=2):
         logger.error(f"Typing indicator error: {e}")
         return False
 
-def send_message(phone, text):
-    """Memory-efficient message sending"""
-    try:
-        if not waha_health_check():
-            logger.warning("WAHA not ready; message not sent")
-            return False
-        headers = {"Content-Type": "application/json"}
-        session_name = os.getenv("WAHA_SESSION", "default")
-        payload = {
-            "chatId": phone, 
-            "text": text,
-            "session": session_name
-        }
-        # Primary (legacy) endpoint
-        r = requests.post(waha_url, headers=headers, data=json.dumps(payload), timeout=20)
-        if r.status_code in (200, 201):
-            return True
-        # Fallback to session-scoped messages API
-        base = _waha_base()
-        alt = f"{base}/api/sessions/{session_name}/messages/text"
-        r2 = requests.post(alt, headers=headers, data=json.dumps(payload), timeout=20)
-        if r2.status_code in (200, 201):
-            return True
-        logger.error(f"WAHA send_message failed: {r.status_code} {r.text} | alt={r2.status_code} {r2.text}")
-        return False
-    except Exception as e:
-        logger.error(f"WAHA send_message error: {e}")
-        return False
-
 def send_voice_message(phone, audio_file, fallback_text=""):
     """Send voice message with improved fallback handling"""
     if not waha_url:
@@ -1894,30 +1865,29 @@ def send_voice_message(phone, audio_file, fallback_text=""):
         cleanup_temp_file(audio_file)
 
 def send_message(phone, text):
-    """Send text message with improved error handling"""
+    """Send text message via WhatsApp service"""
     if not waha_url:
-        logger.warning("WAHA URL not configured")
+        logger.warning("WAHA_URL not configured — cannot send message")
         return False
-        
+
     try:
         headers = _waha_headers()
         payload = {"chatId": phone, "text": text}
-        
-        # Check if WAHA is ready first
-        health_check = waha_health_check()
-        if not health_check:
-            logger.warning("WAHA not ready; message not sent")
-            return False
-        
+
         response = requests.post(waha_url, json=payload, headers=headers, timeout=30)
-        
-        if response.status_code == 200:
-            logger.info(f"Text message sent successfully to {phone}")
+
+        if response.status_code in (200, 201):
+            logger.info(f"Message sent to {phone}")
             return True
-        else:
-            logger.error(f"Failed to send message. Status: {response.status_code}, Response: {response.text}")
+
+        # 503 means WhatsApp client not ready (e.g. QR not scanned yet)
+        if response.status_code == 503:
+            logger.warning(f"WhatsApp service not ready (503) — message not sent to {phone}")
             return False
-            
+
+        logger.error(f"Failed to send message to {phone}: {response.status_code} {response.text}")
+        return False
+
     except Exception as e:
         logger.error(f"Error sending message: {e}")
         return False

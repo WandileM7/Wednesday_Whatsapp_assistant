@@ -71,18 +71,46 @@ jobs:
       - name: Get Assistant Service URL
         id: get-assistant-url
         run: |
-          # Get the URL of the main assistant service
           ASSISTANT_URL=$(gcloud run services describe wednesday-assistant \
             --region=${{ env.REGION }} \
             --format='value(status.url)' 2>/dev/null || echo "")
-          
+
           if [ -z "$ASSISTANT_URL" ]; then
-            echo "⚠️ Assistant service not found, using placeholder"
+            echo "Assistant service not found yet, using placeholder"
             ASSISTANT_URL="https://wednesday-assistant-PLACEHOLDER.run.app"
           fi
-          
+
           echo "assistant_url=$ASSISTANT_URL" >> $GITHUB_OUTPUT
-          echo "📍 Assistant URL: $ASSISTANT_URL"
+          echo "Assistant URL: $ASSISTANT_URL"
+
+      - name: Set up GCS session bucket
+        id: setup-bucket
+        run: |
+          # Bucket name must be globally unique — use project ID as prefix
+          BUCKET_NAME="${{ env.PROJECT_ID }}-whatsapp-session"
+          echo "bucket_name=$BUCKET_NAME" >> $GITHUB_OUTPUT
+
+          # Create bucket if it doesn't exist (single-region for lower latency)
+          if ! gcloud storage buckets describe gs://${BUCKET_NAME} >/dev/null 2>&1; then
+            gcloud storage buckets create gs://${BUCKET_NAME} \
+              --location=${{ env.REGION }} \
+              --uniform-bucket-level-access
+            echo "Created bucket: gs://${BUCKET_NAME}"
+          else
+            echo "Bucket already exists: gs://${BUCKET_NAME}"
+          fi
+
+          # The Cloud Run service identity is the Compute Engine default SA
+          PROJECT_NUMBER=$(gcloud projects describe ${{ env.PROJECT_ID }} --format='value(projectNumber)')
+          CR_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+
+          # Grant objectAdmin so Cloud Run can read and write session files
+          gcloud storage buckets add-iam-policy-binding gs://${BUCKET_NAME} \
+            --member="serviceAccount:${CR_SA}" \
+            --role="roles/storage.objectAdmin" \
+            --quiet || true
+
+          echo "Bucket ready: gs://${BUCKET_NAME}"
 
       - name: Deploy to Cloud Run
         id: deploy
@@ -91,17 +119,27 @@ jobs:
           service: ${{ env.SERVICE_NAME }}
           region: ${{ env.REGION }}
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          env_vars: |
+            ENABLE_REAL_WHATSAPP=true
+            SHOW_QR=true
+            LOG_LEVEL=info
+            WHATSAPP_HOOK_URL=${{ steps.get-assistant-url.outputs.assistant_url }}/webhook
+            WHATSAPP_HOOK_EVENTS=message
+            MAX_RECONNECT_ATTEMPTS=10
+            SESSION_PATH=/app/session
           flags: |
             --platform=managed
             --allow-unauthenticated
-            --memory=256Mi
+            --memory=512Mi
             --cpu=1
             --min-instances=1
             --max-instances=1
             --concurrency=100
             --timeout=3600
             --port=3000
-            --set-env-vars=ENABLE_REAL_WHATSAPP=true,SHOW_QR=true,LOG_LEVEL=info,WHATSAPP_HOOK_URL=${{ steps.get-assistant-url.outputs.assistant_url }}/webhook,WHATSAPP_HOOK_EVENTS=message,MAX_RECONNECT_ATTEMPTS=10
+            --execution-environment=gen2
+            --add-volume=name=whatsapp-session,type=cloud-storage,bucket=${{ steps.setup-bucket.outputs.bucket_name }},mount-options=allow_other:uid=1001:gid=1001
+            --add-volume-mount=volume=whatsapp-session,mount-path=/app/session
 
       - name: Show deployment info
         run: |

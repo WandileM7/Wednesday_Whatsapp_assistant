@@ -41,10 +41,10 @@ GENERATION_MODEL = "gemini-2.5-flash"
 logger = logging.getLogger("GeminiHandler")
 
 # Constants
-API_TIMEOUT = 30  # seconds
 MAX_RETRIES = 3
 RETRY_DELAY = 1  # seconds
 MAX_CONVERSATION_HISTORY = 10  # messages to include
+MAX_AGENT_ITERATIONS = 5  # max sequential tool calls per user message
 
 # Gemini client state
 client: Optional[genai.Client] = None
@@ -897,11 +897,29 @@ def _build_function_tools() -> List[genai_types.Tool]:
 
 
 def _initialize_gemini_client() -> None:
-    """Initialize the Gemini client and tools using the new google-genai SDK."""
+    """Initialize the Gemini client, preferring Vertex AI when running on GCP."""
     global client, FUNCTION_TOOLS
 
+    # Try Vertex AI first — uses Cloud Run service account, no extra API key needed.
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCP_PROJECT_ID")
+    location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+
+    if project_id:
+        try:
+            client = genai.Client(vertexai=True, project=project_id, location=location)
+            FUNCTION_TOOLS = _build_function_tools()
+            fn_count = len(FUNCTION_TOOLS[0].function_declarations) if FUNCTION_TOOLS else 0
+            logger.info(
+                f"Gemini client initialized via Vertex AI "
+                f"(project={project_id}, location={location}, model={GENERATION_MODEL}, tools={fn_count})"
+            )
+            return
+        except Exception as e:
+            logger.warning(f"Vertex AI init failed, falling back to API key: {e}")
+
+    # Fall back to direct API key (local dev / non-GCP environments)
     if not GEMINI_API_KEY:
-        logger.warning("GEMINI_API_KEY not configured - AI features disabled")
+        logger.warning("Neither GOOGLE_CLOUD_PROJECT nor GEMINI_API_KEY set — Gemini AI disabled")
         client = None
         FUNCTION_TOOLS = []
         return
@@ -909,9 +927,8 @@ def _initialize_gemini_client() -> None:
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
         FUNCTION_TOOLS = _build_function_tools()
-        logger.info(
-            f"Gemini client initialized ({GENERATION_MODEL}) with {len(FUNCTION_TOOLS[0].function_declarations) if FUNCTION_TOOLS else 0} functions"
-        )
+        fn_count = len(FUNCTION_TOOLS[0].function_declarations) if FUNCTION_TOOLS else 0
+        logger.info(f"Gemini client initialized via API key (model={GENERATION_MODEL}, tools={fn_count})")
     except Exception as e:
         logger.error(f"Failed to initialize Gemini client: {e}")
         client = None
@@ -946,11 +963,10 @@ Current Request: {user_message}
 """
 
 
-def _make_api_call_with_timeout(prompt: str, timeout: int = API_TIMEOUT) -> tuple:
-    """Make Gemini API call with thread-safe timeout."""
-    # Check if model is initialized
+def _make_api_call_with_timeout(prompt: str, timeout: int = 30) -> tuple:
+    """Legacy single-shot API call — kept for any external callers. Not used by the agent loop."""
     if client is None:
-        raise GeminiAPIError("Gemini client not initialized - check GEMINI_API_KEY")
+        raise GeminiAPIError("Gemini client not initialized")
     
     response = None
     exception_info = None
@@ -1059,22 +1075,16 @@ def _parse_gemini_response(response) -> dict:
 
 def chat_with_functions(user_message: str, phone: str) -> dict:
     """
-    Handle conversation with Gemini AI, including function calling and conversation history.
-    
-    Args:
-        user_message: The user's input message
-        phone: The user's phone identifier for conversation history
-        
-    Returns:
-        dict: Either a function call dict with 'name' and 'parameters', 
-              or a response dict with 'name'=None and 'content'
+    Agentic loop: call Gemini, execute tools as needed, and return the final text response.
+
+    Gemini can call up to MAX_AGENT_ITERATIONS tools in sequence before producing its answer.
+    Always returns {"name": None, "content": <str>, "type": "text"}.
     """
-    # Check if model is initialized
     if not client:
-        logger.error("Gemini client not initialized - check GEMINI_API_KEY")
+        logger.error("Gemini client not initialized")
         return {"name": None, "content": "Sorry, AI features are currently unavailable."}
 
-    # Quick rule-based handler to unblock calendar event commands while tools are disabled
+    # Quick rule-based workaround for direct calendar commands (edge-case compatibility)
     def _handle_direct_calendar_command(msg: str) -> Optional[str]:
         lower = msg.lower()
         if "calendar" in lower and "event" in lower and "subject" in lower:
@@ -1083,10 +1093,9 @@ def chat_with_functions(user_message: str, phone: str) -> dict:
             start_match = re.search(r"start[_\s]*time\s*(?:=|equals)\s*([^\.]+)", msg, re.IGNORECASE)
             subject = subject_match.group(1).strip() if subject_match else "Untitled"
             start_time = start_match.group(1).strip() if start_match else "today 12am"
-            end_time = "today 1am"
             try:
-                result = create_event(summary=subject, start_time=start_time, end_time=end_time)
-                return f"✅ Created calendar event: {subject} ({start_time} - {end_time}). {result if isinstance(result, str) else ''}".strip()
+                result = create_event(summary=subject, start_time=start_time, end_time="today 1am")
+                return f"✅ Created calendar event: {subject} ({start_time}). {result if isinstance(result, str) else ''}".strip()
             except Exception as e:
                 logger.error(f"Direct calendar command failed: {e}")
                 return f"❌ Could not create calendar event: {e}"
@@ -1097,62 +1106,99 @@ def chat_with_functions(user_message: str, phone: str) -> dict:
         add_to_conversation_history(phone, "user", user_message)
         add_to_conversation_history(phone, "assistant", direct_response)
         return {"name": None, "content": direct_response}
-    
-    # Retrieve conversation history
+
     try:
         conversation_history = retrieve_conversation_history(phone)
     except Exception as e:
         logger.warning(f"Could not retrieve conversation history: {e}")
         conversation_history = []
 
-    # Build the prompt
     prompt = _build_conversation_prompt(user_message, conversation_history)
-    
-    # Make API call with retry logic
-    response = None
-    last_error = None
-    
-    for attempt in range(MAX_RETRIES):
+    config = genai_types.GenerateContentConfig(tools=FUNCTION_TOOLS) if FUNCTION_TOOLS else None
+
+    # Seed the multi-turn conversation with the user's enriched message
+    contents = [genai_types.Content(role="user", parts=[genai_types.Part(text=prompt)])]
+
+    final_text = None
+
+    for iteration in range(MAX_AGENT_ITERATIONS + 1):
         try:
-            response = _make_api_call_with_timeout(prompt, API_TIMEOUT)
-            break  # Success, exit retry loop
-        except GeminiTimeoutError as e:
-            last_error = e
-            logger.warning(f"Attempt {attempt + 1}/{MAX_RETRIES}: API timeout")
-            if attempt < MAX_RETRIES - 1:
-                time.sleep(RETRY_DELAY * (attempt + 1))
-        except GeminiAPIError as e:
-            last_error = e
-            logger.error(f"Attempt {attempt + 1}/{MAX_RETRIES}: API error - {e}")
-            # Don't retry on certain errors (e.g., schema errors)
-            if "schema" in str(e).lower() or "field" in str(e).lower():
+            response = client.models.generate_content(
+                model=GENERATION_MODEL,
+                contents=contents,
+                config=config,
+            )
+        except Exception as e:
+            logger.error(f"Gemini API error (iteration {iteration}): {e}")
+            final_text = "Sorry, I encountered an error. Please try again."
+            break
+
+        if not response.candidates:
+            logger.warning("No candidates in Gemini response")
+            final_text = "Sorry, I couldn't generate a response."
+            break
+
+        model_content = response.candidates[0].content
+
+        # Find a function call in the model's response parts
+        function_call_part = None
+        for part in model_content.parts:
+            if hasattr(part, "function_call") and part.function_call and part.function_call.name:
+                function_call_part = part.function_call
                 break
-            if attempt < MAX_RETRIES - 1:
-                time.sleep(RETRY_DELAY * (attempt + 1))
-    
-    # Handle complete failure
-    if response is None:
-        error_msg = "Sorry, I'm experiencing technical difficulties. Please try again."
-        logger.error(f"All {MAX_RETRIES} attempts failed: {last_error}")
-        add_to_conversation_history(phone, "user", user_message)
-        add_to_conversation_history(phone, "assistant", error_msg)
-        return {"name": None, "content": error_msg}
-    
-    # Parse the response
-    result = _parse_gemini_response(response)
-    
-    # Log the interaction
-    if result.get("type") == "function_call":
-        log_content = f"Function call: {result['name']}({result.get('parameters', {})})"
-    else:
-        log_content = result.get("content", "No response")
-    
+
+        if function_call_part and iteration < MAX_AGENT_ITERATIONS:
+            fn_name = function_call_part.name
+            fn_args = dict(function_call_part.args) if function_call_part.args else {}
+            logger.info(f"Agent tool call [{iteration + 1}/{MAX_AGENT_ITERATIONS}]: {fn_name}({fn_args})")
+
+            try:
+                tool_result = execute_function({"name": fn_name, "parameters": fn_args}, phone)
+            except Exception as e:
+                logger.error(f"Tool execution failed for {fn_name}: {e}")
+                tool_result = f"Error executing {fn_name}: {e}"
+
+            # Append model turn (contains the function_call), then the tool result
+            contents.append(model_content)
+            contents.append(
+                genai_types.Content(
+                    role="user",
+                    parts=[
+                        genai_types.Part(
+                            function_response=genai_types.FunctionResponse(
+                                name=fn_name,
+                                response={"result": str(tool_result)},
+                            )
+                        )
+                    ],
+                )
+            )
+
+        else:
+            # Text response (or iteration limit hit) — extract and finish
+            try:
+                final_text = response.text or ""
+            except Exception:
+                final_text = ""
+
+            if not final_text:
+                for part in model_content.parts:
+                    t = getattr(part, "text", None)
+                    if t:
+                        final_text = t
+                        break
+
+            if not final_text:
+                final_text = "Task completed."
+            break
+
+    if not final_text:
+        final_text = "I ran into an issue processing your request. Please try again."
+
     add_to_conversation_history(phone, "user", user_message)
-    add_to_conversation_history(phone, "assistant", log_content)
-    
-    logger.debug(f"Gemini response type: {result.get('type')}")
-    
-    return result
+    add_to_conversation_history(phone, "assistant", final_text)
+
+    return {"name": None, "content": final_text, "type": "text"}
 
 
 def execute_function(call: dict, phone: str = "") -> str:

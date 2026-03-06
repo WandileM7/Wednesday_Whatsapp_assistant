@@ -228,6 +228,22 @@ jobs:
           create_or_update_secret "WEATHERAPI_KEY" "${{ secrets.WEATHERAPI_KEY }}"
           create_or_update_secret "FLASK_SECRET_KEY" "${{ secrets.FLASK_SECRET_KEY }}"
 
+      - name: Get WhatsApp Service URL
+        id: get-whatsapp-url
+        run: |
+          # Look up the existing WhatsApp service URL so WAHA_URL is preserved on every deploy,
+          # even when whatsapp-service files haven't changed.
+          WHATSAPP_URL=$(gcloud run services describe wednesday-whatsapp \
+            --region=${{ env.REGION }} \
+            --format='value(status.url)' 2>/dev/null || echo "")
+          if [ -n "$WHATSAPP_URL" ]; then
+            echo "waha_url=${WHATSAPP_URL}/api/sendText" >> $GITHUB_OUTPUT
+            echo "WhatsApp service found: $WHATSAPP_URL"
+          else
+            echo "waha_url=" >> $GITHUB_OUTPUT
+            echo "WhatsApp service not deployed yet — WAHA_URL will be set after whatsapp deploy runs"
+          fi
+
       - name: Deploy to Cloud Run
         id: deploy
         uses: google-github-actions/deploy-cloudrun@v2
@@ -235,6 +251,13 @@ jobs:
           service: ${{ env.SERVICE_NAME }}
           region: ${{ env.REGION }}
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          env_vars: |
+            FLASK_DEBUG=false
+            USE_MEMORY_DB=false
+            PYTHONUNBUFFERED=1
+            WAHA_URL=${{ steps.get-whatsapp-url.outputs.waha_url }}
+            GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
+            GOOGLE_CLOUD_LOCATION=${{ env.REGION }}
           flags: |
             --platform=managed
             --allow-unauthenticated
@@ -245,8 +268,8 @@ jobs:
             --concurrency=80
             --timeout=300
             --port=5000
-            --set-env-vars=FLASK_DEBUG=false,USE_MEMORY_DB=false,PYTHONUNBUFFERED=1
-            --set-secrets=BYTEZ_API_KEY=BYTEZ_API_KEY:latest
+          secrets: |
+            BYTEZ_API_KEY=BYTEZ_API_KEY:latest
 
       - name: Show deployment URL
         run: |
@@ -282,6 +305,11 @@ jobs:
           service: ${{ env.MCP_SERVICE_NAME }}
           region: ${{ env.REGION }}
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY }}/${{ env.MCP_IMAGE_NAME }}:${{ github.sha }}
+          env_vars: |
+            MCP_PORT=8080
+            WAHA_URL=${{ steps.get-whatsapp-url.outputs.waha_url }}
+            ASSISTANT_URL=${{ steps.deploy.outputs.url }}
+            PYTHONUNBUFFERED=1
           flags: |
             --platform=managed
             --allow-unauthenticated
@@ -292,8 +320,8 @@ jobs:
             --concurrency=100
             --timeout=60
             --port=8080
-            --set-env-vars=MCP_PORT=8080,WAHA_URL=${{ steps.deploy.outputs.url }}/api/sendText,PYTHONUNBUFFERED=1
-            --set-secrets=BYTEZ_API_KEY=BYTEZ_API_KEY:latest
+          secrets: |
+            BYTEZ_API_KEY=BYTEZ_API_KEY:latest
 
       - name: Show MCP deployment URL
         run: |

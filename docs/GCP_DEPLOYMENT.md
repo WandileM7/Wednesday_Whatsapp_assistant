@@ -80,7 +80,8 @@ gcloud services enable \
     artifactregistry.googleapis.com \
     secretmanager.googleapis.com \
     cloudbuild.googleapis.com \
-    iam.googleapis.com
+    iam.googleapis.com \
+    storage.googleapis.com
 ```
 
 ### Step 3: Create Artifact Registry
@@ -122,6 +123,11 @@ gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
 gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
     --member="serviceAccount:$SA_EMAIL" \
     --role="roles/secretmanager.admin"
+
+# Needed to create the GCS session bucket and set its IAM policy from CI/CD
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+    --member="serviceAccount:$SA_EMAIL" \
+    --role="roles/storage.admin"
 ```
 
 ### Step 5: Create Service Account Key
