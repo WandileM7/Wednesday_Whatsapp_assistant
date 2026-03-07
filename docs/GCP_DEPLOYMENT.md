@@ -81,7 +81,8 @@ gcloud services enable \
     secretmanager.googleapis.com \
     cloudbuild.googleapis.com \
     iam.googleapis.com \
-    storage.googleapis.com
+    storage.googleapis.com \
+    aiplatform.googleapis.com
 ```
 
 ### Step 3: Create Artifact Registry
@@ -128,6 +129,14 @@ gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
 gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
     --member="serviceAccount:$SA_EMAIL" \
     --role="roles/storage.admin"
+
+# Needed so the Cloud Run *runtime* service account can call Vertex AI Gemini
+# (The Compute Engine default SA is what Cloud Run instances run as)
+PROJECT_NUMBER=$(gcloud projects describe YOUR_PROJECT_ID --format='value(projectNumber)')
+CR_RUNTIME_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+    --member="serviceAccount:${CR_RUNTIME_SA}" \
+    --role="roles/aiplatform.user"
 ```
 
 ### Step 5: Create Service Account Key

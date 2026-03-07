@@ -10,10 +10,21 @@ logger = logging.getLogger(__name__)
 SPOTIFY_SCOPE = "user-read-playback-state user-modify-playback-state"
 
 def make_spotify_oauth():
+    client_id = os.getenv("SPOTIFY_CLIENT_ID")
+    client_secret = os.getenv("SPOTIFY_SECRET")
+    if not client_id or not client_secret:
+        raise RuntimeError("SPOTIFY_CLIENT_ID and SPOTIFY_SECRET must be set")
+
+    redirect_uri = os.getenv("SPOTIFY_REDIRECT_URI")
+    if not redirect_uri:
+        # Fallback: works for token-refresh flows; initial OAuth will fail without the real URI
+        redirect_uri = "https://localhost/spotify-callback"
+        logger.warning("SPOTIFY_REDIRECT_URI not set — using placeholder (token refresh only)")
+
     return SpotifyOAuth(
-        client_id=os.getenv("SPOTIFY_CLIENT_ID"),
-        client_secret=os.getenv("SPOTIFY_SECRET"),
-        redirect_uri=os.getenv("SPOTIFY_REDIRECT_URI"),
+        client_id=client_id,
+        client_secret=client_secret,
+        redirect_uri=redirect_uri,
         scope=SPOTIFY_SCOPE,
         cache_path=None
     )

@@ -196,6 +196,22 @@ jobs:
         with:
           project_id: ${{ env.PROJECT_ID }}
 
+      - name: Enable Vertex AI API and grant runtime SA access
+        run: |
+          # Enable Vertex AI (idempotent — safe to run every deploy)
+          gcloud services enable aiplatform.googleapis.com --project=${{ env.PROJECT_ID }} --quiet
+
+          # Grant the Cloud Run runtime service account permission to call Vertex AI Gemini.
+          # Cloud Run instances run as the Compute Engine default SA unless overridden.
+          PROJECT_NUMBER=$(gcloud projects describe ${{ env.PROJECT_ID }} --format='value(projectNumber)')
+          CR_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+
+          gcloud projects add-iam-policy-binding ${{ env.PROJECT_ID }} \
+            --member="serviceAccount:${CR_SA}" \
+            --role="roles/aiplatform.user" \
+            --condition=None \
+            --quiet || true
+
       - name: Create/Update Secrets in Secret Manager
         run: |
           # Function to create or update a secret
@@ -258,6 +274,7 @@ jobs:
             WAHA_URL=${{ steps.get-whatsapp-url.outputs.waha_url }}
             GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
             GOOGLE_CLOUD_LOCATION=${{ env.REGION }}
+            SPOTIFY_REDIRECT_URI=${{ secrets.SPOTIFY_REDIRECT_URI }}
           flags: |
             --platform=managed
             --allow-unauthenticated

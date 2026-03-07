@@ -81,12 +81,17 @@ except ImportError as e:
 load_dotenv()
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
-app.config["SESSION_TYPE"] = "filesystem"
 app.config["SESSION_PERMANENT"] = False
-app.config["SESSION_USE_SIGNER"] = True
-app.secret_key = os.getenv("FLASK_SECRET_KEY", os.urandom(24))
 
-Session(app)
+# Use Flask's built-in signed-cookie sessions — no server-side file storage required.
+# This works correctly on Cloud Run where instances don't share a filesystem.
+# FLASK_SECRET_KEY MUST be set to a stable value; os.urandom changes on every restart
+# which invalidates all existing sessions.
+secret_key = os.getenv("FLASK_SECRET_KEY")
+if not secret_key:
+    logger.warning("FLASK_SECRET_KEY not set — sessions will reset on every container restart")
+    secret_key = os.urandom(24)
+app.secret_key = secret_key
 app.register_blueprint(auth_bp)
 
 # Configuration

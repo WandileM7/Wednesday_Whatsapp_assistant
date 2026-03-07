@@ -130,6 +130,38 @@ def load_tokens_from_env():
         logger.error(f"Failed to load Google tokens: {e}")
         return None
 
+def _build_flow(scopes, state=None, redirect_uri=None):
+    """Build an OAuth Flow from credentials file or env vars (Cloud Run compatible)."""
+    creds_path = get_credentials_path()
+    if creds_path:
+        kwargs = {"scopes": scopes, "redirect_uri": redirect_uri}
+        if state:
+            kwargs["state"] = state
+        return Flow.from_client_secrets_file(creds_path, **kwargs)
+
+    # No credentials file — build from env vars (Cloud Run / production path)
+    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        raise RuntimeError(
+            "No credentials.json found and GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET not set"
+        )
+
+    client_config = {
+        "web": {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": [redirect_uri or ""],
+        }
+    }
+    kwargs = {"scopes": scopes, "redirect_uri": redirect_uri}
+    if state:
+        kwargs["state"] = state
+    return Flow.from_client_config(client_config, **kwargs)
+
+
 def get_credentials_path():
     """Get the path to credentials file, checking multiple locations"""
     # First check GOOGLE_APPLICATION_CREDENTIALS environment variable
@@ -303,40 +335,30 @@ def load_credentials():
 def authorize():
     """Start the OAuth flow with consistent scopes"""
     logger.info("Starting OAuth authorization flow...")
+
+    # Check for service account — no OAuth flow needed
     creds_path = get_credentials_path()
-    if not creds_path:
-        error_msg = "Error: No credentials.json file found. Please check your GOOGLE_APPLICATION_CREDENTIALS environment variable or place credentials.json in the project directory."
-        logger.error(error_msg)
-        return error_msg, 500
-    
-    is_valid, result = validate_credentials_file(creds_path)
-    if not is_valid:
-        error_msg = f"Error: Invalid credentials file - {result}"
-        logger.error(error_msg)
-        return error_msg, 500
-    
-    if result == "service_account":
-        return "Service account credentials detected. OAuth flow not needed.", 200
-    
+    if creds_path:
+        is_valid, result = validate_credentials_file(creds_path)
+        if is_valid and result == "service_account":
+            return "Service account credentials detected. OAuth flow not needed.", 200
+
     try:
         # Clear any existing credentials to force fresh auth
         session.pop('google_credentials', None)
         session.pop('state', None)
-        
-        flow = Flow.from_client_secrets_file(
-            creds_path,
-            scopes=SCOPES,  # Use the updated SCOPES list
-            redirect_uri=url_for('auth.oauth2callback', _external=True)
-        )
-        
+
+        redirect_uri = url_for('auth.oauth2callback', _external=True)
+        flow = _build_flow(SCOPES, redirect_uri=redirect_uri)
+
         authorization_url, state = flow.authorization_url(
             access_type='offline',
             include_granted_scopes='true',
-            prompt='consent'  # Force consent screen to ensure fresh tokens
+            prompt='consent'
         )
-        
+
         session['state'] = state
-        session['oauth_scopes'] = SCOPES  # Store the scopes we're requesting
+        session['oauth_scopes'] = SCOPES
         logger.info(f"Redirecting to Google OAuth with scopes: {SCOPES}")
         return redirect(authorization_url)
     except Exception as e:
@@ -363,23 +385,15 @@ def oauth2callback():
         """, 400
     
     try:
-        creds_path = get_credentials_path()
-        if not creds_path:
-            raise Exception("Credentials file not found")
-        
         # Verify state parameter
         if 'state' not in session:
             raise Exception("Missing state parameter in session")
-        
+
         # Use the same scopes that were stored during authorization
         requested_scopes = session.get('oauth_scopes', SCOPES)
-        
-        flow = Flow.from_client_secrets_file(
-            creds_path,
-            scopes=requested_scopes,  # Use the scopes from session
-            state=session['state'],
-            redirect_uri=url_for('auth.oauth2callback', _external=True)
-        )
+
+        redirect_uri = url_for('auth.oauth2callback', _external=True)
+        flow = _build_flow(requested_scopes, state=session['state'], redirect_uri=redirect_uri)
         
         # Fetch the token
         flow.fetch_token(authorization_response=request.url)
