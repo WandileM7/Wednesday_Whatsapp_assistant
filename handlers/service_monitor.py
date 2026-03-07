@@ -256,15 +256,15 @@ class ServiceMonitor:
     def _check_gemini_health(self) -> tuple:
         """Check Gemini AI service health - lightweight check without API call"""
         try:
-            if not GEMINI_API_KEY or GEMINI_API_KEY == "test_key_123":
-                return False, "No valid API key configured"
-            
-            # Just verify the API key is configured and client can be created
-            # Don't make actual API calls to avoid burning quota!
-            if gemini_client:
+            # Vertex AI path (Cloud Run) — project ID is sufficient
+            if os.getenv("GOOGLE_CLOUD_PROJECT"):
                 return True, None
-            return False, "Gemini client not initialized"
-                
+            # API key path (local dev)
+            if GEMINI_API_KEY and GEMINI_API_KEY != "test_key_123":
+                if gemini_client:
+                    return True, None
+                return False, "Gemini client not initialized"
+            return False, "No valid API key configured"
         except Exception as e:
             return False, str(e)
     

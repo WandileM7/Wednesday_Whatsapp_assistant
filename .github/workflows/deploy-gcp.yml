@@ -197,6 +197,7 @@ jobs:
           project_id: ${{ env.PROJECT_ID }}
 
       - name: Enable Vertex AI API and grant runtime SA access
+        continue-on-error: true
         run: |
           # Enable Vertex AI (idempotent — safe to run every deploy)
           gcloud services enable aiplatform.googleapis.com --project=${{ env.PROJECT_ID }} --quiet
@@ -287,6 +288,13 @@ jobs:
             --port=5000
           secrets: |
             BYTEZ_API_KEY=BYTEZ_API_KEY:latest
+            SPOTIFY_CLIENT_ID=SPOTIFY_CLIENT_ID:latest
+            SPOTIFY_SECRET=SPOTIFY_SECRET:latest
+            SPOTIFY_REFRESH_TOKEN=SPOTIFY_REFRESH_TOKEN:latest
+            GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest
+            GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest
+            GOOGLE_REFRESH_TOKEN=GOOGLE_REFRESH_TOKEN:latest
+            FLASK_SECRET_KEY=FLASK_SECRET_KEY:latest
 
       - name: Show deployment URL
         run: |
