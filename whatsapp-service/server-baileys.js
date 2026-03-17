@@ -13,6 +13,7 @@ const fs = require('fs-extra');
 const path = require('path');
 const multer = require('multer');
 const pino = require('pino');
+const QRCode = require('qrcode');
 const { 
     default: makeWASocket,
     DisconnectReason,
@@ -467,6 +468,35 @@ app.get('/api/qr', (req, res) => {
             message: 'Waiting for QR code',
             mode: ENABLE_REAL_WHATSAPP ? 'production' : 'mock'
         });
+    }
+});
+
+// Get QR code as PNG image
+app.get('/api/qr/image', async (req, res) => {
+    if (!qrCodeData) {
+        if (isClientReady) {
+            return res.status(200).json({ status: 'authenticated', message: 'Already connected' });
+        }
+        return res.status(404).json({ error: 'No QR code available', status: 'waiting' });
+    }
+    
+    try {
+        const qrImage = await QRCode.toBuffer(qrCodeData, {
+            type: 'png',
+            width: 300,
+            margin: 2,
+            color: {
+                dark: '#000000',
+                light: '#FFFFFF'
+            }
+        });
+        
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'no-store');
+        res.send(qrImage);
+    } catch (error) {
+        console.error('Error generating QR image:', error);
+        res.status(500).json({ error: 'Failed to generate QR image' });
     }
 });
 

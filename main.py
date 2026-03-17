@@ -3107,13 +3107,26 @@ def api_whatsapp_status():
 def api_whatsapp_qr():
     """Get WhatsApp QR code for React dashboard"""
     try:
+        import base64
         whatsapp_url = os.getenv('WAHA_URL', '').replace('/api/sendText', '')
         
         if not whatsapp_url:
             return jsonify({'qr_code': None, 'message': 'WAHA_URL not configured', 'waha_url': None})
         
         try:
-            # Try Baileys endpoint first
+            # Try to get QR image directly from WhatsApp service
+            qr_image_response = requests.get(f"{whatsapp_url}/api/qr/image", timeout=5)
+            
+            if qr_image_response.ok and 'image' in qr_image_response.headers.get('content-type', ''):
+                # Got PNG image, convert to base64
+                qr_base64 = base64.b64encode(qr_image_response.content).decode('utf-8')
+                return jsonify({
+                    'qr_code': qr_base64,
+                    'message': 'Scan QR code with WhatsApp',
+                    'waha_url': whatsapp_url
+                })
+            
+            # Fall back to raw QR data endpoint
             qr_response = requests.get(f"{whatsapp_url}/api/qr", timeout=5)
             
             if qr_response.ok:
@@ -3124,7 +3137,6 @@ def api_whatsapp_qr():
                     # Generate QR code image from raw data
                     try:
                         import qrcode
-                        import base64
                         
                         qr = qrcode.QRCode(
                             version=1,

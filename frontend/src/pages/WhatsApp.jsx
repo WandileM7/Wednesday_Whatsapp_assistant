@@ -279,20 +279,51 @@ export default function WhatsApp() {
               </button>
             </div>
           ) : (
-            <div className="text-center py-20">
-              <AlertTriangle className="w-20 h-20 text-jarvis-orange mx-auto mb-4" />
+            <div className="text-center py-12">
+              <AlertTriangle className="w-16 h-16 text-jarvis-orange mx-auto mb-4" />
               <p className="text-jarvis-orange font-semibold">QR Not Available</p>
-              <p className="text-gray-500 text-sm mt-2">
+              <p className="text-gray-500 text-sm mt-2 mb-4">
                 {qrData?.message || 'WAHA service may be unavailable'}
               </p>
-              <a 
-                href={qrData?.waha_url || '#'}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block mt-4 px-4 py-2 bg-jarvis-blue/10 border border-jarvis-blue/30 rounded text-sm font-mono hover:bg-jarvis-blue/20 transition-colors"
-              >
-                OPEN WAHA DASHBOARD
-              </a>
+              
+              <div className="space-y-3">
+                <button
+                  onClick={() => { handleReconnect(); }}
+                  disabled={reconnecting}
+                  className="w-full py-3 bg-jarvis-blue/10 border border-jarvis-blue/30 rounded-lg font-mono text-sm hover:bg-jarvis-blue/20 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <Power className="w-4 h-4 text-jarvis-blue" />
+                  {reconnecting ? 'INITIATING...' : 'RECONNECT & GET QR'}
+                </button>
+                
+                <button
+                  onClick={fetchQR}
+                  className="w-full py-2 bg-jarvis-blue/5 border border-jarvis-blue/20 rounded text-sm font-mono hover:bg-jarvis-blue/10 transition-colors"
+                >
+                  REFRESH STATUS
+                </button>
+                
+                {qrData?.waha_url && (
+                  <>
+                    <a 
+                      href={`${qrData.waha_url}/api/qr/image`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block w-full py-2 bg-jarvis-green/10 border border-jarvis-green/30 rounded text-sm font-mono text-jarvis-green hover:bg-jarvis-green/20 transition-colors text-center"
+                    >
+                      VIEW QR CODE IMAGE →
+                    </a>
+                    <a 
+                      href={`${qrData.waha_url}/api/qr`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block w-full py-2 bg-gray-800 border border-gray-700 rounded text-sm font-mono text-gray-400 hover:text-white hover:border-gray-600 transition-colors text-center"
+                    >
+                      VIEW RAW QR DATA →
+                    </a>
+                  </>
+                )}
+              </div>
             </div>
           )}
 
