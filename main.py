@@ -574,8 +574,8 @@ except Exception as e:
 # Routes
 @app.route("/")
 def home():
-    """Redirect to the unified dashboard"""
-    return redirect(url_for('unified_dashboard'))
+    """Redirect to the JARVIS dashboard"""
+    return redirect('/jarvis')
 
 @app.route("/login")
 def spotify_login():
@@ -2222,7 +2222,12 @@ def task_summary():
 
 @app.route("/tasks/view")
 def tasks_view():
-    """HTML view for tasks"""
+    """Redirect to JARVIS dashboard for task management"""
+    return redirect('/jarvis')
+
+@app.route("/tasks/view-legacy")
+def tasks_view_legacy():
+    """Legacy HTML view for tasks"""
     tasks = task_manager.list_tasks(filter_completed=False)
     tasks_list = tasks.get('tasks', []) if isinstance(tasks, dict) else []
     
@@ -2231,7 +2236,7 @@ def tasks_view():
     <html>
     <head>
         <title>Wednesday - Tasks</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
         <style>
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
             body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #fff; min-height: 100vh; padding: 20px; }}
@@ -2376,7 +2381,13 @@ def update_session_cache():
 
 @app.route("/quick-setup")
 def quick_setup():
-    """Quick setup page with all necessary links"""
+    """Redirect to JARVIS dashboard - all setup now integrated"""
+    return redirect('/jarvis')
+
+
+@app.route("/quick-setup-legacy")
+def quick_setup_legacy():
+    """Legacy quick setup page - kept for reference"""
     cached_session = get_cached_session()
     
     return f"""
@@ -3527,7 +3538,13 @@ def end_whatsapp_call():
 
 @app.route("/dashboard")
 def unified_dashboard():
-    """Beautiful unified dashboard combining all functionality"""
+    """Redirect to JARVIS React dashboard"""
+    return redirect('/jarvis')
+
+
+@app.route("/dashboard-legacy")
+def unified_dashboard_legacy():
+    """Legacy dashboard - kept for reference. Use /jarvis instead."""
     try:
         from handlers.service_monitor import service_monitor
         from handlers.notifications import task_notification_system
@@ -4266,28 +4283,27 @@ def unified_dashboard():
         
     except Exception as e:
         logger.error(f"Dashboard error: {e}")
-        return f"""
-<!DOCTYPE html>
-<html>
-<head><title>Dashboard Error</title></head>
-<body style="font-family: sans-serif; padding: 40px; text-align: center;">
-    <h1>⚠️ Dashboard Error</h1>
-    <p style="color: #666;">{str(e)}</p>
-    <a href="/health" style="color: #007bff;">Check System Health</a>
-</body>
-</html>
-        """, 500
+        return redirect('/jarvis')
 
-# Redirect old dashboard routes to unified dashboard
+# ============================================
+# Legacy Dashboard Redirects
+# All old dashboards now redirect to React JARVIS dashboard
+# ============================================
+
 @app.route("/auth-dashboard")
 def auth_dashboard_redirect():
-    """Redirect to unified dashboard"""
-    return redirect(url_for('unified_dashboard'))
+    """Redirect to JARVIS dashboard"""
+    return redirect('/jarvis')
 
 @app.route("/google-services-dashboard")
 def google_services_dashboard_redirect():
-    """Redirect to unified dashboard"""
-    return redirect(url_for('unified_dashboard'))
+    """Redirect to JARVIS dashboard"""
+    return redirect('/jarvis')
+
+@app.route("/setup")
+def setup_redirect():
+    """Redirect to JARVIS dashboard"""
+    return redirect('/jarvis')
 
 # Advanced AI endpoints
 @app.route("/api/advanced/generate-video", methods=['POST'])
