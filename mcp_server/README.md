@@ -1,14 +1,15 @@
-# Wednesday MCP Server
+# Wednesday MCP Server (JARVIS Edition)
 
-Model Context Protocol (MCP) server for the Wednesday WhatsApp Assistant. This provides a clean, structured API for AI models to interact with all of Wednesday's capabilities.
+Model Context Protocol (MCP) server for the Wednesday WhatsApp Assistant. This provides a clean, structured API for AI models to interact with all of Wednesday's capabilities including **JARVIS-style advanced features**.
 
 ## 🎯 Why MCP?
 
-The Wednesday WhatsApp Assistant has many features spread across multiple handlers. MCP organizes everything into structured **tools** that AI models can easily call:
+The Wednesday WhatsApp Assistant has many features spread across multiple handlers. MCP organizes everything into structured **tools** (52 total) that AI models can easily call:
 
+### Core Tools (17)
 | Tool Category | Tools | Description |
 |--------------|-------|-------------|
-| **AI/Chat** | `chat` | Converse with the Bytez AI |
+| **AI/Chat** | `chat` | Converse with the AI |
 | **WhatsApp** | `send_whatsapp` | Send messages via WhatsApp |
 | **Calendar** | `get_calendar_events`, `create_calendar_event` | Google Calendar integration |
 | **Email** | `get_emails`, `send_email` | Gmail integration |
@@ -19,6 +20,21 @@ The Wednesday WhatsApp Assistant has many features spread across multiple handle
 | **News** | `get_news` | News headlines |
 | **Memory** | `search_memory` | Search conversation history |
 | **System** | `service_status` | Check service health |
+
+### JARVIS Advanced Tools (35)
+| Tool Category | Tools | Description |
+|--------------|-------|-------------|
+| **Workflows** | `run_workflow`, `list_workflows` | Automated multi-step workflows (morning_routine, focus_mode, etc.) |
+| **Smart Home** | `smart_home_lights`, `smart_home_thermostat`, `smart_home_scene`, `smart_home_locks`, `smart_home_status` | Control lights, temperature, scenes, locks |
+| **Voice** | `speak_this`, `change_voice`, `voice_status` | ElevenLabs premium voice synthesis |
+| **Memory** | `remember_this`, `recall_memory`, `forget_memory`, `get_user_profile`, `memory_stats` | Long-term memory system |
+| **Security** | `security_status`, `security_report`, `check_threat` | Security monitoring and threat detection |
+| **Fitness** | `log_fitness`, `get_fitness_summary`, `get_fitness_history`, `set_fitness_goal` | Fitness tracking |
+| **Expenses** | `add_expense`, `get_spending_report`, `set_budget` | Expense tracking and budgeting |
+| **Briefings** | `get_daily_briefing`, `schedule_briefing`, `cancel_briefing` | Daily briefings |
+| **Mood Music** | `play_mood_music` | Music based on mood |
+| **Media** | `generate_image`, `generate_video` | AI media generation |
+| **JARVIS Core** | `jarvis_greeting`, `proactive_suggestions`, `jarvis_status` | JARVIS personality and proactive intelligence |
 
 ## 🚀 Quick Start
 
@@ -106,6 +122,7 @@ For Rancher Fleet (GitOps):
 
 ### Environment Variables
 
+#### Core Services
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `BYTEZ_API_KEY` | Yes* | Bytez AI API key |
@@ -115,6 +132,21 @@ For Rancher Fleet (GitOps):
 | `WAHA_URL` | No | WhatsApp service URL |
 | `MCP_PORT` | No | HTTP server port (default: 8080) |
 | `MCP_HOST` | No | HTTP server host (default: 0.0.0.0) |
+
+#### JARVIS Advanced Features
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ELEVENLABS_API_KEY` | No | ElevenLabs premium voice synthesis |
+| `ELEVENLABS_JARVIS_VOICE_ID` | No | JARVIS voice ID |
+| `ELEVENLABS_FRIDAY_VOICE_ID` | No | FRIDAY voice ID |
+| `IFTTT_WEBHOOK_KEY` | No | IFTTT smart home triggers |
+| `HOME_ASSISTANT_URL` | No | Home Assistant API URL |
+| `HOME_ASSISTANT_TOKEN` | No | Home Assistant long-lived access token |
+| `PHILIPS_HUE_BRIDGE_IP` | No | Philips Hue Bridge IP |
+| `PHILIPS_HUE_USERNAME` | No | Philips Hue username |
+| `SMARTTHINGS_TOKEN` | No | SmartThings API token |
+| `SECURITY_RATE_LIMIT` | No | Rate limit per minute (default: 30) |
+| `WHITELISTED_PHONES` | No | Comma-separated trusted phone numbers |
 
 *At least one AI key required for chat functionality
 

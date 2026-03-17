@@ -1,38 +1,62 @@
 # 🚀 Google Cloud Platform Deployment Guide
 
-This guide will help you deploy Wednesday WhatsApp Assistant to Google Cloud Platform using Cloud Run.
+This guide will help you deploy the **JARVIS-powered Wednesday WhatsApp Assistant** to Google Cloud Platform using Cloud Run.
 
 ## 📋 Prerequisites
 
 1. **Google Cloud Account** with billing enabled
 2. **Google Cloud SDK** installed ([Download](https://cloud.google.com/sdk/docs/install))
 3. **GitHub Repository** with the Wednesday Assistant code
+4. **GEMINI_API_KEY** (required for MCP Agent reasoning)
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Google Cloud Platform                        │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  ┌──────────────┐      ┌──────────────┐      ┌──────────────┐  │
-│  │   Artifact   │      │    Cloud     │      │   Secret     │  │
-│  │   Registry   │─────▶│     Run      │◀────▶│   Manager    │  │
-│  │   (Images)   │      │  (Services)  │      │   (Keys)     │  │
-│  └──────────────┘      └──────────────┘      └──────────────┘  │
-│                              │                                   │
-│                              │                                   │
-│         ┌────────────────────┼────────────────────┐             │
-│         │                    │                    │             │
-│         ▼                    ▼                    ▼             │
-│  ┌──────────────┐     ┌──────────────┐    ┌──────────────┐     │
-│  │  Wednesday   │     │   WhatsApp   │    │   External   │     │
-│  │  Assistant   │◀───▶│   Service    │◀───│   Services   │     │
-│  │  (Flask)     │     │  (Baileys)   │    │ (Bytez, etc) │     │
-│  └──────────────┘     └──────────────┘    └──────────────┘     │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Google Cloud Platform                           │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌──────────────┐      ┌──────────────┐      ┌──────────────┐      │
+│  │   Artifact   │      │    Cloud     │      │   Secret     │      │
+│  │   Registry   │─────▶│     Run      │◀────▶│   Manager    │      │
+│  │   (Images)   │      │  (Services)  │      │   (Keys)     │      │
+│  └──────────────┘      └──────────────┘      └──────────────┘      │
+│                              │                                       │
+│         ┌────────────────────┼────────────────────┐                 │
+│         │                    │                    │                 │
+│         ▼                    ▼                    ▼                 │
+│  ┌──────────────┐     ┌──────────────┐    ┌──────────────┐         │
+│  │  JARVIS      │     │   WhatsApp   │    │  MCP Server  │         │
+│  │  Assistant   │◀───▶│   Service    │    │  (52 tools)  │         │
+│  │  (MCP Agent) │     │  (Baileys)   │    │  Port 8080   │         │
+│  └──────────────┘     └──────────────┘    └──────────────┘         │
+│         │                                         │                 │
+│         │    ┌───────────────────────────────────┐│                 │
+│         └───▶│ MCP Agent (Gemini + 52 MCP Tools) │◀┘                 │
+│              │ • Workflows    • Smart Home       │                  │
+│              │ • Voice        • Memory           │                  │
+│              │ • Security     • Fitness          │                  │
+│              │ • Calendar     • Spotify          │                  │
+│              └───────────────────────────────────┘                  │
+│                              │                                       │
+│                              ▼                                       │
+│                    ┌──────────────────┐                             │
+│                    │ External Services │                            │
+│                    │ • Vertex AI/Gemini│                            │
+│                    │ • ElevenLabs      │                            │
+│                    │ • Smart Home      │                            │
+│                    │ • Spotify/Google  │                            │
+│                    └──────────────────┘                             │
+└─────────────────────────────────────────────────────────────────────┘
 ```
+
+## 🤖 MCP Agent Architecture
+
+The JARVIS assistant now uses an **MCP Agent** that:
+1. Receives WhatsApp messages via webhook
+2. Uses **Gemini AI for reasoning** (deciding which tools to call)
+3. Executes **52 MCP tools** for actions (calendar, email, smart home, etc.)
+4. Returns responses through WhatsApp
 
 ## 🛠️ Quick Setup (Automated)
 
@@ -160,16 +184,33 @@ echo -n "your-spotify-secret" | gcloud secrets create SPOTIFY_SECRET --data-file
 
 Add these secrets to your GitHub repository (Settings → Secrets → Actions):
 
+### Required Secrets
 | Secret Name | Description | Example |
 |-------------|-------------|---------|
 | `GCP_PROJECT_ID` | Your GCP project ID | `wednesday-assistant` |
 | `GCP_REGION` | Deployment region | `us-central1` |
 | `GCP_SA_KEY` | Base64 encoded service account key | `eyJhbGci...` |
-| `BYTEZ_API_KEY` | Bytez API key | `f3d8fe3c...` |
+| `GEMINI_API_KEY` | **Required** - Gemini API key for MCP Agent | `AIzaSy...` |
+
+### Optional - Core Features
+| Secret Name | Description | Example |
+|-------------|-------------|---------|
 | `SPOTIFY_CLIENT_ID` | Spotify app client ID | `abc123...` |
 | `SPOTIFY_SECRET` | Spotify app secret | `xyz789...` |
+| `SPOTIFY_REFRESH_TOKEN` | Spotify refresh token (after OAuth) | `AQD...` |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID | `123456...apps.googleusercontent.com` |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth secret | `GOCSPX-...` |
+| `GOOGLE_REFRESH_TOKEN` | Google refresh token (after OAuth) | `1//0g...` |
+| `NEWS_API_KEY` | NewsAPI.org key | `abc...` |
+| `WEATHERAPI_KEY` | WeatherAPI.com key | `def...` |
+
+### Optional - JARVIS Advanced Features
+| Secret Name | Description | Example |
+|-------------|-------------|---------|
+| `ELEVENLABS_API_KEY` | ElevenLabs premium voice synthesis | `sk_...` |
+| `IFTTT_WEBHOOK_KEY` | IFTTT webhook key for smart home | `abc123...` |
+| `HOME_ASSISTANT_URL` | Home Assistant URL | `http://homeassistant.local:8123` |
+| `HOME_ASSISTANT_TOKEN` | Home Assistant long-lived access token | `eyJ...` |
 
 ### Base64 Encode the Service Account Key
 

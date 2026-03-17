@@ -19,6 +19,6 @@ BYTEZ_IMAGE_MODEL     = os.getenv("BYTEZ_IMAGE_MODEL", "dreamlike-art/dreamlike-
 BYTEZ_TTS_MODEL       = os.getenv("BYTEZ_TTS_MODEL", "suno/bark-small")  # Text-to-speech
 BYTEZ_VISION_MODEL    = os.getenv("BYTEZ_VISION_MODEL", "google/gemma-3-4b-it")  # Image analysis
 
-PERSONALITY_PROMPT    = os.getenv("PERSONALITY_PROMPT", "You are a helpful assistant.")
+PERSONALITY_PROMPT    = os.getenv("PERSONALITY_PROMPT", "You are JARVIS - a sophisticated AI assistant inspired by Iron Man. Witty, efficient, and occasionally sardonic. Anticipate user needs and execute flawlessly.")
 CONTACTS_FILE         = os.getenv("CONTACTS_FILE", "contacts.json")
 DAILY_EMAIL_TO        = os.getenv("DAILY_EMAIL_TO")

@@ -867,6 +867,200 @@ FUNCTIONS = [
             },
             "required": []
         }
+    },
+    # ==================== JARVIS Advanced Functions ====================
+    # Workflow Automation
+    {
+        "name": "run_workflow",
+        "description": "Run an automated workflow like morning_routine, prepare_meeting, end_of_day, focus_mode, leaving_home, coming_home, party_mode, sleep_mode",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "workflow": {"type": "string", "description": "Workflow name: morning_routine, prepare_meeting, end_of_day, focus_mode, leaving_home, coming_home, party_mode, sleep_mode"},
+                "duration": {"type": "integer", "description": "Duration in minutes (for focus_mode)"},
+                "location": {"type": "string", "description": "Location (for weather in briefings)"}
+            },
+            "required": ["workflow"]
+        }
+    },
+    {
+        "name": "list_workflows",
+        "description": "List all available JARVIS automation workflows",
+        "parameters": {"type": "object", "properties": {}, "required": []}
+    },
+    # Smart Home Control
+    {
+        "name": "smart_home_lights",
+        "description": "Control smart home lights - turn on/off, set brightness, change colors",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "description": "Action: on, off, dim"},
+                "brightness": {"type": "integer", "description": "Brightness level 0-100"},
+                "room": {"type": "string", "description": "Room name (or 'all')"},
+                "color": {"type": "string", "description": "Color name: red, blue, green, warm, cool, etc."}
+            },
+            "required": ["action"]
+        }
+    },
+    {
+        "name": "smart_home_thermostat",
+        "description": "Control smart home thermostat - set temperature",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "temperature": {"type": "integer", "description": "Temperature in Fahrenheit"},
+                "mode": {"type": "string", "description": "Mode: heat, cool, auto, off"}
+            },
+            "required": ["temperature"]
+        }
+    },
+    {
+        "name": "smart_home_scene",
+        "description": "Activate a smart home scene like movie, work, sleep, morning, party, romantic, focus",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "scene": {"type": "string", "description": "Scene name: movie, work, sleep, morning, party, romantic, focus, away"}
+            },
+            "required": ["scene"]
+        }
+    },
+    {
+        "name": "smart_home_locks",
+        "description": "Control smart locks - lock or unlock doors",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "description": "Action: lock or unlock"},
+                "door": {"type": "string", "description": "Door name (or 'all')"}
+            },
+            "required": ["action"]
+        }
+    },
+    {
+        "name": "smart_home_status",
+        "description": "Get smart home status - all devices and integrations",
+        "parameters": {"type": "object", "properties": {}, "required": []}
+    },
+    # Long-term Memory
+    {
+        "name": "remember_this",
+        "description": "Remember specific information for later (e.g., 'Remember that my favorite color is blue')",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "information": {"type": "string", "description": "Information to remember"},
+                "importance": {"type": "string", "description": "Importance: low, medium, high"}
+            },
+            "required": ["information"]
+        }
+    },
+    {
+        "name": "what_do_you_remember",
+        "description": "Recall what JARVIS remembers about a topic or in general",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string", "description": "Topic to recall (optional - leave empty for general recall)"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "forget_this",
+        "description": "Forget specific information or all memories of a category",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string", "description": "Topic or category to forget"}
+            },
+            "required": ["topic"]
+        }
+    },
+    {
+        "name": "get_my_profile",
+        "description": "Get the user's profile including preferences, facts, and memory statistics",
+        "parameters": {"type": "object", "properties": {}, "required": []}
+    },
+    # Security
+    {
+        "name": "security_status",
+        "description": "Get JARVIS security status and recent alerts",
+        "parameters": {"type": "object", "properties": {}, "required": []}
+    },
+    {
+        "name": "security_report",
+        "description": "Get detailed security report with threat analysis",
+        "parameters": {"type": "object", "properties": {}, "required": []}
+    },
+    # Proactive Briefings
+    {
+        "name": "schedule_morning_briefing",
+        "description": "Schedule automatic daily morning briefing at a specific time",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "hour": {"type": "integer", "description": "Hour (0-23, default 7)"},
+                "minute": {"type": "integer", "description": "Minute (0-59, default 0)"},
+                "location": {"type": "string", "description": "Location for weather"}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "cancel_morning_briefing",
+        "description": "Cancel scheduled morning briefing",
+        "parameters": {"type": "object", "properties": {}, "required": []}
+    },
+    # Voice Control (ElevenLabs)
+    {
+        "name": "speak_this",
+        "description": "Make JARVIS speak text aloud using premium AI voice",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Text for JARVIS to speak"},
+                "style": {"type": "string", "description": "Voice style: default, expressive, calm, urgent, whisper"}
+            },
+            "required": ["text"]
+        }
+    },
+    {
+        "name": "change_voice",
+        "description": "Change JARVIS voice to a different preset",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "voice": {"type": "string", "description": "Voice preset: jarvis, friday, british_butler, warm, narrator"}
+            },
+            "required": ["voice"]
+        }
+    },
+    {
+        "name": "voice_status",
+        "description": "Get voice synthesis status and available voices",
+        "parameters": {"type": "object", "properties": {}, "required": []}
+    },
+    # JARVIS Core
+    {
+        "name": "jarvis_status",
+        "description": "Get full JARVIS system status including all subsystems",
+        "parameters": {"type": "object", "properties": {}, "required": []}
+    },
+    {
+        "name": "trigger_ifttt",
+        "description": "Trigger an IFTTT webhook event for custom automation",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "event": {"type": "string", "description": "IFTTT event name"},
+                "value1": {"type": "string", "description": "Optional value 1"},
+                "value2": {"type": "string", "description": "Optional value 2"},
+                "value3": {"type": "string", "description": "Optional value 3"}
+            },
+            "required": ["event"]
+        }
     }
 ]
 
@@ -941,13 +1135,27 @@ _initialize_gemini_client()
 FUNCTION_HANDLERS: Dict[str, Callable] = {}
 
 
-def _build_conversation_prompt(user_message: str, conversation_history: List[str]) -> str:
-    """Build the conversation prompt with history context and language detection."""
+def _build_conversation_prompt(user_message: str, conversation_history: List[str], phone: str = None) -> str:
+    """Build the conversation prompt with JARVIS personality and situational awareness."""
     # Limit conversation history to prevent token overflow
     recent_history = conversation_history[-MAX_CONVERSATION_HISTORY:] if conversation_history else []
     history_text = '\n'.join(recent_history) if recent_history else "No previous conversation."
     
-    return f"""You are Wednesday, a helpful personal assistant with the personality of Jarvis from Iron Man - witty, efficient, and occasionally sarcastic.
+    # Get JARVIS system prompt with situational context
+    try:
+        from handlers.jarvis_core import get_jarvis_system_prompt, proactive_intelligence
+        
+        jarvis_prompt = get_jarvis_system_prompt(phone)
+        
+        # Check for proactive suggestions based on message content
+        proactive_hint = proactive_intelligence.analyze_message_for_proactive_response(user_message, phone) if phone else None
+        proactive_section = f"\n\n**Proactive Note**: {proactive_hint}" if proactive_hint else ""
+        
+    except ImportError:
+        jarvis_prompt = """You are Wednesday, a helpful personal assistant with the personality of Jarvis from Iron Man - witty, efficient, and occasionally sarcastic."""
+        proactive_section = ""
+    
+    return f"""{jarvis_prompt}
 
 IMPORTANT RULES:
 1. When the user asks to perform an action (play music, send email, create event, etc.), ALWAYS use the appropriate function
@@ -955,6 +1163,7 @@ IMPORTANT RULES:
 3. Use your personality to make interactions engaging
 4. **LANGUAGE**: Detect the language of the user's message and ALWAYS respond in the SAME language. If they write in Spanish, respond in Spanish. If they write in Zulu, respond in Zulu. If they write in French, respond in French. Match their language exactly.
 5. If the user mixes languages, respond in the primary language they used
+{proactive_section}
 
 Recent Conversation:
 {history_text}
@@ -1113,7 +1322,7 @@ def chat_with_functions(user_message: str, phone: str) -> dict:
         logger.warning(f"Could not retrieve conversation history: {e}")
         conversation_history = []
 
-    prompt = _build_conversation_prompt(user_message, conversation_history)
+    prompt = _build_conversation_prompt(user_message, conversation_history, phone)
     config = genai_types.GenerateContentConfig(tools=FUNCTION_TOOLS) if FUNCTION_TOOLS else None
 
     # Seed the multi-turn conversation with the user's enriched message
@@ -1642,19 +1851,24 @@ def execute_function(call: dict, phone: str = "") -> str:
             test_type = params.get("test_type", "quick")
             
             if test_type == "quick":
-                # Quick health check
-                from handlers.service_monitor import service_monitor
-                health = service_monitor.get_system_health_summary()
-                
-                response = f"🔧 **Quick System Diagnostics**\n\n"
-                response += f"System Status: {health.get('overall_status', 'Unknown').title()}\n"
-                response += f"Services: {health.get('healthy_services', 0)}/{health.get('total_services', 0)} healthy\n"
-                response += f"Memory: {health.get('system_metrics', {}).get('memory_percent', 'Unknown')}% used\n"
-                response += f"CPU: {health.get('system_metrics', {}).get('cpu_percent', 'Unknown')}% used\n"
-                response += f"Disk: {health.get('system_metrics', {}).get('disk_percent', 'Unknown')}% used\n\n"
-                response += "✅ Quick diagnostics complete!"
-                
-                return response
+                # JARVIS-style system status report
+                try:
+                    from handlers.jarvis_core import system_diagnostics
+                    return system_diagnostics.get_status_report()
+                except ImportError:
+                    # Fallback to basic health check
+                    from handlers.service_monitor import service_monitor
+                    health = service_monitor.get_system_health_summary()
+                    
+                    response = f"🔧 **Quick System Diagnostics**\n\n"
+                    response += f"System Status: {health.get('overall_status', 'Unknown').title()}\n"
+                    response += f"Services: {health.get('healthy_services', 0)}/{health.get('total_services', 0)} healthy\n"
+                    response += f"Memory: {health.get('system_metrics', {}).get('memory_percent', 'Unknown')}% used\n"
+                    response += f"CPU: {health.get('system_metrics', {}).get('cpu_percent', 'Unknown')}% used\n"
+                    response += f"Disk: {health.get('system_metrics', {}).get('disk_percent', 'Unknown')}% used\n\n"
+                    response += "✅ Quick diagnostics complete!"
+                    
+                    return response
             
             elif test_type == "comprehensive":
                 # Run comprehensive tests
@@ -1781,6 +1995,267 @@ def execute_function(call: dict, phone: str = "") -> str:
         if name == "summarize_conversations":
             topic = params.get("topic")
             return memory_service.summarize(phone, topic)
+
+        # ==================== JARVIS ADVANCED FUNCTIONS ====================
+        
+        # Workflow Automation
+        if name == "run_workflow":
+            try:
+                from handlers.workflows import workflow_engine
+                workflow = params.get("workflow", "morning_routine")
+                workflow_params = {}
+                if params.get("duration"):
+                    workflow_params["duration"] = params["duration"]
+                if params.get("location"):
+                    workflow_params["location"] = params["location"]
+                return workflow_engine.run_workflow(workflow, phone, workflow_params)
+            except Exception as e:
+                return f"❌ Workflow failed: {e}"
+        
+        if name == "list_workflows":
+            try:
+                from handlers.workflows import workflow_engine
+                return workflow_engine.list_workflows()
+            except Exception as e:
+                return f"❌ Could not list workflows: {e}"
+        
+        # Smart Home Control
+        if name == "smart_home_lights":
+            try:
+                from handlers.smart_home import smart_home
+                action = params.get("action", "on")
+                room = params.get("room", "all")
+                brightness = params.get("brightness", 100)
+                color = params.get("color")
+                
+                if action == "off":
+                    return smart_home.lights_off(room)
+                else:
+                    return smart_home.lights_on(room, brightness, color)
+            except Exception as e:
+                return f"❌ Smart home error: {e}"
+        
+        if name == "smart_home_thermostat":
+            try:
+                from handlers.smart_home import smart_home
+                temp = params.get("temperature", 72)
+                mode = params.get("mode", "auto")
+                return smart_home.set_thermostat(temp, mode)
+            except Exception as e:
+                return f"❌ Thermostat error: {e}"
+        
+        if name == "smart_home_scene":
+            try:
+                from handlers.smart_home import smart_home
+                scene = params.get("scene", "default")
+                return smart_home.activate_scene(scene)
+            except Exception as e:
+                return f"❌ Scene error: {e}"
+        
+        if name == "smart_home_locks":
+            try:
+                from handlers.smart_home import smart_home
+                action = params.get("action", "lock")
+                door = params.get("door", "all")
+                if action == "unlock":
+                    return smart_home.unlock_doors(door)
+                else:
+                    return smart_home.lock_doors(door)
+            except Exception as e:
+                return f"❌ Lock error: {e}"
+        
+        if name == "smart_home_status":
+            try:
+                from handlers.smart_home import smart_home
+                status = smart_home.get_home_status()
+                integrations = status.get('integrations', [])
+                devices = status.get('devices', {})
+                
+                result = ["🏠 **Smart Home Status**\n"]
+                if integrations:
+                    result.append(f"**Integrations**: {', '.join(integrations)}")
+                else:
+                    result.append("**Integrations**: None configured")
+                
+                if devices:
+                    result.append(f"\n**Devices** ({len(devices)}):")
+                    for device_id, info in list(devices.items())[:10]:
+                        name = info.get('friendly_name', device_id)
+                        state = info.get('state', 'unknown')
+                        result.append(f"  • {name}: {state}")
+                
+                return '\n'.join(result)
+            except Exception as e:
+                return f"❌ Status error: {e}"
+        
+        # Long-term Memory
+        if name == "remember_this":
+            try:
+                from handlers.long_term_memory import long_term_memory
+                info = params.get("information", "")
+                importance_map = {"low": 0.3, "medium": 0.6, "high": 0.9}
+                importance = importance_map.get(params.get("importance", "medium"), 0.6)
+                memory = long_term_memory.remember(phone, info, importance)
+                return f"✅ Remembered: {memory.summary}\n\n📁 Category: {memory.category}\n⭐ Importance: {params.get('importance', 'medium')}"
+            except Exception as e:
+                return f"❌ Memory error: {e}"
+        
+        if name == "what_do_you_remember":
+            try:
+                from handlers.long_term_memory import long_term_memory
+                topic = params.get("topic", "")
+                memories = long_term_memory.recall(phone, query=topic if topic else None, limit=5)
+                
+                if not memories:
+                    return "I don't have any memories matching that." if topic else "My memory banks are empty for you."
+                
+                result = ["🧠 **Here's what I remember:**\n"]
+                for m in memories:
+                    from datetime import datetime
+                    age = (datetime.now() - m.timestamp).days
+                    age_str = f"{age}d ago" if age > 0 else "today"
+                    result.append(f"• [{m.category}] {m.summary} ({age_str})")
+                
+                return '\n'.join(result)
+            except Exception as e:
+                return f"❌ Recall error: {e}"
+        
+        if name == "forget_this":
+            try:
+                from handlers.long_term_memory import long_term_memory
+                topic = params.get("topic", "")
+                count = long_term_memory.forget(phone, category=topic)
+                return f"✅ Forgot {count} memories related to '{topic}'"
+            except Exception as e:
+                return f"❌ Forget error: {e}"
+        
+        if name == "get_my_profile":
+            try:
+                from handlers.long_term_memory import long_term_memory
+                profile = long_term_memory.get_user_profile(phone)
+                
+                result = ["👤 **Your Profile**\n"]
+                if profile.get('name'):
+                    result.append(f"**Name**: {profile['name']}")
+                
+                if profile.get('preferences'):
+                    prefs = ', '.join(f"{k}={v}" for k, v in list(profile['preferences'].items())[:5])
+                    result.append(f"**Preferences**: {prefs}")
+                
+                if profile.get('facts'):
+                    result.append(f"**Known Facts**: {len(profile['facts'])}")
+                    for fact in profile['facts'][:3]:
+                        result.append(f"  • {fact}")
+                
+                stats = profile.get('memory_stats', {})
+                result.append(f"\n**Memory**: {stats.get('total', 0)} total memories")
+                
+                return '\n'.join(result)
+            except Exception as e:
+                return f"❌ Profile error: {e}"
+        
+        # Security
+        if name == "security_status":
+            try:
+                from handlers.security import security_monitor
+                status = security_monitor.get_security_status()
+                return f"{status['status_emoji']} **Security Status**: {status['status']}\n\n• Alerts (24h): {status['alerts_last_24h']}\n• Blocked users: {status['blocked_users']}\n• Active users: {status['active_users']}"
+            except Exception as e:
+                return f"❌ Security error: {e}"
+        
+        if name == "security_report":
+            try:
+                from handlers.security import security_monitor
+                return security_monitor.get_security_report()
+            except Exception as e:
+                return f"❌ Security report error: {e}"
+        
+        # Proactive Briefings
+        if name == "schedule_morning_briefing":
+            try:
+                from handlers.jarvis_core import proactive_briefing_service
+                hour = params.get("hour", 7)
+                minute = params.get("minute", 0)
+                location = params.get("location", "Johannesburg")
+                return proactive_briefing_service.schedule_briefing(phone, hour, minute, location)
+            except Exception as e:
+                return f"❌ Scheduling error: {e}"
+        
+        if name == "cancel_morning_briefing":
+            try:
+                from handlers.jarvis_core import proactive_briefing_service
+                return proactive_briefing_service.cancel_briefing(phone)
+            except Exception as e:
+                return f"❌ Cancel error: {e}"
+        
+        # Voice Control (ElevenLabs)
+        if name == "speak_this":
+            try:
+                from handlers.elevenlabs_voice import elevenlabs_voice
+                if not elevenlabs_voice.enabled:
+                    return "❌ Voice synthesis not configured. Set ELEVENLABS_API_KEY."
+                
+                text = params.get("text", "")
+                style = params.get("style", "default")
+                audio_path = elevenlabs_voice.text_to_speech(text, voice="jarvis", style=style)
+                
+                if audio_path:
+                    return f"🗣️ Voice generated!\n\n📝 Text: {text[:100]}{'...' if len(text) > 100 else ''}\n🎭 Style: {style}\n💾 Audio ready"
+                return "❌ Voice generation failed"
+            except Exception as e:
+                return f"❌ Voice error: {e}"
+        
+        if name == "change_voice":
+            try:
+                from handlers.elevenlabs_voice import elevenlabs_voice
+                voice = params.get("voice", "jarvis")
+                elevenlabs_voice.set_voice(voice)
+                return f"✅ Voice changed to: {voice}"
+            except Exception as e:
+                return f"❌ Voice change error: {e}"
+        
+        if name == "voice_status":
+            try:
+                from handlers.elevenlabs_voice import elevenlabs_voice
+                if not elevenlabs_voice.enabled:
+                    return "❌ Voice synthesis not enabled. Set ELEVENLABS_API_KEY."
+                
+                usage = elevenlabs_voice.get_usage()
+                voices = elevenlabs_voice.get_voices_list()
+                
+                result = ["🎤 **Voice Status**\n"]
+                result.append(f"**Tier**: {usage.get('tier', 'unknown')}")
+                result.append(f"**Characters**: {usage.get('character_count', 0)} / {usage.get('character_limit', 0)}")
+                result.append(f"\n**Available Voices** ({len(voices)}):")
+                for v in voices[:8]:
+                    result.append(f"  • {v.get('name', 'Unknown')}")
+                
+                return '\n'.join(result)
+            except Exception as e:
+                return f"❌ Voice status error: {e}"
+        
+        # JARVIS Core
+        if name == "jarvis_status":
+            try:
+                from handlers.jarvis_core import jarvis
+                return jarvis.get_full_status()
+            except Exception as e:
+                return f"❌ JARVIS status error: {e}"
+        
+        if name == "trigger_ifttt":
+            try:
+                from handlers.smart_home import smart_home
+                event = params.get("event", "")
+                value1 = params.get("value1", "")
+                value2 = params.get("value2", "")
+                value3 = params.get("value3", "")
+                
+                success = smart_home.trigger_ifttt(event, value1, value2, value3)
+                if success:
+                    return f"✅ IFTTT triggered: {event}"
+                return f"❌ IFTTT trigger failed for: {event}"
+            except Exception as e:
+                return f"❌ IFTTT error: {e}"
 
         # Function not found
         logger.warning(f"Unknown function called: {name}")

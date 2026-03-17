@@ -139,17 +139,26 @@ if (Test-Path $keyFile) {
 # Create initial secrets
 Write-Header "Creating Secret Manager Secrets"
 $secrets = @(
-    "BYTEZ_API_KEY",
+    # Core AI
     "GEMINI_API_KEY",
+    "BYTEZ_API_KEY",
+    # Spotify
     "SPOTIFY_CLIENT_ID",
     "SPOTIFY_SECRET",
     "SPOTIFY_REFRESH_TOKEN",
+    # Google OAuth
     "GOOGLE_CLIENT_ID",
     "GOOGLE_CLIENT_SECRET",
     "GOOGLE_REFRESH_TOKEN",
+    # External APIs
     "NEWS_API_KEY",
     "WEATHERAPI_KEY",
-    "FLASK_SECRET_KEY"
+    "FLASK_SECRET_KEY",
+    # JARVIS Advanced Features
+    "ELEVENLABS_API_KEY",
+    "IFTTT_WEBHOOK_KEY",
+    "HOME_ASSISTANT_URL",
+    "HOME_ASSISTANT_TOKEN"
 )
 
 foreach ($secret in $secrets) {

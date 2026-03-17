@@ -26,6 +26,17 @@ data:
   FLASK_DEBUG: "false"
   USE_MEMORY_DB: "false"
   
+  # MCP Agent Configuration
+  MCP_AGENT_MODEL: "gemini-2.5-flash"
+  MCP_HTTP_URL: "http://mcp-server:8080"
+  
+  # Smart Home Configuration (non-sensitive)
+  SMART_HOME_DEFAULT_BRIGHTNESS: "75"
+  SMART_HOME_DEFAULT_TEMP: "72"
+  
+  # Security Configuration
+  SECURITY_RATE_LIMIT: "30"
+  
   # WhatsApp Service URL (internal)
   WAHA_URL: "http://whatsapp-service:3000/api/sendText"
   WAHA_SESSION: "default"

@@ -347,7 +347,12 @@ def _build_conversation_prompt(user_message: str, conversation_history: List[str
     history_text = '\n'.join(recent_history) if recent_history else "No previous conversation."
     
     # Personality prompt
-    personality = PERSONALITY_PROMPT or "You are Wednesday, a helpful personal assistant with the personality of Jarvis from Iron Man - witty, efficient, and occasionally sarcastic."
+    # Use JARVIS core personality if available
+    try:
+        from handlers.jarvis_core import get_jarvis_system_prompt
+        personality = get_jarvis_system_prompt()
+    except ImportError:
+        personality = PERSONALITY_PROMPT or "You are JARVIS, a sophisticated AI assistant with dry British wit, efficiency, and anticipatory intelligence. Address users respectfully but not stiffly."
     
     # Build messages in chat format
     messages = [

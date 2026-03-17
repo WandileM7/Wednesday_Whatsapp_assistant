@@ -152,34 +152,43 @@ def get_cached_session():
     """Get cached session data"""
     return session.get('user_cache', {})
 
-# AI Handler Priority: Gemini/Vertex AI (primary, native tool use) -> Bytez (fallback) -> Stubs
+# AI Handler Priority: MCP Agent (primary) -> Gemini (fallback) -> Bytez (secondary fallback) -> Stubs
 BYTEZ_HELPERS_AVAILABLE = False
 GEMINI_HELPERS_AVAILABLE = False
+MCP_AGENT_AVAILABLE = False
 
-# Try Gemini/Vertex AI first — native function calling, runs on GCP service account
+# Try MCP Agent first — routes through MCP tools, more reliable than function calling
 try:
-    from handlers.gemini import chat_with_functions, execute_function
-    GEMINI_HELPERS_AVAILABLE = True
-    logger.info("Gemini AI handler loaded (Vertex AI or API key)")
+    from handlers.mcp_agent import chat_with_functions, execute_function, get_mcp_agent_status
+    MCP_AGENT_AVAILABLE = True
+    logger.info("🤖 MCP Agent loaded - 52 tools available via MCP")
 except Exception as e:
-    logger.info(f"Gemini handler not available, trying Bytez fallback: {e}")
-
-    # Fall back to Bytez for open-source model access
+    logger.info(f"MCP Agent not available, trying Gemini fallback: {e}")
+    
+    # Fall back to Gemini/Vertex AI — native function calling
     try:
-        from handlers.bytez_handler import chat_with_functions, execute_function, get_bytez_status
-        if BYTEZ_SDK_AVAILABLE and os.getenv("BYTEZ_API_KEY"):
-            BYTEZ_HELPERS_AVAILABLE = True
-            logger.info("Bytez AI handler loaded as fallback")
-        else:
-            raise ImportError("Bytez SDK or API key not available")
+        from handlers.gemini import chat_with_functions, execute_function
+        GEMINI_HELPERS_AVAILABLE = True
+        logger.info("Gemini AI handler loaded (Vertex AI or API key)")
     except Exception as e2:
-        logger.warning(f"No AI handler available, using stubs: {e2}")
+        logger.info(f"Gemini handler not available, trying Bytez fallback: {e2}")
 
-        def chat_with_functions(user_message: str, phone: str):
-            return {"content": f"AI not configured. You said: {user_message}"}
+        # Fall back to Bytez for open-source model access
+        try:
+            from handlers.bytez_handler import chat_with_functions, execute_function, get_bytez_status
+            if BYTEZ_SDK_AVAILABLE and os.getenv("BYTEZ_API_KEY"):
+                BYTEZ_HELPERS_AVAILABLE = True
+                logger.info("Bytez AI handler loaded as fallback")
+            else:
+                raise ImportError("Bytez SDK or API key not available")
+        except Exception as e3:
+            logger.warning(f"No AI handler available, using stubs: {e3}")
 
-        def execute_function(call, phone=""):
-            return call.get("content") or "AI function calling not available."
+            def chat_with_functions(user_message: str, phone: str):
+                return {"content": f"AI not configured. You said: {user_message}"}
+
+            def execute_function(call, phone=""):
+                return call.get("content") or "AI function calling not available."
 
 # Initialize AI clients
 bytez_api_key = os.getenv("BYTEZ_API_KEY")
@@ -211,12 +220,14 @@ if gemini_api_key and genai and not bytez_client:
         logger.warning(f"Gemini init failed: {e}")
 
 # Log AI status
-if bytez_client:
+if MCP_AGENT_AVAILABLE:
+    logger.info("🚀 AI Status: MCP Agent (Primary) - 52 tools via Model Context Protocol")
+elif bytez_client:
     logger.info("🚀 AI Status: Bytez (Primary) - 175k+ models ready")
-elif gemini_client:
+elif gemini_client or GEMINI_HELPERS_AVAILABLE:
     logger.info("🤖 AI Status: Gemini (Fallback)")
 else:
-    logger.warning("⚠️ AI Status: No AI configured - Set BYTEZ_API_KEY or GEMINI_API_KEY")
+    logger.warning("⚠️ AI Status: No AI configured - Set GEMINI_API_KEY")
 
 
 def _generate_initial_message(prompt: str) -> str:
@@ -233,9 +244,9 @@ def _generate_initial_message(prompt: str) -> str:
             logger.error(f"Gemini initial message failed: {e}")
     return _DummyModel().generate_content(prompt).text
 
-PERSONALITY_PROMPT = os.getenv("PERSONALITY_PROMPT", "You are a sarcastic and sassy assistant.")
-GREETING_PROMPT = os.getenv("GREETING_PROMPT", "Give a brief, sarcastic greeting.")
-INITIAL_MESSAGE_PROMPT = os.getenv("INITIAL_MESSAGE_PROMPT", "Send a mysterious message under 50 words.")
+PERSONALITY_PROMPT = os.getenv("PERSONALITY_PROMPT", "You are JARVIS - a sophisticated AI assistant with dry British wit, efficiency, and subtle sardonic humor. Address users respectfully, anticipate their needs, and deliver results with style.")
+GREETING_PROMPT = os.getenv("GREETING_PROMPT", "Give a brief, witty JARVIS-style greeting appropriate for the time of day.")
+INITIAL_MESSAGE_PROMPT = os.getenv("INITIAL_MESSAGE_PROMPT", "Send a sophisticated AI assistant introduction under 50 words, with subtle wit.")
 
 waha_url = os.getenv("WAHA_URL")
 WAHA_API_KEY = os.getenv("WAHA_API_KEY")
@@ -1718,6 +1729,15 @@ def health():
             except Exception as e:
                 logger.error(f"Failed to get database stats: {e}")
         
+        # Get MCP Agent status
+        mcp_status = {}
+        if MCP_AGENT_AVAILABLE:
+            try:
+                from handlers.mcp_agent import get_mcp_agent_status
+                mcp_status = get_mcp_agent_status()
+            except Exception as e:
+                mcp_status = {"status": "error", "error": str(e)}
+        
         return jsonify({
             "status": "healthy",
             "memory_mb": round(memory_info.rss / 1024 / 1024, 2),
@@ -1726,6 +1746,8 @@ def health():
             "database_stats": db_stats,
             "waha_status": "connected" if waha_healthy else ("disconnected" if waha_healthy is False else "not_configured"),
             "waha_keepalive": waha_keepalive_active,
+            "ai_handler": "mcp_agent" if MCP_AGENT_AVAILABLE else ("gemini" if GEMINI_HELPERS_AVAILABLE else ("bytez" if BYTEZ_HELPERS_AVAILABLE else "none")),
+            "mcp_agent": mcp_status if MCP_AGENT_AVAILABLE else "not_available",
             "gemini_helpers": GEMINI_HELPERS_AVAILABLE,
             "timestamp": datetime.now().isoformat()
         })
@@ -1735,6 +1757,7 @@ def health():
             "memory_mb": "unavailable",
             "active_conversations": len(user_conversations),
             "waha_status": "connected" if waha_health_check() else "disconnected" if waha_url else "not_configured",
+            "ai_handler": "mcp_agent" if MCP_AGENT_AVAILABLE else ("gemini" if GEMINI_HELPERS_AVAILABLE else "none"),
             "gemini_helpers": GEMINI_HELPERS_AVAILABLE,
             "timestamp": datetime.now().isoformat()
         })
@@ -1807,17 +1830,31 @@ def typing_indicator(phone, seconds=2):
         return False
 
 def send_voice_message(phone, audio_file, fallback_text=""):
-    """Send voice message with improved fallback handling"""
+    """Send voice message with improved fallback handling and proper format detection"""
     if not waha_url:
         logger.warning("WAHA URL not configured")
         return False
         
     try:
+        # Detect audio format from file extension
+        audio_ext = audio_file.lower().split('.')[-1] if '.' in audio_file else 'ogg'
+        if audio_ext == 'wav':
+            mime_type = 'audio/wav'
+            filename = 'voice.wav'
+        elif audio_ext == 'mp3':
+            mime_type = 'audio/mpeg'
+            filename = 'voice.mp3'
+        else:
+            mime_type = 'audio/ogg'
+            filename = 'voice.ogg'
+        
+        logger.info(f"Sending voice message - format: {audio_ext}, mime: {mime_type}")
+        
         # First try to send as voice message
         voice_url = f"{_waha_base()}/api/sendVoice"
         
         with open(audio_file, 'rb') as f:
-            files = {'audio': ('voice.ogg', f, 'audio/ogg')}
+            files = {'audio': (filename, f, mime_type)}
             data = {'chatId': phone}
             headers = {}
             
@@ -1838,7 +1875,7 @@ def send_voice_message(phone, audio_file, fallback_text=""):
         media_url = f"{_waha_base()}/api/sendMedia"
         
         with open(audio_file, 'rb') as f:
-            files = {'media': ('voice.ogg', f, 'audio/ogg')}
+            files = {'media': (filename, f, mime_type)}
             data = {
                 'chatId': phone,
                 'caption': '🎤 Voice message'

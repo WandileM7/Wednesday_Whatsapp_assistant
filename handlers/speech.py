@@ -34,7 +34,9 @@ logger = logging.getLogger(__name__)
 
 # Configuration - Best models for speech
 BYTEZ_API_KEY = os.getenv("BYTEZ_API_KEY")
-BYTEZ_TTS_MODEL = os.getenv("BYTEZ_TTS_MODEL", "suno/bark")  # Full bark for quality
+# IMPORTANT: suno/bark models are very slow (10-30+ seconds) - disabled by default for better latency
+# Set BYTEZ_TTS_MODEL="suno/bark-small" in env to enable Bytez TTS (slower but more natural)
+BYTEZ_TTS_MODEL = os.getenv("BYTEZ_TTS_MODEL", "")  # Empty = skip Bytez TTS, use Google Cloud
 BYTEZ_TTS_MODEL_FAST = os.getenv("BYTEZ_TTS_MODEL_FAST", "suno/bark-small")  # Fast alternative
 BYTEZ_AUDIO_MODEL = os.getenv("BYTEZ_AUDIO_MODEL", "Qwen/Qwen2-Audio-7B-Instruct")  # Best STT
 
@@ -47,11 +49,21 @@ if BYTEZ_API_KEY and BYTEZ_AVAILABLE:
     except Exception as e:
         logger.warning(f"Bytez speech client unavailable: {e}")
 
-# User voice preferences storage
+# User voice preferences - stored in database for persistence in Cloud Run
+# Legacy file path for migration
 VOICE_PREFS_FILE = Path("voice_preferences.json")
 
+# Try to import database manager
+try:
+    from database import db_manager
+    DB_AVAILABLE = True
+except ImportError:
+    DB_AVAILABLE = False
+    db_manager = None
+
 def load_voice_preferences() -> dict:
-    """Load user voice preferences from file"""
+    """Load all user voice preferences (legacy - prefer get_user_voice_preference)"""
+    # This function is kept for compatibility but individual lookups use DB directly
     try:
         if VOICE_PREFS_FILE.exists():
             with open(VOICE_PREFS_FILE, 'r') as f:
@@ -62,7 +74,7 @@ def load_voice_preferences() -> dict:
         return {}
 
 def save_voice_preferences(preferences: dict):
-    """Save user voice preferences to file"""
+    """Save voice preferences (legacy - uses file, prefer set_user_voice_preference)"""
     try:
         with open(VOICE_PREFS_FILE, 'w') as f:
             json.dump(preferences, f, indent=2)
@@ -70,18 +82,44 @@ def save_voice_preferences(preferences: dict):
         logger.error(f"Error saving voice preferences: {e}")
 
 def get_user_voice_preference(phone: str) -> bool:
-    """Get user's voice response preference (default: True)"""
-    if not phone:
-        return True
+    """Get user's 'always voice' preference (default: False)
     
+    When False (default): text input → text response, voice input → voice response
+    When True: all responses are voice
+    """
+    if not phone:
+        return False
+    
+    # Try database first (persists in Cloud Run)
+    if DB_AVAILABLE and db_manager:
+        try:
+            prefs = db_manager.get_user_preferences(phone)
+            if prefs and 'voice_enabled' in prefs:
+                return prefs.get('voice_enabled', False)
+        except Exception as e:
+            logger.warning(f"DB preference lookup failed: {e}")
+    
+    # Fallback to file-based preferences
     preferences = load_voice_preferences()
-    return preferences.get(phone, True)  # Default to enabled
+    return preferences.get(phone, False)  # Default to disabled (text for text, voice for voice)
 
 def set_user_voice_preference(phone: str, enabled: bool) -> str:
     """Set user's voice response preference"""
     if not phone:
         return "❌ Unable to save preference - no phone number provided"
     
+    # Try database first (persists in Cloud Run)
+    if DB_AVAILABLE and db_manager:
+        try:
+            prefs = db_manager.get_user_preferences(phone) or {}
+            prefs['voice_enabled'] = enabled
+            if db_manager.save_user_preferences(phone, prefs):
+                status = "enabled (all responses will be voice)" if enabled else "disabled (voice only for voice messages)"
+                return f"✅ Always-voice mode {status}"
+        except Exception as e:
+            logger.warning(f"DB preference save failed: {e}, using file fallback")
+    
+    # Fallback to file-based preferences
     preferences = load_voice_preferences()
     preferences[phone] = enabled
     save_voice_preferences(preferences)
@@ -95,7 +133,6 @@ def toggle_user_voice_preference(phone: str) -> str:
     new_setting = not current
     return set_user_voice_preference(phone, new_setting)
 
-logger = logging.getLogger(__name__)
 
 # Initialize Google Cloud clients
 def get_speech_client():
@@ -361,9 +398,26 @@ def speech_to_text_google(audio_file_path: str) -> Optional[str]:
             pass
 
 def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
-    """Convert text to speech using Bytez (primary) or Google Cloud TTS (fallback)"""
-    # Try Bytez first (it has amazing models like suno/bark)
-    if bytez_client:
+    """
+    Convert text to speech with JARVIS-quality voice.
+    Priority: ElevenLabs (best) -> Google Cloud TTS (fallback)
+    """
+    # Try ElevenLabs first (premium JARVIS voice)
+    try:
+        from handlers.elevenlabs_voice import elevenlabs_voice
+        if elevenlabs_voice.enabled:
+            result = elevenlabs_voice.text_to_speech(text, voice="jarvis", model="turbo")
+            if result:
+                logger.info(f"ElevenLabs TTS generated: {result}")
+                return result
+            logger.warning("ElevenLabs TTS failed, trying fallback")
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.warning(f"ElevenLabs TTS error: {e}")
+    
+    # Try Bytez if configured (disabled by default for latency)
+    if bytez_client and BYTEZ_TTS_MODEL:
         result = text_to_speech_bytez(text)
         if result:
             return result
@@ -375,7 +429,8 @@ def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
 
 def text_to_speech_bytez(text: str) -> Optional[str]:
     """Convert text to speech using Bytez TTS models (suno/bark-small)"""
-    if not bytez_client:
+    if not bytez_client or not BYTEZ_TTS_MODEL:
+        logger.info("Bytez TTS disabled or not configured")
         return None
     
     try:
@@ -533,24 +588,27 @@ def text_to_speech_fallback(text: str, language_code: str = "en-US") -> Optional
         return None
 
 def should_respond_with_voice(user_sent_voice: bool, text_length: int = 0, phone: str = "") -> bool:
-    """Determine if response should be voice based on context and user preferences"""
+    """Determine if response should be voice based on context and user preferences
+    
+    Default behavior:
+    - Text input → Text response (fast)
+    - Voice input → Voice response (mirroring user)
+    
+    Users can override to always get voice via toggle_voice_responses command.
+    """
     # Check if voice responses are globally enabled
     global_voice_enabled = os.getenv("ENABLE_VOICE_RESPONSES", "true").lower() == "true"
     if not global_voice_enabled:
         return False
     
-    # Check user-specific voice preference (default is True now)
-    user_voice_enabled = get_user_voice_preference(phone)
-    if not user_voice_enabled:
-        return False
-    
-    # If user sent voice, always respond with voice (respecting user preference)
+    # If user sent voice message, respond with voice (mirror behavior)
     if user_sent_voice:
         return True
     
-    # If user has voice enabled, respond with voice regardless of length
-    # (user requested this behavior change)
-    return True
+    # For text messages, check if user explicitly enabled always-voice mode
+    # Default is False (text input → text output for speed)
+    user_wants_always_voice = get_user_voice_preference(phone)
+    return user_wants_always_voice
 
 def cleanup_temp_file(file_path: str):
     """Clean up temporary audio file"""

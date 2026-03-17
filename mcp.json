@@ -1,15 +1,18 @@
 {
   "mcpServers": {
-    "wednesday-assistant": {
+    "wednesday-jarvis": {
       "command": "python",
       "args": ["-m", "mcp_server.server"],
       "cwd": "${workspaceFolder}",
       "env": {
-        "BYTEZ_API_KEY": "${env:BYTEZ_API_KEY}",
         "GEMINI_API_KEY": "${env:GEMINI_API_KEY}",
         "SPOTIFY_CLIENT_ID": "${env:SPOTIFY_CLIENT_ID}",
         "SPOTIFY_SECRET": "${env:SPOTIFY_SECRET}",
-        "WAHA_URL": "${env:WAHA_URL}"
+        "WAHA_URL": "${env:WAHA_URL}",
+        "ELEVENLABS_API_KEY": "${env:ELEVENLABS_API_KEY}",
+        "IFTTT_WEBHOOK_KEY": "${env:IFTTT_WEBHOOK_KEY}",
+        "HOME_ASSISTANT_URL": "${env:HOME_ASSISTANT_URL}",
+        "HOME_ASSISTANT_TOKEN": "${env:HOME_ASSISTANT_TOKEN}"
       }
     }
   }

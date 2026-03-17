@@ -184,14 +184,20 @@ def status():
     from mcp_server.server import (
         _bytez_handler, _gmail_service, _calendar_service,
         _spotify_service, _task_manager, _contact_manager,
-        _weather_service, _news_service, _db_manager
+        _weather_service, _news_service, _db_manager,
+        # JARVIS services
+        _workflow_engine, _smart_home, _elevenlabs, _long_term_memory,
+        _security_monitor, _fitness_service, _expense_service, _daily_briefing,
+        _jarvis_core, _mood_music
     )
     
     return jsonify({
         "server": "wednesday-mcp-http",
-        "version": "1.0.0",
+        "version": "2.0.0-jarvis",
         "sse_clients": len(sse_clients),
+        "tool_count": len(TOOLS),
         "services": {
+            # Core services
             "ai": "available" if _bytez_handler else "unavailable",
             "gmail": "available" if _gmail_service else "unavailable",
             "calendar": "available" if _calendar_service else "unavailable",
@@ -200,7 +206,24 @@ def status():
             "contacts": "available" if _contact_manager else "unavailable",
             "weather": "available" if _weather_service else "unavailable",
             "news": "available" if _news_service else "unavailable",
-            "database": "available" if _db_manager else "unavailable"
+            "database": "available" if _db_manager else "unavailable",
+            # JARVIS services
+            "workflows": "available" if _workflow_engine else "unavailable",
+            "smart_home": "available" if _smart_home else "unavailable",
+            "elevenlabs": "available" if _elevenlabs and _elevenlabs.enabled else "unavailable",
+            "long_term_memory": "available" if _long_term_memory else "unavailable",
+            "security": "available" if _security_monitor else "unavailable",
+            "fitness": "available" if _fitness_service else "unavailable",
+            "expenses": "available" if _expense_service else "unavailable",
+            "daily_briefing": "available" if _daily_briefing else "unavailable",
+            "jarvis_core": "available" if _jarvis_core else "unavailable",
+            "mood_music": "available" if _mood_music else "unavailable"
+        },
+        "environment": {
+            "gemini_configured": bool(os.getenv("GEMINI_API_KEY")),
+            "elevenlabs_configured": bool(os.getenv("ELEVENLABS_API_KEY")),
+            "ifttt_configured": bool(os.getenv("IFTTT_WEBHOOK_KEY")),
+            "home_assistant_configured": bool(os.getenv("HOME_ASSISTANT_URL"))
         }
     })
 
@@ -209,9 +232,10 @@ def status():
 def index():
     """Root endpoint with API documentation"""
     return jsonify({
-        "service": "Wednesday MCP Server",
-        "version": "1.0.0",
-        "description": "Model Context Protocol server for Wednesday WhatsApp Assistant",
+        "service": "Wednesday MCP Server (JARVIS Edition)",
+        "version": "2.0.0-jarvis",
+        "tool_count": len(TOOLS),
+        "description": "Model Context Protocol server for Wednesday WhatsApp Assistant with 52 JARVIS tools",
         "endpoints": {
             "GET /": "This documentation",
             "GET /health": "Health check for Kubernetes",
