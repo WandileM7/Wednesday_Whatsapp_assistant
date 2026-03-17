@@ -265,9 +265,9 @@ class MCPAgent:
         # Build message history
         contents = []
         
-        # Add conversation history if provided
+        # Add conversation history if provided (last 12 messages for context)
         if conversation_history:
-            for i, msg in enumerate(conversation_history[-6:]):  # Last 6 messages
+            for i, msg in enumerate(conversation_history[-12:]):  # Last 12 messages
                 role = "user" if i % 2 == 0 else "model"
                 contents.append(genai_types.Content(
                     role=role,
@@ -424,7 +424,7 @@ def chat_with_mcp(user_message: str, phone: str = "unknown") -> Dict[str, Any]:
     conversation_history = []
     try:
         from database import retrieve_conversation_history
-        history = retrieve_conversation_history(phone, limit=6)
+        history = retrieve_conversation_history(phone, limit=20)
         if history:
             conversation_history = history
     except Exception as e:

@@ -321,6 +321,10 @@ class ElevenLabsVoice:
             logger.error(f"Error getting ElevenLabs usage: {e}")
         
         return {'enabled': True, 'error': 'Could not fetch usage'}
+    
+    def get_usage_status(self) -> Dict[str, Any]:
+        """Alias for get_usage() - used by MCP server"""
+        return self.get_usage()
 
 
 # Global instance

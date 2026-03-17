@@ -539,16 +539,50 @@ class DatabaseManager:
             logger.error(f"Failed to get database stats: {e}")
             return {}
 
-# Global database instance
+# Try Firebase for persistent storage in cloud, fall back to SQLite
+_firebase_available = False
+_firebase_manager = None
+
+try:
+    if os.getenv("FIREBASE_CREDENTIALS") or os.path.exists("firebase_credentials.json"):
+        from firebase_manager import firebase_manager as _fb_manager
+        _firebase_manager = _fb_manager
+        _firebase_available = True
+        logger.info("✅ Firebase enabled for persistent conversation storage")
+except Exception as e:
+    logger.warning(f"Firebase not available, using SQLite: {e}")
+
+# Global database instance (SQLite fallback)
 db_manager = DatabaseManager()
 
-# Compatibility functions for existing code
+# Compatibility functions for existing code (with Firebase hybrid support)
 def add_to_conversation_history(phone: str, role: str, message: str) -> bool:
-    """Compatibility function for existing code"""
-    return db_manager.add_conversation(phone, role, message)
+    """Compatibility function - uses Firebase if available, else SQLite"""
+    # Always save to SQLite (local cache)
+    sqlite_result = db_manager.add_conversation(phone, role, message)
+    
+    # Also save to Firebase for persistence (if available)
+    if _firebase_available and _firebase_manager:
+        try:
+            _firebase_manager.add_conversation(phone, role, message)
+        except Exception as e:
+            logger.warning(f"Firebase save failed (SQLite still saved): {e}")
+    
+    return sqlite_result
 
 def retrieve_conversation_history(phone: str, n_results: int = 5) -> List[str]:
-    """Compatibility function for existing code"""
+    """Compatibility function - tries Firebase first, falls back to SQLite"""
+    # Try Firebase first for persistence across restarts
+    if _firebase_available and _firebase_manager:
+        try:
+            fb_history = _firebase_manager.get_conversation_history(phone, n_results)
+            if fb_history:
+                # Convert Firebase format to expected format
+                return [f"{msg.get('role', 'unknown')}: {msg.get('message', '')}" for msg in reversed(fb_history)]
+        except Exception as e:
+            logger.warning(f"Firebase retrieve failed, using SQLite: {e}")
+    
+    # Fall back to SQLite
     return db_manager.get_conversation_history(phone, n_results)
 
 def query_conversation_history(phone: str, query: str, limit: int = 5) -> List[str]:
