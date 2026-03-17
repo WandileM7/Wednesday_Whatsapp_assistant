@@ -997,12 +997,17 @@ def webhook():
             try:
                 call = chat_with_functions(user_msg, phone)
                 
-                # Handle MCP Agent format (response/function_call) or Gemini format (content/name)
-                if call.get("name") or call.get("function_call"):
+                # MCP Agent returns response directly (tools already executed internally)
+                # Gemini format uses 'name' for pending function calls
+                if call.get("_mcp_handled") or call.get("response"):
+                    # MCP agent already handled everything
+                    reply = call.get("response") or call.get("content") or "I couldn't process that message."
+                elif call.get("name"):
+                    # Gemini-style function call needs execution
                     reply = execute_function(call, phone)
                 else:
-                    # MCP Agent returns 'response', Gemini returns 'content'
-                    reply = call.get("response") or call.get("content") or "I couldn't process that message."
+                    # Plain text response
+                    reply = call.get("content") or call.get("response") or "I couldn't process that message."
             except Exception as e:
                 logger.error(f"AI processing error: {e}")
                 reply = "I'm having trouble processing your message right now. Please try again later."

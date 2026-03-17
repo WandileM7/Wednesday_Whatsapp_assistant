@@ -451,14 +451,17 @@ def chat_with_functions(user_message: str, phone: str) -> Dict[str, Any]:
     Drop-in replacement for handlers.gemini.chat_with_functions
     
     Routes everything through the MCP agent instead of direct Gemini function calling.
+    MCP agent handles tool execution internally, so we just return the response.
     """
     result = chat_with_mcp(user_message, phone)
     
-    # Convert to the format expected by main.py
+    # MCP agent already executes tools internally.
+    # Return format compatible with main.py - no function_call that needs execution
     return {
         "response": result.get("response", ""),
-        "function_call": result.get("function_call"),
-        "tools_called": result.get("tools_called", [])
+        "content": result.get("response", ""),  # Alias for Gemini compatibility
+        "tools_called": result.get("tools_called", []),
+        "_mcp_handled": True  # Flag that tools were already executed
     }
 
 
