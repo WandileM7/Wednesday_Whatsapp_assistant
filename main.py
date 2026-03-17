@@ -44,7 +44,7 @@ except ImportError:
 class TimeoutException(Exception):
     pass
 
-from flask import Flask, redirect, request, jsonify, session, url_for, send_file, Response
+from flask import Flask, redirect, request, jsonify, session, url_for, send_file, Response, send_from_directory
 from flask_session import Session
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -3133,6 +3133,212 @@ def api_create_avatar():
             
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ============================================
+# JARVIS React Dashboard API
+# ============================================
+
+@app.route("/api/dashboard/data")
+def api_dashboard_data():
+    """Comprehensive dashboard data for React frontend"""
+    try:
+        from datetime import datetime
+        
+        # System status
+        system_status = 'healthy'
+        mcp_agent_available = False
+        tools_count = 0
+        
+        try:
+            from handlers.mcp_agent import get_agent, get_mcp_tool_schemas
+            agent = get_agent()
+            mcp_agent_available = agent is not None
+            tools_count = len(get_mcp_tool_schemas())
+        except Exception as e:
+            logger.warning(f"MCP Agent not available: {e}")
+        
+        # WhatsApp status
+        whatsapp_connected = False
+        try:
+            waha_url = os.getenv('WAHA_URL', '')
+            if waha_url:
+                import requests
+                resp = requests.get(waha_url.replace('/api/sendText', '/api/sessions'), timeout=2)
+                whatsapp_connected = resp.status_code == 200
+        except:
+            pass
+        
+        # Service statuses
+        services = []
+        service_checks = [
+            ('MCP Agent', mcp_agent_available, 'Brain'),
+            ('Gemini AI', bool(os.getenv('GEMINI_API_KEY')), 'Zap'),
+            ('WhatsApp', whatsapp_connected, 'MessageSquare'),
+            ('Spotify', bool(os.getenv('SPOTIFY_CLIENT_ID')), 'Music'),
+            ('Gmail', bool(os.getenv('GOOGLE_CLIENT_ID')), 'Mail'),
+            ('Calendar', bool(os.getenv('GOOGLE_CLIENT_ID')), 'Calendar'),
+            ('Smart Home', bool(os.getenv('IFTTT_WEBHOOK_KEY') or os.getenv('HOME_ASSISTANT_URL')), 'Home'),
+            ('ElevenLabs', bool(os.getenv('ELEVENLABS_API_KEY')), 'Mic'),
+        ]
+        
+        for name, available, icon in service_checks:
+            services.append({
+                'name': name,
+                'status': 'online' if available else 'offline',
+                'icon': icon
+            })
+        
+        # Authentication status
+        google_auth = False
+        spotify_auth = False
+        
+        try:
+            from handlers.google_auth import load_credentials
+            creds = load_credentials()
+            google_auth = creds is not None and creds.valid
+        except:
+            pass
+        
+        try:
+            token = get_token_info()
+            spotify_auth = token is not None
+        except:
+            pass
+        
+        # Owner status
+        owner_configured = bool(os.getenv('OWNER_PHONE'))
+        owner_phone = os.getenv('OWNER_PHONE', '')
+        owner_hint = f"***{owner_phone[-4:]}" if owner_phone and len(owner_phone) > 4 else None
+        
+        # Tool categories
+        tool_categories = [
+            'Core', 'Workflows', 'Smart Home', 'Voice', 'Memory',
+            'Security', 'Admin', 'Fitness', 'Expenses', 'Briefings', 'Media'
+        ]
+        
+        # Stats (basic for now)
+        stats = {
+            'messages_today': 0,
+            'active_sessions': 1 if whatsapp_connected else 0,
+            'uptime': '99.9%',
+            'response_time': 245
+        }
+        
+        # Recent activity
+        recent_activity = [
+            {'time': datetime.now().strftime('%H:%M'), 'message': 'Dashboard accessed', 'type': 'info'},
+            {'time': '—', 'message': f'{tools_count} MCP tools available', 'type': 'info'},
+            {'time': '—', 'message': 'Owner: ' + ('configured' if owner_configured else 'not configured'), 'type': 'security'},
+        ]
+        
+        return jsonify({
+            'system_status': system_status,
+            'mcp_agent': mcp_agent_available,
+            'whatsapp_connected': whatsapp_connected,
+            'tools_count': tools_count,
+            'services': services,
+            'tool_categories': tool_categories,
+            'stats': stats,
+            'google_auth': google_auth,
+            'spotify_auth': spotify_auth,
+            'elevenlabs_available': bool(os.getenv('ELEVENLABS_API_KEY')),
+            'owner_configured': owner_configured,
+            'owner_hint': owner_hint,
+            'recent_activity': recent_activity,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Dashboard API error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route("/api/mcp/tools")
+def api_mcp_tools():
+    """List all available MCP tools"""
+    try:
+        from handlers.mcp_agent import get_mcp_tool_schemas
+        schemas = get_mcp_tool_schemas()
+        
+        # Group by category
+        categories = {}
+        for schema in schemas:
+            name = schema.get('name', '')
+            # Infer category from name
+            if any(x in name for x in ['workflow', 'routine']):
+                cat = 'Workflows'
+            elif any(x in name for x in ['smart_home', 'lights', 'thermostat', 'scene', 'lock']):
+                cat = 'Smart Home'
+            elif any(x in name for x in ['speak', 'voice', 'sound']):
+                cat = 'Voice'
+            elif any(x in name for x in ['remember', 'recall', 'forget', 'memory', 'profile']):
+                cat = 'Memory'
+            elif any(x in name for x in ['security', 'threat', 'admin', 'whitelist', 'blocked', 'owner']):
+                cat = 'Security/Admin'
+            elif any(x in name for x in ['fitness', 'workout', 'exercise']):
+                cat = 'Fitness'
+            elif any(x in name for x in ['expense', 'spending', 'budget']):
+                cat = 'Expenses'
+            elif any(x in name for x in ['briefing', 'summary']):
+                cat = 'Briefings'
+            elif any(x in name for x in ['image', 'video', 'media', 'generate']):
+                cat = 'Media'
+            else:
+                cat = 'Core'
+            
+            if cat not in categories:
+                categories[cat] = []
+            categories[cat].append(schema)
+        
+        return jsonify({
+            'total': len(schemas),
+            'categories': categories,
+            'tools': schemas
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route("/jarvis")
+def jarvis_dashboard():
+    """Serve the React JARVIS dashboard"""
+    # Check if built React app exists
+    react_path = os.path.join(os.path.dirname(__file__), 'static', 'dashboard', 'index.html')
+    if os.path.exists(react_path):
+        return send_from_directory(os.path.join(os.path.dirname(__file__), 'static', 'dashboard'), 'index.html')
+    
+    # Fallback to redirect to dev server or basic page
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>JARVIS Dashboard</title>
+        <style>
+            body { 
+                font-family: 'Rajdhani', sans-serif; 
+                background: #0a0a12; 
+                color: #00d4ff; 
+                display: flex; 
+                justify-content: center; 
+                align-items: center; 
+                height: 100vh;
+                flex-direction: column;
+            }
+            h1 { font-size: 3rem; letter-spacing: 0.3em; }
+            p { color: #666; }
+            a { color: #00d4ff; }
+        </style>
+    </head>
+    <body>
+        <h1>J.A.R.V.I.S.</h1>
+        <p>React dashboard not built yet.</p>
+        <p>Run: <code>cd frontend && npm install && npm run build</code></p>
+        <p>Or use <a href="/dashboard">legacy dashboard</a></p>
+    </body>
+    </html>
+    '''
+
 
 @app.route("/api/services/status")
 def api_service_status():

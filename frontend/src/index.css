@@ -1,0 +1,113 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --jarvis-blue: #00d4ff;
+  --jarvis-blue-dim: rgba(0, 212, 255, 0.3);
+  --jarvis-gold: #ffd700;
+  --jarvis-red: #ff3b3b;
+  --jarvis-green: #00ff88;
+  --jarvis-orange: #ff9500;
+  --bg-dark: #0a0a12;
+  --bg-panel: rgba(10, 15, 30, 0.85);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Rajdhani', sans-serif;
+  background: var(--bg-dark);
+  min-height: 100vh;
+  color: #e0e6ed;
+  overflow-x: hidden;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 212, 255, 0.1);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--jarvis-blue);
+  border-radius: 3px;
+}
+
+/* Glow effects */
+.glow-blue {
+  text-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+}
+
+.glow-green {
+  text-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+}
+
+.box-glow-blue {
+  box-shadow: 0 0 30px rgba(0, 212, 255, 0.3);
+}
+
+/* Background animation */
+.bg-grid {
+  background-image: 
+    linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+  background-size: 50px 50px;
+}
+
+/* Panel styling */
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid rgba(0, 212, 255, 0.4);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  position: relative;
+}
+
+.panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--jarvis-blue), transparent);
+}
+
+/* Status indicators */
+.status-online {
+  background: var(--jarvis-green);
+  box-shadow: 0 0 10px var(--jarvis-green);
+}
+
+.status-offline {
+  background: var(--jarvis-red);
+  box-shadow: 0 0 10px var(--jarvis-red);
+}
+
+.status-warning {
+  background: var(--jarvis-orange);
+  box-shadow: 0 0 10px var(--jarvis-orange);
+}
+
+/* Reactor animation */
+@keyframes reactorGlow {
+  0%, 100% {
+    box-shadow: 0 0 60px #00d4ff, 0 0 100px rgba(0, 212, 255, 0.5), inset 0 0 40px rgba(0, 212, 255, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 80px #00d4ff, 0 0 140px rgba(0, 212, 255, 0.7), inset 0 0 60px rgba(0, 212, 255, 0.4);
+  }
+}
+
+.reactor-core {
+  animation: reactorGlow 3s ease-in-out infinite;
+}
