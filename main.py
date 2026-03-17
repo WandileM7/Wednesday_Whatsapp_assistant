@@ -3091,8 +3091,8 @@ def api_whatsapp_status():
             session_response = requests.get(f"{whatsapp_url}/api/sessions/{WAHA_SESSION}", timeout=5)
             if session_response.ok:
                 session_data = session_response.json()
-                status_data['session_status'] = session_data.get('status', 'unknown')
-                status_data['connected'] = session_data.get('status') == 'WORKING'
+                status_data['session_status'] = session_data.get('status', 'unknown').upper()
+                status_data['connected'] = session_data.get('status', '').lower() == 'working'
                 if session_data.get('me'):
                     status_data['phone_number'] = session_data['me'].get('id', '').split('@')[0]
         except requests.RequestException as e:
@@ -3113,19 +3113,70 @@ def api_whatsapp_qr():
             return jsonify({'qr_code': None, 'message': 'WAHA_URL not configured', 'waha_url': None})
         
         try:
-            qr_response = requests.get(f"{whatsapp_url}/api/sessions/{WAHA_SESSION}/auth/qr", timeout=5)
+            # Try Baileys endpoint first
+            qr_response = requests.get(f"{whatsapp_url}/api/qr", timeout=5)
             
             if qr_response.ok:
-                content_type = qr_response.headers.get('content-type', '')
-                if 'image' in content_type:
-                    import base64
-                    qr_base64 = base64.b64encode(qr_response.content).decode('utf-8')
-                    return jsonify({'qr_code': qr_base64, 'message': 'Scan QR code'})
+                qr_data = qr_response.json()
+                
+                # Baileys returns {qr: 'data', status: 'authenticated', message: '...'}
+                if qr_data.get('qr'):
+                    # Generate QR code image from raw data
+                    try:
+                        import qrcode
+                        import base64
+                        
+                        qr = qrcode.QRCode(
+                            version=1,
+                            error_correction=qrcode.constants.ERROR_CORRECT_L,
+                            box_size=10,
+                            border=4,
+                        )
+                        qr.add_data(qr_data['qr'])
+                        qr.make(fit=True)
+                        
+                        img = qr.make_image(fill_color="black", back_color="white")
+                        
+                        # Convert to base64
+                        img_buffer = io.BytesIO()
+                        img.save(img_buffer, format='PNG')
+                        img_buffer.seek(0)
+                        qr_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+                        
+                        return jsonify({
+                            'qr_code': qr_base64,
+                            'message': 'Scan QR code with WhatsApp',
+                            'waha_url': whatsapp_url
+                        })
+                    except ImportError:
+                        # Fall back to raw QR data if qrcode not available
+                        return jsonify({
+                            'qr_code': qr_data['qr'],
+                            'qr_raw': True,
+                            'message': 'QR code library not available',
+                            'waha_url': whatsapp_url
+                        })
+                elif qr_data.get('status') == 'authenticated':
+                    return jsonify({
+                        'qr_code': None,
+                        'message': 'Already connected',
+                        'waha_url': whatsapp_url,
+                        'connected': True
+                    })
+                elif qr_data.get('status') == 'waiting':
+                    return jsonify({
+                        'qr_code': None,
+                        'message': 'Waiting for QR code... Click Reconnect',
+                        'waha_url': whatsapp_url
+                    })
                 else:
-                    qr_data = qr_response.json()
-                    return jsonify({'qr_code': qr_data.get('qr') or qr_data.get('qrcode'), 'message': 'QR available', 'waha_url': whatsapp_url})
+                    return jsonify({
+                        'qr_code': qr_data.get('qrcode') or qr_data.get('qr'),
+                        'message': qr_data.get('message', 'QR available'),
+                        'waha_url': whatsapp_url
+                    })
             else:
-                return jsonify({'qr_code': None, 'message': 'Session may already be connected', 'waha_url': whatsapp_url})
+                return jsonify({'qr_code': None, 'message': 'Failed to get QR code', 'waha_url': whatsapp_url})
         except requests.RequestException as e:
             return jsonify({'qr_code': None, 'message': str(e), 'waha_url': whatsapp_url})
     except Exception as e:

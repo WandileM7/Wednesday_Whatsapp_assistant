@@ -70,11 +70,22 @@ export default function WhatsApp() {
       const data = await res.json()
       setActionResult({ success: data.success, message: data.message || 'Reconnect initiated' })
       if (data.success) {
-        // Wait a bit then refresh
-        setTimeout(() => {
+        // Poll for QR code - it takes a few seconds to generate
+        const pollForQR = async (attempts = 0) => {
+          if (attempts > 10) return // Max 10 attempts (20 seconds)
+          
+          await new Promise(r => setTimeout(r, 2000))
           fetchStatus()
           fetchQR()
-        }, 2000)
+          
+          // Check if we got a QR code
+          const qrRes = await fetch('/api/whatsapp/qr')
+          const qrData = await qrRes.json()
+          if (!qrData.qr_code && !qrData.connected) {
+            pollForQR(attempts + 1)
+          }
+        }
+        pollForQR()
       }
     } catch (err) {
       setActionResult({ success: false, message: err.message })
