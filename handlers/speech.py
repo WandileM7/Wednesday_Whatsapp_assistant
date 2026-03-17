@@ -467,32 +467,22 @@ def speech_to_text_google(audio_file_path: str) -> Optional[str]:
 
 def text_to_speech(text: str, language_code: str = "en-US") -> Optional[str]:
     """
-    Convert text to speech with JARVIS-quality voice.
-    Priority: ElevenLabs (best) -> Google Cloud TTS (fallback)
+    Convert text to speech.
+    Priority: Google Cloud TTS (primary) -> Bytez (fallback)
     """
-    # Try ElevenLabs first (premium JARVIS voice)
-    try:
-        from handlers.elevenlabs_voice import elevenlabs_voice
-        if elevenlabs_voice.enabled:
-            result = elevenlabs_voice.text_to_speech(text, voice="jarvis", model="turbo")
-            if result:
-                logger.info(f"ElevenLabs TTS generated: {result}")
-                return result
-            logger.warning("ElevenLabs TTS failed, trying fallback")
-    except ImportError:
-        pass
-    except Exception as e:
-        logger.warning(f"ElevenLabs TTS error: {e}")
+    # Try Google Cloud TTS first (reliable, already configured)
+    result = text_to_speech_google(text, language_code)
+    if result:
+        return result
     
-    # Try Bytez if configured (disabled by default for latency)
+    # Try Bytez if configured (fallback)
     if bytez_client and BYTEZ_TTS_MODEL:
         result = text_to_speech_bytez(text)
         if result:
             return result
-        logger.warning("Bytez TTS failed, trying Google Cloud fallback")
+        logger.warning("Bytez TTS failed")
     
-    # Fallback to Google Cloud TTS
-    return text_to_speech_google(text, language_code)
+    return None
 
 
 def text_to_speech_bytez(text: str) -> Optional[str]:

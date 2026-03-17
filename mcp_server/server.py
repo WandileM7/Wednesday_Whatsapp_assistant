@@ -1994,48 +1994,46 @@ async def handle_smart_home_status(args: Dict[str, Any]) -> Dict[str, Any]:
         return {"error": f"Status error: {str(e)}"}
 
 
-# === ElevenLabs Voice Handlers ===
+# === Voice Handlers (Google Cloud TTS) ===
 
 async def handle_speak_this(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Speak text using ElevenLabs"""
-    if not _elevenlabs or not _elevenlabs.enabled:
-        return {"error": "ElevenLabs not available", "hint": "Set ELEVENLABS_API_KEY in environment"}
-    
+    """Speak text using Google Cloud TTS"""
     text = args.get("text")
-    voice = args.get("voice", "jarvis")
-    style = args.get("style")
+    
+    if not text:
+        return {"error": "No text provided"}
     
     try:
-        audio_path = await _elevenlabs.speak(text, voice=voice, style=style)
-        return {"success": True, "audio_path": audio_path, "voice": voice}
+        from handlers.speech import text_to_speech
+        audio_path = text_to_speech(text)
+        if audio_path:
+            return {"success": True, "audio_path": audio_path, "provider": "Google Cloud TTS"}
+        return {"error": "TTS generation failed"}
     except Exception as e:
         return {"error": f"Voice synthesis error: {str(e)}"}
 
 
 async def handle_change_voice(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Change voice preset"""
-    if not _elevenlabs or not _elevenlabs.enabled:
-        return {"error": "ElevenLabs not available"}
-    
-    voice = args.get("voice")
-    
-    try:
-        result = _elevenlabs.set_voice(voice)
-        return {"success": True, "voice": voice, "result": result}
-    except Exception as e:
-        return {"error": f"Voice change error: {str(e)}"}
+    """Change voice preset - not supported with Google Cloud TTS basic"""
+    return {
+        "success": False, 
+        "message": "Voice presets not available with Google Cloud TTS. Using default voice.",
+        "provider": "Google Cloud TTS"
+    }
 
 
 async def handle_voice_status(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Get voice status"""
-    if not _elevenlabs:
-        return {"enabled": False, "error": "ElevenLabs not configured"}
-    
+    """Get voice status - uses Google Cloud TTS"""
     try:
-        status = _elevenlabs.get_usage_status()
-        return status
+        from handlers.speech import get_tts_client
+        tts_client = get_tts_client()
+        return {
+            "enabled": tts_client is not None,
+            "provider": "Google Cloud TTS",
+            "message": "Voice synthesis available via Google Cloud TTS" if tts_client else "TTS not configured"
+        }
     except Exception as e:
-        return {"error": f"Status error: {str(e)}"}
+        return {"enabled": False, "error": f"Status error: {str(e)}"}
 
 
 async def handle_toggle_voice_mode(args: Dict[str, Any]) -> Dict[str, Any]:
