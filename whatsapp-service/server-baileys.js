@@ -50,7 +50,7 @@ let isClientReady = false;
 let qrCodeData = null;
 let lastQRTime = null;
 let reconnectAttempts = 0;
-const maxReconnectAttempts = parseInt(process.env.MAX_RECONNECT_ATTEMPTS) || 5;
+const maxReconnectAttempts = parseInt(process.env.MAX_RECONNECT_ATTEMPTS) || 10;  // Increased from 5
 let isReconnecting = false;
 const mediaStore = new Map();
 const MAX_MEDIA_CACHE = 200;
@@ -104,12 +104,17 @@ async function initializeClient() {
                 creds: state.creds,
                 keys: makeCacheableSignalKeyStore(state.keys, baileysLogger)
             },
-            browser: ['Wednesday Assistant', 'Chrome', '120.0.0'],
+            browser: ['JARVIS Assistant', 'Chrome', '122.0.0'],
             generateHighQualityLinkPreview: false,
             syncFullHistory: false,
             markOnlineOnConnect: true,
-            keepAliveIntervalMs: 30000,
-            retryRequestDelayMs: 250
+            keepAliveIntervalMs: 25000,  // 25 seconds - more aggressive keepalive
+            retryRequestDelayMs: 500,
+            connectTimeoutMs: 60000,  // 60 second connection timeout
+            defaultQueryTimeoutMs: 60000,
+            emitOwnEvents: false,  // Don't emit events for own messages
+            fireInitQueries: true,
+            getMessage: async () => undefined  // Don't fetch old messages
         });
 
         // Handle connection updates
@@ -128,23 +133,36 @@ async function initializeClient() {
                 qrCodeData = null;
                 
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
-                const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+                const errorMessage = lastDisconnect?.error?.message || 'Unknown error';
                 
-                console.log(`⚠️ Connection closed. Status: ${statusCode}. Reconnect: ${shouldReconnect}`);
+                console.log(`⚠️ Connection closed. Status: ${statusCode}. Error: ${errorMessage}`);
+                
+                // Determine if we should reconnect based on status code
+                // 401 = Unauthorized (logged out)
+                // 408 = Connection timeout
+                // 428 = Connection replaced (another device logged in)
+                // 440 = Connection replaced
+                // 515 = WhatsApp requires app restart
+                const shouldReconnect = ![401, 428, 440].includes(statusCode);
                 
                 if (shouldReconnect && reconnectAttempts < maxReconnectAttempts) {
                     reconnectAttempts++;
-                    console.log(`🔄 Reconnecting... Attempt ${reconnectAttempts}/${maxReconnectAttempts}`);
-                    setTimeout(() => initializeClient(), 3000);
-                } else if (statusCode === DisconnectReason.loggedOut) {
-                    console.log('🚪 Logged out - clearing session');
+                    const delay = Math.min(3000 * reconnectAttempts, 15000); // Exponential backoff, max 15s
+                    console.log(`🔄 Reconnecting in ${delay/1000}s... Attempt ${reconnectAttempts}/${maxReconnectAttempts}`);
+                    setTimeout(() => initializeClient(), delay);
+                } else if (statusCode === 401 || statusCode === 428 || statusCode === 440) {
+                    console.log('🚪 Session invalidated - clearing and waiting for new QR scan');
                     await fs.remove(SESSION_PATH);
                     fs.ensureDirSync(SESSION_PATH);
                     reconnectAttempts = 0;
-                    setTimeout(() => initializeClient(), 1000);
+                    setTimeout(() => initializeClient(), 2000);
                 } else {
-                    console.log('🚫 Max reconnection attempts reached');
-                    initializeMockClient();
+                    console.log('🚫 Max reconnection attempts reached or unrecoverable error');
+                    // Try one more time after a longer delay
+                    setTimeout(() => {
+                        reconnectAttempts = 0;
+                        initializeClient();
+                    }, 30000);
                 }
             }
 
@@ -153,6 +171,11 @@ async function initializeClient() {
                 isClientReady = true;
                 qrCodeData = null;
                 reconnectAttempts = 0;
+                
+                // Log connection info
+                if (sock.user) {
+                    console.log(`📱 Connected as: ${sock.user.id.split(':')[0]}`);
+                }
             }
         });
 
@@ -278,6 +301,8 @@ async function forwardToWebhook(message) {
         const webhookPayload = {
             payload: {
                 id: mediaId,
+                messageId: mediaId,  // Alias for deduplication
+                chatId: message.key.remoteJid,  // For compatibility with main.py
                 from: message.key.remoteJid,
                 to: message.key.participant || message.key.remoteJid,
                 body: body,

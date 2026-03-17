@@ -886,6 +886,27 @@ def webhook():
         if not payload:
             return jsonify({'status': 'ignored', 'reason': 'no_payload'}), 200
         
+        # Message deduplication - prevent double responses
+        message_id = payload.get('id') or payload.get('messageId')
+        if message_id:
+            if not hasattr(webhook, '_processed_messages'):
+                webhook._processed_messages = {}
+            
+            # Clean old entries (older than 5 minutes)
+            current_time = time.time()
+            webhook._processed_messages = {
+                k: v for k, v in webhook._processed_messages.items() 
+                if current_time - v < 300
+            }
+            
+            # Check if already processed
+            if message_id in webhook._processed_messages:
+                logger.info(f"Duplicate message {message_id} ignored")
+                return jsonify({'status': 'ignored', 'reason': 'duplicate'}), 200
+            
+            # Mark as processed
+            webhook._processed_messages[message_id] = current_time
+        
         # Extract message info
         phone = payload.get('chatId') or payload.get('from', '')
         user_msg = payload.get('body') or payload.get('text') or payload.get('message', '')
@@ -971,17 +992,19 @@ def webhook():
             except Exception as e:
                 logger.error(f"Quick command error: {e}")
                 reply = f"Error processing command: {e}"
-        # Process with Gemini
+        # Process with Gemini/MCP Agent
         elif GEMINI_API_KEY and not GEMINI_API_KEY.startswith('test_'):
             try:
                 call = chat_with_functions(user_msg, phone)
                 
-                if call.get("name"):
+                # Handle MCP Agent format (response/function_call) or Gemini format (content/name)
+                if call.get("name") or call.get("function_call"):
                     reply = execute_function(call, phone)
                 else:
-                    reply = call.get("content", "Sorry, no idea what that was.")
+                    # MCP Agent returns 'response', Gemini returns 'content'
+                    reply = call.get("response") or call.get("content") or "I couldn't process that message."
             except Exception as e:
-                logger.error(f"Gemini processing error: {e}")
+                logger.error(f"AI processing error: {e}")
                 reply = "I'm having trouble processing your message right now. Please try again later."
         else:
             reply = f"Echo: {user_msg}"
