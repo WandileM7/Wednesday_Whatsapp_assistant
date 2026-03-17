@@ -2337,20 +2337,9 @@ def quick_setup():
 # WhatsApp QR Code Routes
 @app.route("/whatsapp-qr")
 def whatsapp_qr():
-    """Display WhatsApp QR code status and visual QR code"""
-    try:
-        # Get QR data from WhatsApp service
-        whatsapp_url = os.getenv('WAHA_URL', 'http://localhost:3000/api/sendText').replace('/api/sendText', '')
-        qr_response = requests.get(f"{whatsapp_url}/api/qr", timeout=5)
-        qr_data = qr_response.json()
-        
-        # Check if we have QR code data
-        if qr_data.get('qr'):
-            qr_text = qr_data['qr']
-            mode = qr_data.get('mode', 'unknown')
-            timestamp = qr_data.get('timestamp', 'unknown')
-            
-        
+    """Redirect to React WhatsApp page"""
+    return redirect('/jarvis')
+
 
 @app.route("/whatsapp-qr-image")
 def whatsapp_qr_image():
@@ -2420,6 +2409,10 @@ def whatsapp_status():
         except:
             status_data['info'] = {"error": "Info check failed"}
         
+        return jsonify(status_data)
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/test-new-services")
