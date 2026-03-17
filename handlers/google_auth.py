@@ -90,11 +90,15 @@ def load_tokens_from_env():
             
             if stored_tokens and stored_tokens.get('refresh_token'):
                 logger.info("Trying stored Google tokens...")
+                # Use stored client_id/secret, but fall back to env vars if missing
+                client_id = stored_tokens.get('client_id') or os.getenv('GOOGLE_CLIENT_ID')
+                client_secret = stored_tokens.get('client_secret') or os.getenv('GOOGLE_CLIENT_SECRET')
+                
                 creds_info = {
                     'refresh_token': stored_tokens['refresh_token'],
                     'token': stored_tokens.get('access_token'),
-                    'client_id': stored_tokens.get('client_id'),
-                    'client_secret': stored_tokens.get('client_secret'),
+                    'client_id': client_id,
+                    'client_secret': client_secret,
                     'token_uri': 'https://oauth2.googleapis.com/token',
                     'scopes': SCOPES
                 }
@@ -106,7 +110,7 @@ def load_tokens_from_env():
                     if creds.expired and creds.refresh_token:
                         logger.info("Refreshing Google credentials from storage...")
                         creds.refresh(Request())
-                        # Update storage with new token
+                        # Update storage with new token (including client_id/secret for future)
                         token_storage.save_google_tokens(
                             refresh_token=creds.refresh_token,
                             access_token=creds.token,
@@ -117,7 +121,7 @@ def load_tokens_from_env():
                         
                     return creds
                 else:
-                    logger.warning("Missing client_id or client_secret in stored tokens")
+                    logger.warning("Missing client_id or client_secret in stored tokens AND environment variables")
             else:
                 logger.debug("No stored Google tokens available")
         except Exception as e:
@@ -267,11 +271,25 @@ def load_credentials():
             logger.warning(f"Failed to refresh cached credentials: {e}")
             _cached_credentials = None
     
-    # Try to load from environment variables
+    # Try to load from environment variables / persistent storage
     env_creds = load_tokens_from_env()
-    if env_creds and env_creds.valid:
-        _cached_credentials = env_creds
-        return env_creds
+    if env_creds:
+        # Even if not valid, try to refresh
+        if env_creds.valid:
+            logger.info("Environment/storage credentials are valid")
+            _cached_credentials = env_creds
+            return env_creds
+        elif env_creds.expired and env_creds.refresh_token:
+            try:
+                logger.info("Refreshing environment/storage credentials...")
+                env_creds.refresh(Request())
+                _cached_credentials = env_creds
+                logger.info("Environment/storage credentials refreshed successfully")
+                return env_creds
+            except RefreshError as e:
+                logger.warning(f"Failed to refresh environment/storage credentials: {e}")
+        else:
+            logger.warning(f"Environment/storage credentials invalid - valid={env_creds.valid}, expired={getattr(env_creds, 'expired', 'N/A')}, has_refresh={bool(getattr(env_creds, 'refresh_token', None))}")
     
     # Fall back to session-based OAuth
     if 'google_credentials' in session:
