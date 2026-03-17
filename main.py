@@ -1460,7 +1460,13 @@ def test_google_services():
 
 @app.route("/services")
 def services_overview():
-    """Overview of all available services with detailed status"""
+    """Redirect to React dashboard services page"""
+    return redirect('/jarvis/services')
+
+
+@app.route("/api/services/overview")
+def services_overview_api():
+    """Overview of all available services with detailed status (API)"""
     # Get authentication status from auth manager
     auth_status = auth_manager.get_auth_status()
     
@@ -2948,6 +2954,18 @@ def api_mcp_tools():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route("/api/google-login")
+def api_google_login():
+    """Redirect to Google OAuth login"""
+    return redirect('/google-login')
+
+
+@app.route("/api/spotify-login")
+def api_spotify_login():
+    """Redirect to Spotify OAuth login"""
+    return redirect('/login')
+
+
 @app.route("/jarvis")
 @app.route("/jarvis/<path:path>")
 def jarvis_dashboard(path=None):
@@ -3110,7 +3128,7 @@ def api_whatsapp_qr():
         whatsapp_url = os.getenv('WAHA_URL', '').replace('/api/sendText', '')
         
         if not whatsapp_url:
-            return jsonify({'qr_code': None, 'message': 'WAHA_URL not configured'})
+            return jsonify({'qr_code': None, 'message': 'WAHA_URL not configured', 'waha_url': None})
         
         try:
             qr_response = requests.get(f"{whatsapp_url}/api/sessions/{WAHA_SESSION}/auth/qr", timeout=5)
@@ -3123,13 +3141,13 @@ def api_whatsapp_qr():
                     return jsonify({'qr_code': qr_base64, 'message': 'Scan QR code'})
                 else:
                     qr_data = qr_response.json()
-                    return jsonify({'qr_code': qr_data.get('qr') or qr_data.get('qrcode'), 'message': 'QR available'})
+                    return jsonify({'qr_code': qr_data.get('qr') or qr_data.get('qrcode'), 'message': 'QR available', 'waha_url': whatsapp_url})
             else:
-                return jsonify({'qr_code': None, 'message': 'Session may already be connected'})
+                return jsonify({'qr_code': None, 'message': 'Session may already be connected', 'waha_url': whatsapp_url})
         except requests.RequestException as e:
-            return jsonify({'qr_code': None, 'message': str(e)})
+            return jsonify({'qr_code': None, 'message': str(e), 'waha_url': whatsapp_url})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': str(e), 'waha_url': os.getenv('WAHA_URL', '').replace('/api/sendText', '')}), 500
 
 
 @app.route("/api/make-call", methods=['POST'])
