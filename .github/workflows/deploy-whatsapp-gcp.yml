@@ -85,47 +85,56 @@ jobs:
 
       - name: Set up GCS session bucket
         id: setup-bucket
-        continue-on-error: true
         run: |
+          set +e  # Disable exit on error for this script
+          
           # Bucket name must be globally unique — use project ID as prefix
           BUCKET_NAME="${{ env.PROJECT_ID }}-whatsapp-session"
           echo "bucket_name=$BUCKET_NAME" >> $GITHUB_OUTPUT
 
           # Check if bucket exists
-          if gcloud storage buckets describe gs://${BUCKET_NAME} >/dev/null 2>&1; then
+          gcloud storage buckets describe gs://${BUCKET_NAME} >/dev/null 2>&1
+          BUCKET_EXISTS=$?
+          
+          if [ $BUCKET_EXISTS -eq 0 ]; then
             echo "✅ Bucket already exists: gs://${BUCKET_NAME}"
             echo "bucket_exists=true" >> $GITHUB_OUTPUT
           else
             # Try to create bucket
             echo "Attempting to create bucket: gs://${BUCKET_NAME}"
-            if gcloud storage buckets create gs://${BUCKET_NAME} \
+            gcloud storage buckets create gs://${BUCKET_NAME} \
               --location=${{ env.REGION }} \
-              --uniform-bucket-level-access 2>&1; then
+              --uniform-bucket-level-access 2>&1
+            CREATE_RESULT=$?
+            
+            if [ $CREATE_RESULT -eq 0 ]; then
               echo "✅ Created bucket: gs://${BUCKET_NAME}"
               echo "bucket_exists=true" >> $GITHUB_OUTPUT
             else
+              echo ""
               echo "⚠️ Could not create bucket (missing storage.buckets.create permission)"
               echo "⚠️ WhatsApp session will NOT persist across restarts"
               echo ""
               echo "To fix, either:"
               echo "  1. Add 'Storage Admin' role to wednesday-deployer service account"
-              echo "  2. Manually create: gcloud storage buckets create gs://${BUCKET_NAME}"
+              echo "  2. Manually create bucket in Cloud Shell:"
+              echo "     gcloud storage buckets create gs://${BUCKET_NAME} --location=${{ env.REGION }}"
               echo ""
               echo "bucket_exists=false" >> $GITHUB_OUTPUT
-              exit 0  # Don't fail the workflow
+              exit 0  # Continue workflow without bucket
             fi
           fi
 
           # Grant objectAdmin so Cloud Run can read and write session files
-          PROJECT_NUMBER=$(gcloud projects describe ${{ env.PROJECT_ID }} --format='value(projectNumber)')
-          CR_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
-          
-          gcloud storage buckets add-iam-policy-binding gs://${BUCKET_NAME} \
-            --member="serviceAccount:${CR_SA}" \
-            --role="roles/storage.objectAdmin" \
-            --quiet || true
-
-          echo "Bucket ready: gs://${BUCKET_NAME}"
+          PROJECT_NUMBER=$(gcloud projects describe ${{ env.PROJECT_ID }} --format='value(projectNumber)' 2>/dev/null || echo "")
+          if [ -n "$PROJECT_NUMBER" ]; then
+            CR_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+            gcloud storage buckets add-iam-policy-binding gs://${BUCKET_NAME} \
+              --member="serviceAccount:${CR_SA}" \
+              --role="roles/storage.objectAdmin" \
+              --quiet 2>/dev/null || true
+            echo "Bucket ready: gs://${BUCKET_NAME}"
+          fi
 
       - name: Deploy to Cloud Run (with persistent session)
         id: deploy
