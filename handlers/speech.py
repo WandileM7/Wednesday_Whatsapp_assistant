@@ -248,7 +248,7 @@ def download_voice_message(voice_url: str, session: str) -> Optional[str]:
 
 def speech_to_text(audio_file_path: str, audio_url: str = None) -> Optional[str]:
     """
-    Convert audio file to text using Bytez Qwen2-Audio (primary) or Google Speech-to-Text (fallback).
+    Convert audio file to text using Gemini (primary), Bytez (secondary), or Google Speech-to-Text (fallback).
     
     Args:
         audio_file_path: Local path to audio file
@@ -257,7 +257,12 @@ def speech_to_text(audio_file_path: str, audio_url: str = None) -> Optional[str]
     Returns:
         Transcribed text or None
     """
-    # Try Bytez Qwen2-Audio first (best quality audio understanding)
+    # Try Gemini first (most reliable with existing API key)
+    gemini_result = speech_to_text_gemini(audio_file_path)
+    if gemini_result:
+        return gemini_result
+    
+    # Try Bytez Qwen2-Audio (best quality audio understanding)
     if bytez_client:
         result = speech_to_text_bytez(audio_file_path, audio_url)
         if result:
@@ -266,6 +271,69 @@ def speech_to_text(audio_file_path: str, audio_url: str = None) -> Optional[str]
     
     # Fallback to Google Cloud Speech-to-Text
     return speech_to_text_google(audio_file_path)
+
+
+def speech_to_text_gemini(audio_file_path: str) -> Optional[str]:
+    """
+    Convert audio to text using Google Gemini 2.0 Flash.
+    Uses the existing GEMINI_API_KEY - no additional setup needed.
+    """
+    try:
+        from google import genai
+        from google.genai import types as genai_types
+        import base64
+        
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            logger.warning("Gemini API key not available for STT")
+            return None
+        
+        client = genai.Client(api_key=api_key)
+        
+        # Read and encode audio file
+        with open(audio_file_path, 'rb') as f:
+            audio_data = f.read()
+        
+        # Determine mime type
+        if audio_file_path.lower().endswith('.mp3'):
+            mime_type = "audio/mp3"
+        elif audio_file_path.lower().endswith('.ogg'):
+            mime_type = "audio/ogg"
+        elif audio_file_path.lower().endswith('.wav'):
+            mime_type = "audio/wav"
+        else:
+            mime_type = "audio/ogg"  # Default for WhatsApp voice messages
+        
+        # Create audio part
+        audio_part = genai_types.Part.from_bytes(
+            data=audio_data,
+            mime_type=mime_type
+        )
+        
+        # Transcribe with Gemini
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                genai_types.Content(
+                    role="user",
+                    parts=[
+                        genai_types.Part(text="Transcribe this audio message exactly. Only output the transcription, nothing else."),
+                        audio_part
+                    ]
+                )
+            ]
+        )
+        
+        if response and hasattr(response, 'text') and response.text:
+            transcription = response.text.strip()
+            logger.info(f"Gemini STT transcription: {transcription[:100]}...")
+            return transcription
+        
+        return None
+        
+    except Exception as e:
+        logger.warning(f"Gemini STT failed: {e}")
+        return None
 
 
 def speech_to_text_bytez(audio_file_path: str, audio_url: str = None) -> Optional[str]:
