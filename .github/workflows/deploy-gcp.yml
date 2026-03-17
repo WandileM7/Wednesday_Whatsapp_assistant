@@ -376,6 +376,7 @@ jobs:
             SECRETS_FLAG="--set-secrets=${{ steps.build-secrets.outputs.secrets_list }}"
           fi
           
+          # Use ^ as delimiter to avoid issues with commas in values
           gcloud run deploy ${{ env.SERVICE_NAME }} \
             --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
             --region=${{ env.REGION }} \
@@ -388,10 +389,7 @@ jobs:
             --concurrency=80 \
             --timeout=300 \
             --port=5000 \
-            --set-env-vars="FLASK_DEBUG=false,USE_MEMORY_DB=false,PYTHONUNBUFFERED=1,GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }},GOOGLE_CLOUD_LOCATION=${{ env.REGION }},MCP_AGENT_MODEL=gemini-2.5-flash" \
-            --set-env-vars="WAHA_URL=${{ steps.get-whatsapp-url.outputs.waha_url }}" \
-            --set-env-vars="SPOTIFY_REDIRECT_URI=${{ secrets.SPOTIFY_REDIRECT_URI }}" \
-            --set-env-vars="PERSONALITY_PROMPT=You are JARVIS, an advanced AI assistant with dry British wit, efficiency, and anticipatory intelligence." \
+            --set-env-vars="^@^FLASK_DEBUG=false@USE_MEMORY_DB=false@PYTHONUNBUFFERED=1@GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}@GOOGLE_CLOUD_LOCATION=${{ env.REGION }}@MCP_AGENT_MODEL=gemini-2.5-flash@WAHA_URL=${{ steps.get-whatsapp-url.outputs.waha_url }}@SPOTIFY_REDIRECT_URI=${{ secrets.SPOTIFY_REDIRECT_URI }}@PERSONALITY_PROMPT=You are JARVIS, an advanced AI assistant with dry British wit, efficiency, and anticipatory intelligence." \
             $SECRETS_FLAG
           
           # Get the service URL
@@ -440,9 +438,7 @@ jobs:
             --concurrency=100 \
             --timeout=60 \
             --port=8080 \
-            --set-env-vars="MCP_PORT=8080,PYTHONUNBUFFERED=1" \
-            --set-env-vars="WAHA_URL=${{ steps.get-whatsapp-url.outputs.waha_url }}" \
-            --set-env-vars="ASSISTANT_URL=${{ steps.deploy.outputs.url }}" \
+            --set-env-vars="MCP_PORT=8080,PYTHONUNBUFFERED=1,WAHA_URL=${{ steps.get-whatsapp-url.outputs.waha_url }},ASSISTANT_URL=${{ steps.deploy.outputs.url }}" \
             $SECRETS_FLAG
           
           # Get the service URL
