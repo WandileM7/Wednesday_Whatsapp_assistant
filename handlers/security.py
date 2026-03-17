@@ -124,10 +124,22 @@ class SecurityMonitor:
         """Check if a phone number belongs to the owner/creator"""
         if not self.owner_phone:
             return False
+        
         # Normalize phone numbers for comparison
-        normalized_phone = phone.replace("+", "").replace(" ", "").replace("-", "")
-        normalized_owner = self.owner_phone.replace("+", "").replace(" ", "").replace("-", "")
-        return normalized_phone == normalized_owner or phone == self.owner_phone
+        # Strip WhatsApp suffixes (@c.us, @s.whatsapp.net), plus signs, spaces, hyphens
+        def normalize_phone(p: str) -> str:
+            # Remove WhatsApp suffixes
+            p = p.split('@')[0]
+            # Remove common formatting characters
+            return p.replace("+", "").replace(" ", "").replace("-", "").strip()
+        
+        normalized_phone = normalize_phone(phone)
+        normalized_owner = normalize_phone(self.owner_phone)
+        
+        # Debug log for troubleshooting
+        logger.debug(f"Owner check: incoming='{normalized_phone}' vs owner='{normalized_owner}'")
+        
+        return normalized_phone == normalized_owner
     
     def get_user_role(self, phone: str) -> str:
         """Get the role/privilege level for a user"""
