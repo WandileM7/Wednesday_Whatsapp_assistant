@@ -625,21 +625,11 @@ def spotify_callback():
                 logger.warning("Failed to save Spotify tokens persistently")
         
         logger.info("Spotify authorization successful with persistent storage")
-        return """
-        <h2>✅ Spotify Authorization Successful!</h2>
-        <p>Your tokens have been saved persistently and won't expire every 30 minutes!</p>
-        <p>The assistant will now automatically refresh your Spotify tokens as needed.</p>
-        <h3>Quick Tests</h3>
-        <ul>
-            <li><a href="/test-spotify">Test Spotify</a></li>
-            <li><a href="/spotify-status">Check Spotify Status</a></li>
-        </ul>
-        <h3>Next Steps</h3>
-        <p>Your Spotify integration is now persistent. The assistant can control your music even after restarts!</p>
-        """
+        # Redirect to React settings page
+        return redirect('/jarvis/settings?spotify=success')
     except Exception as e:
         logger.error(f"Error getting Spotify token: {e}")
-        return f"❌ Error getting token: {str(e)}", 500
+        return redirect('/jarvis/settings?spotify=error&message=' + str(e))
 
 @app.route("/spotify-callback")
 def spotify_callback_alias():
@@ -1172,22 +1162,14 @@ def google_login():
         # Check if already authenticated
         creds = load_credentials()
         if creds and creds.valid:
-            return """
-            <h2>✅ Already Authenticated</h2>
-            <p>Google services are already authenticated and ready to use.</p>
-            <p><a href="/test-gmail">Test Gmail</a> | <a href="/google-status">Check Status</a></p>
-            """
+            return redirect('/jarvis/settings?google=already_authenticated')
         
         # Redirect to authorization flow
         return redirect(url_for('auth.authorize'))
         
     except Exception as e:
         logger.error(f"Error in Google login: {e}")
-        return f"""
-        <h2>❌ Google Login Error</h2>
-        <p>Error: {str(e)}</p>
-        <p><a href="/google-status">Check Google Status</a></p>
-        """, 500
+        return redirect('/jarvis/settings?google=error&message=' + str(e))
 
 @app.route("/setup-google-auto-auth")
 def setup_google_auto_auth():
@@ -3148,6 +3130,52 @@ def api_whatsapp_qr():
             return jsonify({'qr_code': None, 'message': str(e), 'waha_url': whatsapp_url})
     except Exception as e:
         return jsonify({'error': str(e), 'waha_url': os.getenv('WAHA_URL', '').replace('/api/sendText', '')}), 500
+
+
+@app.route("/api/whatsapp/reconnect", methods=['POST'])
+def api_whatsapp_reconnect():
+    """Reconnect WhatsApp session - triggers new QR code"""
+    try:
+        whatsapp_url = os.getenv('WAHA_URL', '').replace('/api/sendText', '')
+        
+        if not whatsapp_url:
+            return jsonify({'success': False, 'error': 'WAHA_URL not configured'})
+        
+        # Call restart endpoint on WhatsApp service
+        restart_url = f"{whatsapp_url}/api/sessions/{WAHA_SESSION}/restart"
+        response = requests.post(restart_url, timeout=10)
+        
+        if response.ok:
+            return jsonify({'success': True, 'message': 'Reconnect initiated, refresh for QR code'})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to restart session'}), 500
+    except requests.RequestException as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route("/api/whatsapp/logout", methods=['POST'])
+def api_whatsapp_logout():
+    """Logout WhatsApp session - clears session data"""
+    try:
+        whatsapp_url = os.getenv('WAHA_URL', '').replace('/api/sendText', '')
+        
+        if not whatsapp_url:
+            return jsonify({'success': False, 'error': 'WAHA_URL not configured'})
+        
+        # Call logout endpoint on WhatsApp service
+        logout_url = f"{whatsapp_url}/api/sessions/{WAHA_SESSION}/logout"
+        response = requests.post(logout_url, timeout=10)
+        
+        if response.ok:
+            return jsonify({'success': True, 'message': 'Logged out successfully'})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to logout'}), 500
+    except requests.RequestException as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route("/api/make-call", methods=['POST'])

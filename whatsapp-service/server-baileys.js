@@ -693,6 +693,57 @@ app.post('/test/simulate-message', async (req, res) => {
     res.json({ success: true, message: 'Message simulated and forwarded to webhook' });
 });
 
+// Logout endpoint - clears session and disconnects
+app.post('/api/sessions/:sessionName/logout', async (req, res) => {
+    console.log('🚪 Logout requested...');
+    
+    try {
+        if (sock) {
+            await sock.logout().catch(() => {});
+            sock = null;
+        }
+        
+        // Clear session data
+        await fs.remove(SESSION_PATH);
+        fs.ensureDirSync(SESSION_PATH);
+        
+        isClientReady = false;
+        qrCodeData = null;
+        reconnectAttempts = 0;
+        
+        console.log('✅ Logged out and session cleared');
+        res.json({ success: true, message: 'Logged out successfully' });
+    } catch (error) {
+        console.error('❌ Logout error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Restart/Reconnect endpoint
+app.post('/api/sessions/:sessionName/restart', async (req, res) => {
+    console.log('🔄 Restart requested...');
+    
+    try {
+        // Close existing connection
+        if (sock) {
+            await sock.logout().catch(() => {});
+            sock = null;
+        }
+        
+        isClientReady = false;
+        qrCodeData = null;
+        reconnectAttempts = 0;
+        
+        // Reinitialize
+        setTimeout(() => initializeClient(), 1000);
+        
+        res.json({ success: true, message: 'Restart initiated, check /api/qr for new QR code' });
+    } catch (error) {
+        console.error('❌ Restart error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Error handling
 app.use((error, req, res, next) => {
     console.error('❌ Server error:', error);

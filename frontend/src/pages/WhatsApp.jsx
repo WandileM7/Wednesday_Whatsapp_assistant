@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { 
   MessageSquare, QrCode, RefreshCw, Check, X, AlertTriangle,
-  Smartphone, Wifi, WifiOff, Send
+  Smartphone, Wifi, WifiOff, Send, LogOut, Power
 } from 'lucide-react'
 import { StatusDot } from '../components/UIComponents'
 
@@ -12,6 +12,8 @@ export default function WhatsApp() {
   const [loading, setLoading] = useState(true)
   const [sendingTest, setSendingTest] = useState(false)
   const [testResult, setTestResult] = useState(null)
+  const [reconnecting, setReconnecting] = useState(false)
+  const [actionResult, setActionResult] = useState(null)
 
   const fetchStatus = async () => {
     try {
@@ -57,6 +59,48 @@ export default function WhatsApp() {
       setTestResult({ success: false, message: err.message })
     } finally {
       setSendingTest(false)
+    }
+  }
+
+  const handleReconnect = async () => {
+    setReconnecting(true)
+    setActionResult(null)
+    try {
+      const res = await fetch('/api/whatsapp/reconnect', { method: 'POST' })
+      const data = await res.json()
+      setActionResult({ success: data.success, message: data.message || 'Reconnect initiated' })
+      if (data.success) {
+        // Wait a bit then refresh
+        setTimeout(() => {
+          fetchStatus()
+          fetchQR()
+        }, 2000)
+      }
+    } catch (err) {
+      setActionResult({ success: false, message: err.message })
+    } finally {
+      setReconnecting(false)
+    }
+  }
+
+  const handleLogout = async () => {
+    if (!confirm('Are you sure you want to logout? You will need to scan the QR code again.')) return
+    
+    setReconnecting(true)
+    setActionResult(null)
+    try {
+      const res = await fetch('/api/whatsapp/logout', { method: 'POST' })
+      const data = await res.json()
+      setActionResult({ success: data.success, message: data.message || 'Logged out' })
+      // Refresh status
+      setTimeout(() => {
+        fetchStatus()
+        fetchQR()
+      }, 1000)
+    } catch (err) {
+      setActionResult({ success: false, message: err.message })
+    } finally {
+      setReconnecting(false)
     }
   }
 
@@ -152,6 +196,34 @@ export default function WhatsApp() {
               testResult.success ? 'bg-jarvis-green/10 text-jarvis-green' : 'bg-jarvis-red/10 text-jarvis-red'
             }`}>
               {testResult.message}
+            </div>
+          )}
+
+          {/* Connection Actions */}
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <button
+              onClick={handleReconnect}
+              disabled={reconnecting}
+              className="py-3 bg-jarvis-orange/10 border border-jarvis-orange/30 rounded-lg font-mono text-sm hover:bg-jarvis-orange/20 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              <Power className="w-4 h-4 text-jarvis-orange" />
+              {reconnecting ? 'RECONNECTING...' : 'RECONNECT'}
+            </button>
+            <button
+              onClick={handleLogout}
+              disabled={reconnecting || !isConnected}
+              className="py-3 bg-jarvis-red/10 border border-jarvis-red/30 rounded-lg font-mono text-sm hover:bg-jarvis-red/20 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              <LogOut className="w-4 h-4 text-jarvis-red" />
+              LOGOUT
+            </button>
+          </div>
+
+          {actionResult && (
+            <div className={`mt-4 p-3 rounded-lg text-sm ${
+              actionResult.success ? 'bg-jarvis-green/10 text-jarvis-green' : 'bg-jarvis-red/10 text-jarvis-red'
+            }`}>
+              {actionResult.message}
             </div>
           )}
         </div>

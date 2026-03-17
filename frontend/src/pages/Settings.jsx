@@ -1,15 +1,52 @@
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { useSearchParams } from 'react-router-dom'
+import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Settings as SettingsIcon, Shield, Key, Database, 
   Mail, Music, Brain, Check, X, ExternalLink,
-  RefreshCw, AlertTriangle, Info
+  RefreshCw, AlertTriangle, Info, CheckCircle
 } from 'lucide-react'
 import { StatusDot } from '../components/UIComponents'
 
 export default function Settings() {
   const [config, setConfig] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [notification, setNotification] = useState(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // Check for auth callback params
+  useEffect(() => {
+    const spotify = searchParams.get('spotify')
+    const google = searchParams.get('google')
+    const message = searchParams.get('message')
+    
+    if (spotify === 'success') {
+      setNotification({ type: 'success', message: 'Spotify connected successfully!' })
+      // Clear params
+      setSearchParams({})
+      // Refresh config
+      fetchConfig()
+    } else if (spotify === 'error') {
+      setNotification({ type: 'error', message: `Spotify error: ${message || 'Unknown error'}` })
+      setSearchParams({})
+    } else if (google === 'already_authenticated') {
+      setNotification({ type: 'success', message: 'Google is already authenticated!' })
+      setSearchParams({})
+    } else if (google === 'success') {
+      setNotification({ type: 'success', message: 'Google connected successfully!' })
+      setSearchParams({})
+      fetchConfig()
+    } else if (google === 'error') {
+      setNotification({ type: 'error', message: `Google error: ${message || 'Unknown error'}` })
+      setSearchParams({})
+    }
+    
+    // Auto-dismiss notification
+    if (notification) {
+      const timer = setTimeout(() => setNotification(null), 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [searchParams, notification])
 
   const fetchConfig = async () => {
     try {
@@ -86,6 +123,37 @@ export default function Settings() {
 
   return (
     <div className="space-y-6">
+      {/* Auth Notification */}
+      <AnimatePresence>
+        {notification && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className={`p-4 rounded-lg flex items-center gap-3 ${
+              notification.type === 'success' 
+                ? 'bg-jarvis-green/20 border border-jarvis-green/50' 
+                : 'bg-jarvis-red/20 border border-jarvis-red/50'
+            }`}
+          >
+            {notification.type === 'success' ? (
+              <CheckCircle className="w-6 h-6 text-jarvis-green" />
+            ) : (
+              <AlertTriangle className="w-6 h-6 text-jarvis-red" />
+            )}
+            <span className={notification.type === 'success' ? 'text-jarvis-green' : 'text-jarvis-red'}>
+              {notification.message}
+            </span>
+            <button 
+              onClick={() => setNotification(null)}
+              className="ml-auto text-gray-400 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
