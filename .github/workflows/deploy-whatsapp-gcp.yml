@@ -85,26 +85,41 @@ jobs:
 
       - name: Set up GCS session bucket
         id: setup-bucket
+        continue-on-error: true
         run: |
           # Bucket name must be globally unique — use project ID as prefix
           BUCKET_NAME="${{ env.PROJECT_ID }}-whatsapp-session"
           echo "bucket_name=$BUCKET_NAME" >> $GITHUB_OUTPUT
 
-          # Create bucket if it doesn't exist (single-region for lower latency)
-          if ! gcloud storage buckets describe gs://${BUCKET_NAME} >/dev/null 2>&1; then
-            gcloud storage buckets create gs://${BUCKET_NAME} \
-              --location=${{ env.REGION }} \
-              --uniform-bucket-level-access
-            echo "Created bucket: gs://${BUCKET_NAME}"
+          # Check if bucket exists
+          if gcloud storage buckets describe gs://${BUCKET_NAME} >/dev/null 2>&1; then
+            echo "✅ Bucket already exists: gs://${BUCKET_NAME}"
+            echo "bucket_exists=true" >> $GITHUB_OUTPUT
           else
-            echo "Bucket already exists: gs://${BUCKET_NAME}"
+            # Try to create bucket
+            echo "Attempting to create bucket: gs://${BUCKET_NAME}"
+            if gcloud storage buckets create gs://${BUCKET_NAME} \
+              --location=${{ env.REGION }} \
+              --uniform-bucket-level-access 2>&1; then
+              echo "✅ Created bucket: gs://${BUCKET_NAME}"
+              echo "bucket_exists=true" >> $GITHUB_OUTPUT
+            else
+              echo "⚠️ Could not create bucket (missing storage.buckets.create permission)"
+              echo "⚠️ WhatsApp session will NOT persist across restarts"
+              echo ""
+              echo "To fix, either:"
+              echo "  1. Add 'Storage Admin' role to wednesday-deployer service account"
+              echo "  2. Manually create: gcloud storage buckets create gs://${BUCKET_NAME}"
+              echo ""
+              echo "bucket_exists=false" >> $GITHUB_OUTPUT
+              exit 0  # Don't fail the workflow
+            fi
           fi
 
-          # The Cloud Run service identity is the Compute Engine default SA
+          # Grant objectAdmin so Cloud Run can read and write session files
           PROJECT_NUMBER=$(gcloud projects describe ${{ env.PROJECT_ID }} --format='value(projectNumber)')
           CR_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
-
-          # Grant objectAdmin so Cloud Run can read and write session files
+          
           gcloud storage buckets add-iam-policy-binding gs://${BUCKET_NAME} \
             --member="serviceAccount:${CR_SA}" \
             --role="roles/storage.objectAdmin" \
@@ -112,8 +127,9 @@ jobs:
 
           echo "Bucket ready: gs://${BUCKET_NAME}"
 
-      - name: Deploy to Cloud Run
+      - name: Deploy to Cloud Run (with persistent session)
         id: deploy
+        if: steps.setup-bucket.outputs.bucket_exists == 'true'
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           service: ${{ env.SERVICE_NAME }}
@@ -141,23 +157,66 @@ jobs:
             --add-volume=name=whatsapp-session,type=cloud-storage,bucket=${{ steps.setup-bucket.outputs.bucket_name }},mount-options=allow_other:uid=1001:gid=1001
             --add-volume-mount=volume=whatsapp-session,mount-path=/app/session
 
+      - name: Deploy to Cloud Run (without persistent session)
+        id: deploy-no-storage
+        if: steps.setup-bucket.outputs.bucket_exists != 'true'
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          env_vars: |
+            ENABLE_REAL_WHATSAPP=true
+            SHOW_QR=true
+            LOG_LEVEL=info
+            WHATSAPP_HOOK_URL=${{ steps.get-assistant-url.outputs.assistant_url }}/webhook
+            WHATSAPP_HOOK_EVENTS=message
+            MAX_RECONNECT_ATTEMPTS=10
+          flags: |
+            --platform=managed
+            --allow-unauthenticated
+            --memory=512Mi
+            --cpu=1
+            --min-instances=1
+            --max-instances=1
+            --concurrency=100
+            --timeout=3600
+            --port=3000
+            --execution-environment=gen2
+
+      - name: Set deployment URL
+        id: set-url
+        run: |
+          if [ -n "${{ steps.deploy.outputs.url }}" ]; then
+            echo "url=${{ steps.deploy.outputs.url }}" >> $GITHUB_OUTPUT
+          else
+            echo "url=${{ steps.deploy-no-storage.outputs.url }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Show deployment info
         run: |
           echo "============================================"
           echo "📱 WhatsApp Service Deployed!"
           echo "============================================"
-          echo "Service URL: ${{ steps.deploy.outputs.url }}"
+          URL="${{ steps.set-url.outputs.url }}"
+          echo "Service URL: $URL"
           echo "Webhook Target: ${{ steps.get-assistant-url.outputs.assistant_url }}/webhook"
           echo ""
+          if [ "${{ steps.setup-bucket.outputs.bucket_exists }}" != "true" ]; then
+            echo "⚠️  WARNING: Session storage not configured"
+            echo "    WhatsApp session will NOT persist across restarts"
+            echo "    You'll need to re-scan QR code after each restart"
+            echo ""
+          fi
           echo "To scan QR code, visit:"
-          echo "${{ steps.deploy.outputs.url }}/qr"
+          echo "$URL/qr"
           echo "============================================"
 
       - name: Update Assistant with WhatsApp URL
         continue-on-error: true
         run: |
           # Update the main assistant service with the new WhatsApp URL
-          WHATSAPP_URL="${{ steps.deploy.outputs.url }}"
+          WHATSAPP_URL="${{ steps.set-url.outputs.url }}"
           
           gcloud run services update wednesday-assistant \
             --region=${{ env.REGION }} \
