@@ -2225,57 +2225,6 @@ def tasks_view():
     """Redirect to JARVIS dashboard for task management"""
     return redirect('/jarvis')
 
-@app.route("/tasks/view-legacy")
-def tasks_view_legacy():
-    """Legacy HTML view for tasks"""
-    tasks = task_manager.list_tasks(filter_completed=False)
-    tasks_list = tasks.get('tasks', []) if isinstance(tasks, dict) else []
-    
-    return f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Wednesday - Tasks</title>
-        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
-        <style>
-            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #fff; min-height: 100vh; padding: 20px; }}
-            .container {{ max-width: 800px; margin: 0 auto; }}
-            h1 {{ margin-bottom: 20px; color: #00d4ff; }}
-            .back-link {{ color: #00d4ff; text-decoration: none; margin-bottom: 20px; display: inline-block; }}
-            .task-card {{ background: rgba(255,255,255,0.1); border-radius: 12px; padding: 15px; margin-bottom: 15px; border-left: 4px solid #00d4ff; }}
-            .task-card.high {{ border-left-color: #ff4757; }}
-            .task-card.medium {{ border-left-color: #ffa502; }}
-            .task-card.low {{ border-left-color: #2ed573; }}
-            .task-title {{ font-size: 18px; font-weight: 600; margin-bottom: 8px; }}
-            .task-meta {{ color: #888; font-size: 14px; }}
-            .priority {{ padding: 2px 8px; border-radius: 4px; font-size: 12px; text-transform: uppercase; }}
-            .priority.high {{ background: #ff4757; }}
-            .priority.medium {{ background: #ffa502; }}
-            .priority.low {{ background: #2ed573; }}
-            .empty {{ text-align: center; padding: 40px; color: #888; }}
-            .add-btn {{ background: #00d4ff; color: #000; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; margin-top: 20px; }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <a href="/dashboard" class="back-link">← Back to Dashboard</a>
-            <h1>📋 Tasks</h1>
-            {''.join([f'''
-            <div class="task-card {t.get('priority', 'medium')}">
-                <div class="task-title">{t.get('title', 'Untitled')}</div>
-                <div class="task-meta">
-                    <span class="priority {t.get('priority', 'medium')}">{t.get('priority', 'medium')}</span>
-                    {f" • Due: {t.get('due_date')}" if t.get('due_date') else ""}
-                    {f" • {t.get('description')}" if t.get('description') else ""}
-                </div>
-            </div>
-            ''' for t in tasks_list]) if tasks_list else '<div class="empty">No tasks yet! Send a message like "Add task: Buy groceries" to create one.</div>'}
-        </div>
-    </body>
-    </html>
-    """
-
 @app.route("/tasks/sync-status")
 def task_sync_status():
     """Get background task sync status"""
@@ -2385,136 +2334,6 @@ def quick_setup():
     return redirect('/jarvis')
 
 
-@app.route("/quick-setup-legacy")
-def quick_setup_legacy():
-    """Legacy quick setup page - kept for reference"""
-    cached_session = get_cached_session()
-    
-    return f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>WhatsApp Assistant - Quick Setup</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 40px; }}
-            .card {{ border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 20px 0; }}
-            .success {{ border-color: #28a745; background-color: #d4edda; }}
-            .warning {{ border-color: #ffc107; background-color: #fff3cd; }}
-            .error {{ border-color: #dc3545; background-color: #f8d7da; }}
-            .button {{ display: inline-block; padding: 10px 20px; margin: 5px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }}
-            .button:hover {{ background: #0056b3; }}
-            .step {{ margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; }}
-        </style>
-    </head>
-    <body>
-        <h1>WhatsApp Assistant - Quick Setup</h1>
-        
-        <div class="card success">
-            <h3>📱 Session Cache Status</h3>
-            <p><strong>Phone:</strong> {cached_session.get('phone', 'Not cached')}</p>
-            <p><strong>Location:</strong> {cached_session.get('location', 'Johannesburg (default)')}</p>
-            <p><strong>Gemini URL:</strong> {cached_session.get('gemini_url', 'Not set')}</p>
-            <p><strong>Last Seen:</strong> {cached_session.get('last_seen', 'Never')}</p>
-            <a href="/session-cache" class="button">View Cache</a>
-        </div>
-        
-        <div class="card warning">
-            <h3>🚀 Authentication Setup</h3>
-            <p>Set up automatic authentication for all services:</p>
-            
-            <div class="step">
-                <strong>Step 1:</strong> Authenticate Services
-                <br>
-                <a href="/google-login" class="button">Authenticate Google</a>
-                <a href="/login" class="button">Authenticate Spotify</a>
-            </div>
-            
-            <div class="step">
-                <strong>Step 2:</strong> Save Tokens for Auto-Auth
-                <br>
-                <a href="/setup-all-auto-auth" class="button">Setup All Auto-Auth</a>
-                <a href="/save-current-google-tokens" class="button">Save Google Tokens</a>
-            </div>
-            
-            <div class="step">
-                <strong>Step 3:</strong> Test Everything
-                <br>
-                <a href="/test-webhook-auth" class="button">Test Webhook Auth</a>
-                <a href="/services" class="button">Check Status</a>
-            </div>
-        </div>
-        
-        <div class="card">
-            <h3>📱 WhatsApp Integration</h3>
-            <p>Connect your WhatsApp to the assistant:</p>
-            
-            <div class="step">
-                <strong>Step 1:</strong> View WhatsApp QR Code
-                <br>
-                <a href="/whatsapp-qr" class="button">📱 Show QR Code</a>
-                <a href="/whatsapp-status" class="button">📊 Service Status</a>
-            </div>
-            
-            <div class="step">
-                <strong>Step 2:</strong> Scan QR Code with WhatsApp
-                <br>
-                <small>Open WhatsApp → Settings → Linked Devices → Link a Device</small>
-            </div>
-            
-            <div class="step">
-                <strong>Step 3:</strong> Test Connection
-                <br>
-                <a href="/test-webhook-auth" class="button">🔗 Test Webhook</a>
-                <small style="display: block; margin-top: 5px;">Send a message to your WhatsApp number to test</small>
-            </div>
-        </div>
-        
-        <div class="card">
-            <h3>🌟 Enhanced Personal Assistant Features</h3>
-            <a href="/weather?location=Johannesburg" class="button">Test Weather</a>
-            <a href="/news" class="button">Test News</a>
-            <a href="/news/briefing" class="button">Daily Briefing</a>
-            <a href="/tasks/view" class="button">View Tasks</a>
-            <a href="/reminders" class="button">View Reminders</a>
-            <a href="/tasks/summary" class="button">Task Summary</a>
-            <a href="/contacts" class="button">View Contacts</a>
-            <a href="/contacts/summary" class="button">Contact Summary</a>
-        </div>
-        
-        <div class="card">
-            <h3>📊 Dashboard</h3>
-            <a href="/dashboard" class="button">📊 Main Dashboard</a>
-            <a href="/services" class="button">Services Overview</a>
-            <a href="/health" class="button">System Health</a>
-        </div>
-        
-        <div class="card">
-            <h3>⚡ Quick Actions</h3>
-            <a href="/clear-spotify-tokens" class="button">Clear Spotify</a>
-            <a href="/auth/clear-auth" class="button">Clear Google</a>
-            <a href="/refresh-google-token" class="button">Refresh Google</a>
-        </div>
-        
-        <div class="card">
-            <h3>📝 Environment Variables Needed</h3>
-            <p>After authentication, add these to your deployment:</p>
-            <p><strong>Core Services:</strong></p>
-            <code>
-                SPOTIFY_REFRESH_TOKEN=your_token_here<br>
-                GOOGLE_REFRESH_TOKEN=your_token_here<br>
-                GOOGLE_CLIENT_ID=your_client_id<br>
-                GOOGLE_CLIENT_SECRET=your_secret
-            </code>
-            <p><strong>Enhanced Features (Optional):</strong></p>
-            <code>
-                WEATHERAPI_KEY=your_weatherapi_key<br>
-                NEWS_API_KEY=your_newsapi_key
-            </code>
-        </div>
-    </body>
-    </html>
-    """
-
 # WhatsApp QR Code Routes
 @app.route("/whatsapp-qr")
 def whatsapp_qr():
@@ -2531,133 +2350,7 @@ def whatsapp_qr():
             mode = qr_data.get('mode', 'unknown')
             timestamp = qr_data.get('timestamp', 'unknown')
             
-            return f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>WhatsApp QR Code</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; margin: 40px; text-align: center; }}
-                    .qr-container {{ margin: 20px auto; max-width: 400px; }}
-                    .status {{ padding: 15px; border-radius: 5px; margin: 20px; }}
-                    .success {{ background-color: #d4edda; border: 1px solid #28a745; color: #155724; }}
-                    .warning {{ background-color: #fff3cd; border: 1px solid #ffc107; color: #856404; }}
-                    .button {{ display: inline-block; padding: 10px 20px; margin: 10px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }}
-                    .button:hover {{ background: #0056b3; }}
-                    .qr-info {{ margin: 20px; font-size: 14px; color: #666; }}
-                </style>
-                <script>
-                    // Auto-refresh every 30 seconds to check for status changes
-                    setTimeout(() => window.location.reload(), 30000);
-                </script>
-            </head>
-            <body>
-                <h1>📱 WhatsApp QR Code</h1>
-                
-                <div class="status {"success" if mode == "production" else "warning"}">
-                    <h3>Status: {'🟢 Production Mode' if mode == 'production' else '🟡 Mock Mode'}</h3>
-                    <p><strong>Timestamp:</strong> {timestamp}</p>
-                    <p><strong>Service Mode:</strong> {mode.title()}</p>
-                </div>
-                
-                <div class="qr-container">
-                    <h3>Scan this QR code with WhatsApp:</h3>
-                    <img src="/whatsapp-qr-image" alt="WhatsApp QR Code" style="max-width: 100%; border: 1px solid #ddd; padding: 10px;">
-                </div>
-                
-                <div class="qr-info">
-                    <p><strong>Instructions:</strong></p>
-                    <ol style="text-align: left; max-width: 500px; margin: 0 auto;">
-                        <li>Open WhatsApp on your phone</li>
-                        <li>Go to Settings → Linked Devices</li>
-                        <li>Tap "Link a Device"</li>
-                        <li>Scan the QR code above</li>
-                    </ol>
-                </div>
-                
-                <div>
-                    <a href="/whatsapp-qr" class="button">🔄 Refresh</a>
-                    <a href="/quick-setup" class="button">← Back to Setup</a>
-                    <a href="/whatsapp-status" class="button">📊 Status</a>
-                </div>
-                
-                <div class="qr-info">
-                    <p><em>This page automatically refreshes every 30 seconds</em></p>
-                    <p><strong>QR Data:</strong> <code style="word-break: break-all; font-size: 12px;">{qr_text[:50]}...</code></p>
-                </div>
-            </body>
-            </html>
-            """
-        else:
-            # No QR code available
-            status = qr_data.get('status', 'unknown')
-            message = qr_data.get('message', 'No status message')
-            mode = qr_data.get('mode', 'unknown')
-            
-            return f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>WhatsApp Status</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; margin: 40px; text-align: center; }}
-                    .status {{ padding: 15px; border-radius: 5px; margin: 20px; }}
-                    .success {{ background-color: #d4edda; border: 1px solid #28a745; color: #155724; }}
-                    .warning {{ background-color: #fff3cd; border: 1px solid #ffc107; color: #856404; }}
-                    .error {{ background-color: #f8d7da; border: 1px solid #dc3545; color: #721c24; }}
-                    .button {{ display: inline-block; padding: 10px 20px; margin: 10px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }}
-                    .button:hover {{ background: #0056b3; }}
-                </style>
-                <script>
-                    // Auto-refresh every 10 seconds when waiting for QR
-                    setTimeout(() => window.location.reload(), 10000);
-                </script>
-            </head>
-            <body>
-                <h1>📱 WhatsApp Status</h1>
-                
-                <div class="status {"success" if status == "authenticated" else "warning" if status == "waiting" else "error"}">
-                    <h3>{'✅ Connected!' if status == "authenticated" else '⏳ Waiting...' if status == "waiting" else '❌ Error'}</h3>
-                    <p><strong>Status:</strong> {status.title()}</p>
-                    <p><strong>Message:</strong> {message}</p>
-                    <p><strong>Mode:</strong> {mode.title()}</p>
-                </div>
-                
-                <div>
-                    <a href="/whatsapp-qr" class="button">🔄 Refresh</a>
-                    <a href="/quick-setup" class="button">← Back to Setup</a>
-                    <a href="/whatsapp-status" class="button">📊 Detailed Status</a>
-                </div>
-                
-                <div style="margin: 20px; font-size: 14px; color: #666;">
-                    <p><em>This page automatically refreshes every 10 seconds</em></p>
-                </div>
-            </body>
-            </html>
-            """
-    except requests.RequestException as e:
-        return f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>WhatsApp Service Error</title>
-            <style>
-                body {{ font-family: Arial, sans-serif; margin: 40px; text-align: center; }}
-                .error {{ padding: 15px; border-radius: 5px; margin: 20px; background-color: #f8d7da; border: 1px solid #dc3545; color: #721c24; }}
-                .button {{ display: inline-block; padding: 10px 20px; margin: 10px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }}
-            </style>
-        </head>
-        <body>
-            <h1>❌ WhatsApp Service Error</h1>
-            <div class="error">
-                <h3>Cannot connect to WhatsApp service</h3>
-                <p><strong>Error:</strong> {str(e)}</p>
-                <p>Make sure the WhatsApp service is running on port 3000</p>
-            </div>
-            <a href="/quick-setup" class="button">← Back to Setup</a>
-        </body>
-        </html>
-        """
+        
 
 @app.route("/whatsapp-qr-image")
 def whatsapp_qr_image():
@@ -2727,55 +2420,6 @@ def whatsapp_status():
         except:
             status_data['info'] = {"error": "Info check failed"}
         
-        return f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>WhatsApp Service Status</title>
-            <style>
-                body {{ font-family: Arial, sans-serif; margin: 40px; }}
-                .status-card {{ border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 20px 0; }}
-                .success {{ border-color: #28a745; background-color: #d4edda; }}
-                .warning {{ border-color: #ffc107; background-color: #fff3cd; }}
-                .error {{ border-color: #dc3545; background-color: #f8d7da; }}
-                .button {{ display: inline-block; padding: 10px 20px; margin: 5px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }}
-                .json {{ background: #f8f9fa; padding: 10px; border-radius: 5px; font-family: monospace; white-space: pre-wrap; overflow-x: auto; }}
-            </style>
-        </head>
-        <body>
-            <h1>📊 WhatsApp Service Status</h1>
-            
-            <div class="status-card">
-                <h3>🏥 Health Status</h3>
-                <div class="json">{json.dumps(status_data['health'], indent=2)}</div>
-            </div>
-            
-            <div class="status-card">
-                <h3>📱 QR Code Status</h3>
-                <div class="json">{json.dumps(status_data['qr'], indent=2)}</div>
-            </div>
-            
-            <div class="status-card">
-                <h3>ℹ️ Service Info</h3>
-                <div class="json">{json.dumps(status_data['info'], indent=2)}</div>
-            </div>
-            
-            <div>
-                <a href="/whatsapp-qr" class="button">📱 View QR Code</a>
-                <a href="/whatsapp-status" class="button">🔄 Refresh Status</a>
-                <a href="/quick-setup" class="button">← Back to Setup</a>
-            </div>
-        </body>
-        </html>
-        """
-        
-    except Exception as e:
-        return f"""
-        <h1>❌ Error</h1>
-        <p>Could not get WhatsApp service status: {str(e)}</p>
-        <a href="/quick-setup">← Back to Setup</a>
-        """
-
 
 
 @app.route("/test-new-services")
@@ -3312,43 +2956,25 @@ def api_mcp_tools():
 
 
 @app.route("/jarvis")
-def jarvis_dashboard():
-    """Serve the React JARVIS dashboard"""
-    # Check if built React app exists
+@app.route("/jarvis/<path:path>")
+def jarvis_dashboard(path=None):
+    """Serve the React JARVIS dashboard for all frontend routes"""
     react_path = os.path.join(os.path.dirname(__file__), 'static', 'dashboard', 'index.html')
     if os.path.exists(react_path):
         return send_from_directory(os.path.join(os.path.dirname(__file__), 'static', 'dashboard'), 'index.html')
     
-    # Fallback to redirect to dev server or basic page
-    return '''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>JARVIS Dashboard</title>
-        <style>
-            body { 
-                font-family: 'Rajdhani', sans-serif; 
-                background: #0a0a12; 
-                color: #00d4ff; 
-                display: flex; 
-                justify-content: center; 
-                align-items: center; 
-                height: 100vh;
-                flex-direction: column;
-            }
-            h1 { font-size: 3rem; letter-spacing: 0.3em; }
-            p { color: #666; }
-            a { color: #00d4ff; }
-        </style>
-    </head>
-    <body>
-        <h1>J.A.R.V.I.S.</h1>
-        <p>React dashboard not built yet.</p>
-        <p>Run: <code>cd frontend && npm install && npm run build</code></p>
-        <p>Or use <a href="/dashboard">legacy dashboard</a></p>
-    </body>
-    </html>
-    '''
+    return '''<!DOCTYPE html><html><head><title>JARVIS</title>
+    <style>body{font-family:monospace;background:#0a0a12;color:#00d4ff;display:flex;justify-content:center;align-items:center;height:100vh;flex-direction:column}
+    code{background:#1a1a2e;padding:4px 8px;border-radius:4px}</style></head>
+    <body><h1>J.A.R.V.I.S.</h1><p>React dashboard not built.</p><code>cd frontend && npm run build</code></body></html>'''
+
+
+# Serve React app static assets
+@app.route("/assets/<path:filename>")
+def serve_react_assets(filename):
+    """Serve React build assets"""
+    assets_path = os.path.join(os.path.dirname(__file__), 'static', 'dashboard', 'assets')
+    return send_from_directory(assets_path, filename)
 
 
 @app.route("/api/services/status")
@@ -3443,6 +3069,75 @@ def api_send_whatsapp():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route("/api/whatsapp/status")
+def api_whatsapp_status():
+    """Get WhatsApp connection status for React dashboard"""
+    try:
+        whatsapp_url = os.getenv('WAHA_URL', '').replace('/api/sendText', '')
+        
+        status_data = {
+            'waha_url': whatsapp_url or None,
+            'waha_available': False,
+            'connected': False,
+            'session_status': 'unknown',
+            'phone_number': None,
+            'keep_alive_active': bool(os.getenv('WAHA_URL'))
+        }
+        
+        if not whatsapp_url:
+            status_data['message'] = 'WAHA_URL not configured'
+            return jsonify(status_data)
+        
+        try:
+            health_response = requests.get(f"{whatsapp_url}/health", timeout=5)
+            if health_response.ok:
+                status_data['waha_available'] = True
+            
+            session_response = requests.get(f"{whatsapp_url}/api/sessions/{WAHA_SESSION}", timeout=5)
+            if session_response.ok:
+                session_data = session_response.json()
+                status_data['session_status'] = session_data.get('status', 'unknown')
+                status_data['connected'] = session_data.get('status') == 'WORKING'
+                if session_data.get('me'):
+                    status_data['phone_number'] = session_data['me'].get('id', '').split('@')[0]
+        except requests.RequestException as e:
+            status_data['error'] = str(e)
+        
+        return jsonify(status_data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route("/api/whatsapp/qr")
+def api_whatsapp_qr():
+    """Get WhatsApp QR code for React dashboard"""
+    try:
+        whatsapp_url = os.getenv('WAHA_URL', '').replace('/api/sendText', '')
+        
+        if not whatsapp_url:
+            return jsonify({'qr_code': None, 'message': 'WAHA_URL not configured'})
+        
+        try:
+            qr_response = requests.get(f"{whatsapp_url}/api/sessions/{WAHA_SESSION}/auth/qr", timeout=5)
+            
+            if qr_response.ok:
+                content_type = qr_response.headers.get('content-type', '')
+                if 'image' in content_type:
+                    import base64
+                    qr_base64 = base64.b64encode(qr_response.content).decode('utf-8')
+                    return jsonify({'qr_code': qr_base64, 'message': 'Scan QR code'})
+                else:
+                    qr_data = qr_response.json()
+                    return jsonify({'qr_code': qr_data.get('qr') or qr_data.get('qrcode'), 'message': 'QR available'})
+            else:
+                return jsonify({'qr_code': None, 'message': 'Session may already be connected'})
+        except requests.RequestException as e:
+            return jsonify({'qr_code': None, 'message': str(e)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route("/api/make-call", methods=['POST'])
 def make_whatsapp_call():
@@ -3541,771 +3236,6 @@ def unified_dashboard():
     """Redirect to JARVIS React dashboard"""
     return redirect('/jarvis')
 
-
-@app.route("/dashboard-legacy")
-def unified_dashboard_legacy():
-    """Legacy dashboard - kept for reference. Use /jarvis instead."""
-    try:
-        from handlers.service_monitor import service_monitor
-        from handlers.notifications import task_notification_system
-        from helpers.token_storage import token_storage
-        
-        # Get comprehensive system status
-        services_status = service_monitor.get_service_status()
-        health_summary = service_monitor.get_system_health_summary()
-        notification_stats = task_notification_system.get_notification_stats()
-        
-        # Get task sync status
-        from handlers.tasks import background_sync_service
-        sync_status = background_sync_service.get_status()
-        
-        # Get authentication status
-        spotify_tokens = token_storage.load_spotify_tokens()
-        google_tokens = token_storage.load_google_tokens()
-        
-        env_spotify_token = os.getenv("SPOTIFY_REFRESH_TOKEN")
-        env_google_token = os.getenv("GOOGLE_REFRESH_TOKEN")
-        
-        session_spotify = session.get("token_info")
-        session_google = session.get("google_credentials")
-        
-        # Test current connections
-        spotify_working = False
-        google_working = False
-        
-        try:
-            test_token = get_token_info()
-            spotify_working = test_token is not None
-        except:
-            pass
-        
-        try:
-            from handlers.google_auth import load_credentials
-            test_creds = load_credentials()
-            google_working = test_creds is not None and test_creds.valid
-        except:
-            pass
-        
-        if DATABASE_AVAILABLE:
-            db_stats = db_manager.get_database_stats()
-        else:
-            db_stats = {'error': 'Database not available'}
-        
-        # Build service cards HTML
-        service_cards = ""
-        for service_name, service_info in services_status.get('services', {}).items():
-            status = service_info.get('status', 'unknown')
-            status_class = 'healthy' if status == 'healthy' else 'error' if status in ['error', 'unhealthy'] else 'warning'
-            critical_badge = '<span class="critical-badge">CRITICAL</span>' if service_info.get('critical') else ''
-            
-            # Convert last_check to string if it's a datetime object
-            last_check = service_info.get('last_check', 'Never')
-            if last_check and last_check != 'Never':
-                last_check_str = str(last_check)[:19]
-            else:
-                last_check_str = 'Never'
-            
-            service_cards += f"""
-                <div class="service-card {status_class}">
-                    <div class="service-header">
-                        <span class="service-name">{service_name.replace('_', ' ').title()}</span>
-                        {critical_badge}
-                    </div>
-                    <div class="service-status">
-                        <span class="status-dot {status_class}"></span>
-                        <span>{status.title()}</span>
-                    </div>
-                    <div class="service-meta">Last check: {last_check_str}</div>
-                </div>
-            """
-        
-        dashboard_html = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wednesday Assistant</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <style>
-        :root {{
-            --primary: #6366f1;
-            --primary-dark: #4f46e5;
-            --secondary: #8b5cf6;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --danger: #ef4444;
-            --dark: #1e1b4b;
-            --light: #f8fafc;
-            --gray-100: #f1f5f9;
-            --gray-200: #e2e8f0;
-            --gray-300: #cbd5e1;
-            --gray-600: #475569;
-            --gray-800: #1e293b;
-            --radius: 16px;
-            --radius-sm: 8px;
-            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
-            --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-        }}
-        
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        
-        body {{
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: linear-gradient(135deg, var(--dark) 0%, #312e81 50%, var(--dark) 100%);
-            min-height: 100vh;
-            color: var(--gray-800);
-        }}
-        
-        .dashboard {{
-            max-width: 1600px;
-            margin: 0 auto;
-            padding: 24px;
-        }}
-        
-        /* Header */
-        .header {{
-            text-align: center;
-            padding: 40px 20px;
-            color: white;
-        }}
-        
-        .header h1 {{
-            font-size: 3rem;
-            font-weight: 800;
-            background: linear-gradient(135deg, #fff 0%, #c7d2fe 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 8px;
-        }}
-        
-        .header .subtitle {{
-            font-size: 1.1rem;
-            opacity: 0.8;
-            font-weight: 400;
-        }}
-        
-        .header .timestamp {{
-            font-size: 0.85rem;
-            opacity: 0.6;
-            margin-top: 12px;
-        }}
-        
-        /* Grid Layout */
-        .grid {{
-            display: grid;
-            gap: 24px;
-        }}
-        
-        .grid-2 {{ grid-template-columns: repeat(2, 1fr); }}
-        .grid-3 {{ grid-template-columns: repeat(3, 1fr); }}
-        .grid-4 {{ grid-template-columns: repeat(4, 1fr); }}
-        
-        @media (max-width: 1200px) {{
-            .grid-4 {{ grid-template-columns: repeat(2, 1fr); }}
-            .grid-3 {{ grid-template-columns: repeat(2, 1fr); }}
-        }}
-        
-        @media (max-width: 768px) {{
-            .grid-4, .grid-3, .grid-2 {{ grid-template-columns: 1fr; }}
-        }}
-        
-        /* Cards */
-        .card {{
-            background: white;
-            border-radius: var(--radius);
-            padding: 24px;
-            box-shadow: var(--shadow-lg);
-        }}
-        
-        .card-header {{
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 20px;
-            padding-bottom: 16px;
-            border-bottom: 2px solid var(--gray-100);
-        }}
-        
-        .card-header .icon {{
-            width: 40px;
-            height: 40px;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.3rem;
-        }}
-        
-        .card-header .icon.primary {{ background: linear-gradient(135deg, var(--primary), var(--secondary)); }}
-        .card-header .icon.success {{ background: linear-gradient(135deg, var(--success), #059669); }}
-        .card-header .icon.warning {{ background: linear-gradient(135deg, var(--warning), #d97706); }}
-        .card-header .icon.danger {{ background: linear-gradient(135deg, var(--danger), #dc2626); }}
-        
-        .card-header h2 {{
-            font-size: 1.1rem;
-            font-weight: 600;
-            color: var(--gray-800);
-        }}
-        
-        /* Stats Grid */
-        .stats-grid {{
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 20px;
-            margin-bottom: 24px;
-        }}
-        
-        @media (max-width: 1200px) {{ .stats-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
-        @media (max-width: 600px) {{ .stats-grid {{ grid-template-columns: 1fr; }} }}
-        
-        .stat-card {{
-            background: white;
-            border-radius: var(--radius);
-            padding: 24px;
-            box-shadow: var(--shadow);
-            position: relative;
-            overflow: hidden;
-        }}
-        
-        .stat-card::before {{
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 4px;
-        }}
-        
-        .stat-card.primary::before {{ background: linear-gradient(90deg, var(--primary), var(--secondary)); }}
-        .stat-card.success::before {{ background: var(--success); }}
-        .stat-card.warning::before {{ background: var(--warning); }}
-        .stat-card.danger::before {{ background: var(--danger); }}
-        
-        .stat-value {{
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--gray-800);
-        }}
-        
-        .stat-label {{
-            font-size: 0.8rem;
-            color: var(--gray-600);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-top: 4px;
-        }}
-        
-        /* Status Badge */
-        .status-badge {{
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-        }}
-        
-        .status-badge.healthy {{ background: #d1fae5; color: #065f46; }}
-        .status-badge.warning {{ background: #fef3c7; color: #92400e; }}
-        .status-badge.error {{ background: #fee2e2; color: #991b1b; }}
-        
-        .status-dot {{
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-        }}
-        
-        .status-dot.healthy {{ background: var(--success); }}
-        .status-dot.warning {{ background: var(--warning); }}
-        .status-dot.error {{ background: var(--danger); }}
-        
-        /* Auth Cards */
-        .auth-grid {{
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 20px;
-        }}
-        
-        @media (max-width: 900px) {{ .auth-grid {{ grid-template-columns: 1fr; }} }}
-        
-        .auth-card {{
-            background: white;
-            border-radius: var(--radius);
-            padding: 24px;
-            box-shadow: var(--shadow);
-            border-left: 4px solid var(--gray-300);
-        }}
-        
-        .auth-card.connected {{ border-left-color: var(--success); }}
-        .auth-card.disconnected {{ border-left-color: var(--danger); }}
-        
-        .auth-header {{
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 16px;
-        }}
-        
-        .auth-title {{
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 1.1rem;
-            font-weight: 600;
-        }}
-        
-        .auth-row {{
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid var(--gray-100);
-            font-size: 0.9rem;
-        }}
-        
-        .auth-row:last-child {{ border-bottom: none; }}
-        
-        .auth-label {{ color: var(--gray-600); }}
-        .auth-value {{ font-weight: 500; }}
-        .auth-value.yes {{ color: var(--success); }}
-        .auth-value.no {{ color: var(--danger); }}
-        
-        /* Service Cards */
-        .services-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 16px;
-        }}
-        
-        .service-card {{
-            background: var(--gray-100);
-            border-radius: var(--radius-sm);
-            padding: 16px;
-            border-left: 3px solid var(--gray-300);
-        }}
-        
-        .service-card.healthy {{ border-left-color: var(--success); background: #f0fdf4; }}
-        .service-card.warning {{ border-left-color: var(--warning); background: #fffbeb; }}
-        .service-card.error {{ border-left-color: var(--danger); background: #fef2f2; }}
-        
-        .service-header {{
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 8px;
-        }}
-        
-        .service-name {{
-            font-weight: 600;
-            font-size: 0.9rem;
-        }}
-        
-        .critical-badge {{
-            font-size: 0.6rem;
-            background: var(--danger);
-            color: white;
-            padding: 2px 6px;
-            border-radius: 4px;
-        }}
-        
-        .service-status {{
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 0.85rem;
-            margin-bottom: 4px;
-        }}
-        
-        .service-meta {{
-            font-size: 0.75rem;
-            color: var(--gray-600);
-        }}
-        
-        /* Buttons */
-        .btn {{
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 10px 20px;
-            border-radius: var(--radius-sm);
-            font-size: 0.875rem;
-            font-weight: 600;
-            text-decoration: none;
-            cursor: pointer;
-            border: none;
-            transition: all 0.2s ease;
-        }}
-        
-        .btn-primary {{
-            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-            color: white;
-            box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
-        }}
-        
-        .btn-primary:hover {{ transform: translateY(-2px); box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5); }}
-        
-        .btn-success {{
-            background: linear-gradient(135deg, var(--success), #059669);
-            color: white;
-        }}
-        
-        .btn-danger {{
-            background: linear-gradient(135deg, var(--danger), #dc2626);
-            color: white;
-        }}
-        
-        .btn-outline {{
-            background: transparent;
-            border: 2px solid var(--gray-200);
-            color: var(--gray-600);
-        }}
-        
-        .btn-outline:hover {{ border-color: var(--primary); color: var(--primary); }}
-        
-        .btn-group {{
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 16px;
-        }}
-        
-        /* Quick Actions */
-        .actions-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 16px;
-        }}
-        
-        .action-section {{
-            background: var(--gray-100);
-            border-radius: var(--radius-sm);
-            padding: 16px;
-        }}
-        
-        .action-section h4 {{
-            font-size: 0.85rem;
-            color: var(--gray-600);
-            margin-bottom: 12px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }}
-        
-        /* WhatsApp Section */
-        .whatsapp-section {{
-            background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
-            border-radius: var(--radius);
-            padding: 32px;
-            color: white;
-        }}
-        
-        .whatsapp-section h3 {{
-            font-size: 1.3rem;
-            margin-bottom: 12px;
-        }}
-        
-        .whatsapp-input {{
-            padding: 14px 18px;
-            border: 2px solid rgba(255,255,255,0.3);
-            background: rgba(255,255,255,0.1);
-            border-radius: var(--radius-sm);
-            font-size: 1rem;
-            color: white;
-            width: 300px;
-            max-width: 100%;
-        }}
-        
-        .whatsapp-input::placeholder {{ color: rgba(255,255,255,0.7); }}
-        .whatsapp-input:focus {{ outline: none; border-color: white; background: rgba(255,255,255,0.2); }}
-        
-        /* Footer */
-        .footer {{
-            text-align: center;
-            padding: 32px 20px;
-            color: rgba(255,255,255,0.6);
-            font-size: 0.85rem;
-        }}
-        
-        .footer a {{ color: rgba(255,255,255,0.8); text-decoration: none; }}
-        .footer a:hover {{ color: white; }}
-        
-        /* Animations */
-        @keyframes pulse {{
-            0%, 100% {{ opacity: 1; }}
-            50% {{ opacity: 0.5; }}
-        }}
-        
-        .pulse {{ animation: pulse 2s infinite; }}
-    </style>
-</head>
-<body>
-    <div class="dashboard">
-        <header class="header">
-            <h1>🤖 Wednesday Assistant</h1>
-            <p class="subtitle">Your AI-Powered Personal Assistant Dashboard</p>
-            <p class="timestamp">Last updated: {datetime.now().strftime('%B %d, %Y at %H:%M:%S')} • Auto-refreshes every 60s</p>
-        </header>
-        
-        <!-- Stats Overview -->
-        <div class="stats-grid">
-            <div class="stat-card {'success' if health_summary.get('overall_status') == 'healthy' else 'danger'}">
-                <div class="stat-value">{health_summary.get('overall_status', 'Unknown').title()}</div>
-                <div class="stat-label">System Status</div>
-            </div>
-            <div class="stat-card primary">
-                <div class="stat-value">{health_summary.get('healthy_services', 0)}/{health_summary.get('total_services', 0)}</div>
-                <div class="stat-label">Services Healthy</div>
-            </div>
-            <div class="stat-card primary">
-                <div class="stat-value">{len(user_conversations)}</div>
-                <div class="stat-label">Active Conversations</div>
-            </div>
-            <div class="stat-card {'success' if waha_connection_status.get('status') == 'healthy' else 'warning' if waha_connection_status.get('status') == 'degraded' else 'danger'}">
-                <div class="stat-value">{waha_connection_status.get('status', 'Unknown').title()}</div>
-                <div class="stat-label">WhatsApp Status</div>
-            </div>
-        </div>
-        
-        <div class="grid grid-2" style="margin-bottom: 24px;">
-            <!-- Authentication Status -->
-            <div class="card">
-                <div class="card-header">
-                    <div class="icon primary">🔐</div>
-                    <h2>Authentication Status</h2>
-                </div>
-                <div class="auth-grid">
-                    <div class="auth-card {'connected' if spotify_working else 'disconnected'}">
-                        <div class="auth-header">
-                            <div class="auth-title">
-                                <span>🎵</span>
-                                <span>Spotify</span>
-                            </div>
-                            <span class="status-badge {'healthy' if spotify_working else 'error'}">
-                                <span class="status-dot {'healthy' if spotify_working else 'error'}"></span>
-                                {'Connected' if spotify_working else 'Disconnected'}
-                            </span>
-                        </div>
-                        <div class="auth-row">
-                            <span class="auth-label">Session Token</span>
-                            <span class="auth-value {'yes' if session_spotify else 'no'}">{'✓ Available' if session_spotify else '✗ Missing'}</span>
-                        </div>
-                        <div class="auth-row">
-                            <span class="auth-label">Stored Token</span>
-                            <span class="auth-value {'yes' if spotify_tokens else 'no'}">{'✓ Available' if spotify_tokens else '✗ Missing'}</span>
-                        </div>
-                        <div class="auth-row">
-                            <span class="auth-label">Environment</span>
-                            <span class="auth-value {'yes' if env_spotify_token else 'no'}">{'✓ Set' if env_spotify_token else '✗ Not Set'}</span>
-                        </div>
-                        <div class="btn-group">
-                            {'<a href="/test-spotify" class="btn btn-success">Test</a>' if spotify_working else '<a href="/login" class="btn btn-primary">Connect</a>'}
-                            <a href="/spotify-status" class="btn btn-outline">Details</a>
-                        </div>
-                    </div>
-                    
-                    <div class="auth-card {'connected' if google_working else 'disconnected'}">
-                        <div class="auth-header">
-                            <div class="auth-title">
-                                <span>📧</span>
-                                <span>Google</span>
-                            </div>
-                            <span class="status-badge {'healthy' if google_working else 'error'}">
-                                <span class="status-dot {'healthy' if google_working else 'error'}"></span>
-                                {'Connected' if google_working else 'Disconnected'}
-                            </span>
-                        </div>
-                        <div class="auth-row">
-                            <span class="auth-label">Session Token</span>
-                            <span class="auth-value {'yes' if session_google else 'no'}">{'✓ Available' if session_google else '✗ Missing'}</span>
-                        </div>
-                        <div class="auth-row">
-                            <span class="auth-label">Stored Token</span>
-                            <span class="auth-value {'yes' if google_tokens else 'no'}">{'✓ Available' if google_tokens else '✗ Missing'}</span>
-                        </div>
-                        <div class="auth-row">
-                            <span class="auth-label">Environment</span>
-                            <span class="auth-value {'yes' if env_google_token else 'no'}">{'✓ Set' if env_google_token else '✗ Not Set'}</span>
-                        </div>
-                        <div class="btn-group">
-                            {'<a href="/test-google-services" class="btn btn-success">Test</a>' if google_working else '<a href="/google-login" class="btn btn-primary">Connect</a>'}
-                            <a href="/google-auth-status" class="btn btn-outline">Details</a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- System Metrics -->
-            <div class="card">
-                <div class="card-header">
-                    <div class="icon success">📊</div>
-                    <h2>System Metrics</h2>
-                </div>
-                <div class="stats-grid" style="margin-bottom: 0;">
-                    <div class="stat-card primary">
-                        <div class="stat-value">{health_summary.get('system_metrics', {}).get('memory_percent', 'N/A')}%</div>
-                        <div class="stat-label">Memory Usage</div>
-                    </div>
-                    <div class="stat-card primary">
-                        <div class="stat-value">{health_summary.get('system_metrics', {}).get('cpu_percent', 'N/A')}%</div>
-                        <div class="stat-label">CPU Usage</div>
-                    </div>
-                    <div class="stat-card primary">
-                        <div class="stat-value">{db_stats.get('db_size_mb', 'N/A')}</div>
-                        <div class="stat-label">DB Size (MB)</div>
-                    </div>
-                    <div class="stat-card primary">
-                        <div class="stat-value">{db_stats.get('conversations_count', 0)}</div>
-                        <div class="stat-label">Conversations</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Services Status -->
-        <div class="card" style="margin-bottom: 24px;">
-            <div class="card-header">
-                <div class="icon warning">⚡</div>
-                <h2>Service Status</h2>
-            </div>
-            <div class="services-grid">
-                {service_cards}
-            </div>
-        </div>
-        
-        <!-- Quick Actions -->
-        <div class="card" style="margin-bottom: 24px;">
-            <div class="card-header">
-                <div class="icon primary">🛠️</div>
-                <h2>Quick Actions</h2>
-            </div>
-            <div class="actions-grid">
-                <div class="action-section">
-                    <h4>System</h4>
-                    <div class="btn-group">
-                        <a href="/health" class="btn btn-outline">Health Check</a>
-                        <a href="/services" class="btn btn-outline">Services JSON</a>
-                        <a href="javascript:location.reload()" class="btn btn-primary">Refresh</a>
-                    </div>
-                </div>
-                <div class="action-section">
-                    <h4>Authentication</h4>
-                    <div class="btn-group">
-                        <a href="/login" class="btn btn-outline">Spotify Login</a>
-                        <a href="/google-login" class="btn btn-outline">Google Login</a>
-                        <a href="/setup-all-auto-auth" class="btn btn-success">Auto Setup</a>
-                    </div>
-                </div>
-                <div class="action-section">
-                    <h4>Tasks & Notes</h4>
-                    <div class="btn-group">
-                        <a href="/tasks/view" class="btn btn-outline">View Tasks</a>
-                        <a href="/google-status" class="btn btn-outline">Google Status</a>
-                    </div>
-                </div>
-                <div class="action-section">
-                    <h4>Diagnostics</h4>
-                    <div class="btn-group">
-                        <a href="/test-webhook-auth" class="btn btn-outline">Test Webhook</a>
-                        <a href="/whatsapp-qr" class="btn btn-outline">WhatsApp QR</a>
-                        <a href="/quick-setup" class="btn btn-outline">Setup Guide</a>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- WhatsApp Calling -->
-        <div class="whatsapp-section">
-            <h3>📞 WhatsApp Voice Calls</h3>
-            <p style="opacity: 0.9; margin-bottom: 20px;">Make voice calls directly from this dashboard. Requires active WhatsApp connection.</p>
-            <form id="callForm" onsubmit="makeCall(event)" style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
-                <input type="text" id="phoneNumber" class="whatsapp-input" placeholder="Phone number (e.g., 27729224495)" required>
-                <button type="submit" class="btn btn-success">📞 Call</button>
-                <button type="button" onclick="endCall()" class="btn btn-danger">✕ End</button>
-            </form>
-            <div id="callStatus" style="margin-top: 16px; padding: 12px 16px; background: rgba(0,0,0,0.2); border-radius: 8px; display: none;">
-                <span id="statusText"></span>
-            </div>
-        </div>
-        
-        <footer class="footer">
-            <p>Wednesday WhatsApp Assistant • Built with Flask & AI</p>
-            <p style="margin-top: 8px;"><a href="/quick-setup">Setup Guide</a> • <a href="/health">API Health</a> • <a href="/services">Services</a></p>
-        </footer>
-    </div>
-    
-    <script>
-        // Auto-refresh
-        setTimeout(() => location.reload(), 60000);
-        
-        function makeCall(event) {{
-            event.preventDefault();
-            const phone = document.getElementById('phoneNumber').value;
-            const statusDiv = document.getElementById('callStatus');
-            const statusText = document.getElementById('statusText');
-            
-            statusDiv.style.display = 'block';
-            statusText.textContent = '📞 Initiating call to ' + phone + '...';
-            
-            fetch('/api/make-call', {{
-                method: 'POST',
-                headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify({{ phone: phone }})
-            }})
-            .then(r => r.json())
-            .then(data => {{
-                statusText.textContent = data.success ? '✅ Call initiated to ' + phone : '❌ ' + (data.error || 'Failed');
-            }})
-            .catch(e => {{ statusText.textContent = '❌ Error: ' + e.message; }});
-        }}
-        
-        function endCall() {{
-            const statusDiv = document.getElementById('callStatus');
-            const statusText = document.getElementById('statusText');
-            
-            statusDiv.style.display = 'block';
-            statusText.textContent = 'Ending call...';
-            
-            fetch('/api/end-call', {{ method: 'POST', headers: {{ 'Content-Type': 'application/json' }} }})
-            .then(r => r.json())
-            .then(data => {{
-                statusText.textContent = data.success ? '✅ Call ended' : '❌ ' + (data.error || 'Failed');
-            }})
-            .catch(e => {{ statusText.textContent = '❌ Error: ' + e.message; }});
-        }}
-    </script>
-</body>
-</html>
-        """
-        
-        return dashboard_html
-        
-    except Exception as e:
-        logger.error(f"Dashboard error: {e}")
-        return redirect('/jarvis')
-
-# ============================================
-# Legacy Dashboard Redirects
-# All old dashboards now redirect to React JARVIS dashboard
-# ============================================
-
-@app.route("/auth-dashboard")
-def auth_dashboard_redirect():
-    """Redirect to JARVIS dashboard"""
-    return redirect('/jarvis')
-
-@app.route("/google-services-dashboard")
-def google_services_dashboard_redirect():
-    """Redirect to JARVIS dashboard"""
-    return redirect('/jarvis')
-
-@app.route("/setup")
-def setup_redirect():
-    """Redirect to JARVIS dashboard"""
-    return redirect('/jarvis')
-
-# Advanced AI endpoints
 @app.route("/api/advanced/generate-video", methods=['POST'])
 def api_generate_video():
     """Generate video using advanced AI"""
