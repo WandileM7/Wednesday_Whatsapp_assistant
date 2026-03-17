@@ -776,6 +776,24 @@ TOOLS = [
             "properties": {}
         }
     ),
+    Tool(
+        name="toggle_voice_mode",
+        description="Enable or disable voice message responses. When ON, all assistant responses are sent as voice messages. When OFF, voice only for voice input.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "True to enable always-voice mode, False to disable"
+                },
+                "caller_phone": {
+                    "type": "string",
+                    "description": "User's phone number (auto-injected)"
+                }
+            },
+            "required": ["enabled"]
+        }
+    ),
     
     # === Long-term Memory Tools ===
     Tool(
@@ -1390,6 +1408,9 @@ async def handle_tool(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     elif name == "change_voice":
         return await handle_change_voice(args)
     elif name == "voice_status":
+        return await handle_voice_status(args)
+    elif name == "toggle_voice_mode":
+        return await handle_toggle_voice_mode(args)
         return await handle_voice_status(args)
     
     # === Long-term Memory ===
@@ -2015,6 +2036,36 @@ async def handle_voice_status(args: Dict[str, Any]) -> Dict[str, Any]:
         return status
     except Exception as e:
         return {"error": f"Status error: {str(e)}"}
+
+
+async def handle_toggle_voice_mode(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Toggle voice message response mode"""
+    try:
+        from handlers.speech import set_user_voice_preference, get_user_voice_preference
+        
+        enabled = args.get("enabled", True)
+        phone = args.get("caller_phone", "")
+        
+        if not phone:
+            return {"error": "Phone number required to set voice preference"}
+        
+        result = set_user_voice_preference(phone, enabled)
+        current = get_user_voice_preference(phone)
+        
+        if enabled:
+            return {
+                "success": True,
+                "voice_mode": "enabled",
+                "message": "🔊 Voice mode ON! All my responses will now be sent as voice messages."
+            }
+        else:
+            return {
+                "success": True,
+                "voice_mode": "disabled", 
+                "message": "🔇 Voice mode OFF. I'll respond with text for text messages, voice for voice messages."
+            }
+    except Exception as e:
+        return {"error": f"Failed to toggle voice mode: {str(e)}"}
 
 
 # === Long-term Memory Handlers ===

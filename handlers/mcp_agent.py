@@ -309,9 +309,9 @@ class MCPAgent:
                         tool_name = fn_call.name
                         tool_args = dict(fn_call.args) if fn_call.args else {}
                         
-                        # Auto-inject caller_phone for admin/owner tools
-                        admin_tools = ['admin_status', 'manage_whitelist', 'manage_blocked', 'verify_owner']
-                        if tool_name in admin_tools and 'caller_phone' not in tool_args:
+                        # Auto-inject caller_phone for admin/user-specific tools
+                        phone_tools = ['admin_status', 'manage_whitelist', 'manage_blocked', 'verify_owner', 'toggle_voice_mode']
+                        if tool_name in phone_tools and 'caller_phone' not in tool_args:
                             tool_args['caller_phone'] = self._current_phone
                             logger.info(f"Injected caller_phone for admin tool: {tool_name}")
                         

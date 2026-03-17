@@ -319,6 +319,33 @@ def cmd_recall(args: str, phone: str) -> Dict[str, Any]:
         return {'response': f"Error: {e}"}
 
 
+def cmd_voice(args: str, phone: str) -> Dict[str, Any]:
+    """Toggle voice response mode."""
+    try:
+        from handlers.speech import toggle_user_voice_preference, get_user_voice_preference, set_user_voice_preference
+        
+        if args.strip().lower() == 'on':
+            result = set_user_voice_preference(phone, True)
+            return {'response': f"🔊 Voice mode ON\n\nAll my responses will now be voice messages!"}
+        elif args.strip().lower() == 'off':
+            result = set_user_voice_preference(phone, False)
+            return {'response': f"🔇 Voice mode OFF\n\nText responses for text messages, voice for voice."}
+        elif args.strip().lower() == 'status':
+            enabled = get_user_voice_preference(phone)
+            status = "ON (all responses are voice)" if enabled else "OFF (voice only for voice messages)"
+            return {'response': f"🎙️ Voice mode: {status}\n\nUse /voice on or /voice off to change."}
+        else:
+            # Toggle
+            result = toggle_user_voice_preference(phone)
+            new_status = get_user_voice_preference(phone)
+            if new_status:
+                return {'response': f"🔊 Voice mode: ON\n\nI'll now respond with voice messages!"}
+            else:
+                return {'response': f"🔇 Voice mode: OFF\n\nBack to text responses."}
+    except Exception as e:
+        return {'response': f"Voice toggle error: {e}"}
+
+
 # ============ REGISTER ALL COMMANDS ============
 
 register_command('help', 'Show all available commands', cmd_help, ['h', '?'])
@@ -337,6 +364,7 @@ register_command('expense', 'Track expenses (usage: /expense R50 groceries)', cm
 register_command('mood', 'Play music for your mood (usage: /mood happy)', cmd_mood, ['vibe', 'feeling'])
 register_command('memory', 'Search past conversations', cmd_memory, ['search', 'find'])
 register_command('recall', 'Recall what we discussed', cmd_recall, ['remember'])
+register_command('voice', 'Toggle voice responses (usage: /voice on|off|status)', cmd_voice, ['v', 'audio'])
 
 # Count unique commands (excluding aliases)
 _unique_commands = len([name for name, cmd in COMMANDS.items() if name not in cmd.get('aliases', [])])
