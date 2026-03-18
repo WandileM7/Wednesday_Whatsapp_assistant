@@ -1,427 +1,608 @@
-# 🤖 Wednesday WhatsApp AI Assistant - Advanced Jarvis-like System
+# 🤖 Wednesday WhatsApp AI Assistant
 
 <div align="center">
 
-![Wednesday Assistant Logo](https://via.placeholder.com/400x200/1a1a1a/00d4ff?text=🤖+WEDNESDAY+AI)
+![Wednesday Assistant](https://via.placeholder.com/600x200/1a1a1a/00d4ff?text=🤖+WEDNESDAY+AI+ASSISTANT)
 
-**The Ultimate AI-Powered WhatsApp Assistant with Jarvis-like Capabilities**
+**Advanced AI-Powered WhatsApp Assistant with MCP Agent Architecture**
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![Flask](https://img.shields.io/badge/Flask-3.1.2-green.svg)](https://flask.palletsprojects.com/)
-[![SQLite](https://img.shields.io/badge/SQLite-3.0+-lightgrey.svg)](https://www.sqlite.org/)
-[![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4-orange.svg)](https://openai.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Flask](https://img.shields.io/badge/Flask-3.1-green.svg)](https://flask.palletsprojects.com/)
+[![Google Gemini](https://img.shields.io/badge/Gemini-2.5-orange.svg)](https://ai.google.dev/)
+[![MCP](https://img.shields.io/badge/MCP-52_Tools-purple.svg)](mcp_server/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 </div>
 
+---
+
+## 📋 Table of Contents
+
+- [Overview](#-overview)
+- [Key Features](#-key-features)
+- [Architecture](#-architecture)
+- [MCP Agent & Tools](#-mcp-agent--tools)
+- [Project Structure](#-project-structure)
+- [Quick Start](#-quick-start)
+- [Environment Variables](#-environment-variables)
+- [Deployment](#-deployment)
+- [API Reference](#-api-reference)
+- [Voice Features](#-voice-features)
+- [Testing](#-testing)
+- [Troubleshooting](#-troubleshooting)
+
+---
+
 ## 🚀 Overview
 
-Wednesday is an advanced AI assistant that brings Jarvis-like intelligence to WhatsApp, featuring comprehensive automation, proactive notifications, AI-powered media generation, and enterprise-grade monitoring. Built for reliability, performance, and extensibility.
+Wednesday is an advanced AI assistant that brings intelligent automation to WhatsApp. Built on **Google Gemini** with a **Model Context Protocol (MCP)** agent architecture, it provides 52+ tools for comprehensive task automation including:
 
-## ✨ Core Features
+- 💬 Natural language conversations with context memory
+- 📧 Email and calendar management (Gmail, Google Calendar)
+- 🎵 Music control (Spotify)
+- 🎤 Voice message transcription and voice responses
+- 🏠 Smart home control (IFTTT, Home Assistant)
+- 📊 Task tracking, reminders, and daily briefings
+- 🖼️ AI image generation (DALL-E, Stability AI)
 
-### 🧠 **AI-Powered Intelligence**
-- **Google Gemini Integration**: Advanced conversational AI with function calling
-- **Google Cloud TTS/STT**: Voice synthesis and speech recognition via Google Cloud
-- **OpenAI DALL-E**: AI image generation with multiple art styles
-- **Stability AI**: Alternative image generation with professional quality
-- **Smart Context Memory**: Persistent conversation history with SQLite/Firebase
-- **Proactive Behavior**: Task completion notifications and status updates
+---
 
-### 📱 **WhatsApp Integration**
-- **Contact Messaging**: Send messages to any contact (Google Contacts + Local)
-- **Voice Messages**: Speech-to-text (Gemini) and text-to-speech (Google Cloud TTS)
-- **Media Sharing**: Images, videos, and AI-generated content
-- **Group Management**: Handle group conversations and mentions
-- **Real-time Status**: Delivery confirmations and typing indicators
+## ✨ Key Features
 
-### 📊 **Advanced Monitoring**
-- **Service Health**: 6 monitored services with auto-recovery
-- **Performance Metrics**: CPU, memory, disk usage tracking
-- **Real-time Dashboard**: Auto-refreshing web interface
-- **Alert System**: Proactive notifications for issues
-- **Database Analytics**: Comprehensive usage statistics
+### 🧠 AI-Powered Intelligence
+| Feature | Description |
+|---------|-------------|
+| **Google Gemini 2.5** | Primary AI with function calling for tool execution |
+| **MCP Agent** | 52 structured tools organized by category |
+| **Context Memory** | SQLite/Firebase persistent conversation history |
+| **Voice Recognition** | Gemini-powered speech-to-text transcription |
+| **Voice Synthesis** | Google Cloud TTS for voice responses |
 
-### 🔧 **Automation & Tasks**
-- **Task Management**: Create, track, and complete tasks
-- **Smart Reminders**: Time-based and location-based alerts
-- **Email Integration**: Gmail sending with confirmation
-- **Calendar Sync**: Google Calendar event creation
-- **Spotify Control**: Music playbook and playlist management
+### 📱 WhatsApp Integration
+| Feature | Description |
+|---------|-------------|
+| **Baileys/WAHA** | WhatsApp Web API integration |
+| **Voice Messages** | Automatic transcription and voice replies |
+| **Media Sharing** | Images, audio, and AI-generated content |
+| **Contact Resolution** | Smart contact lookup via Google Contacts |
+| **Owner Verification** | Security features for owner-only commands |
+
+### 🔧 Automation & Services
+| Feature | Description |
+|---------|-------------|
+| **Gmail** | Read, search, and send emails |
+| **Google Calendar** | View and create events |
+| **Spotify** | Playback control and playlist management |
+| **Tasks & Reminders** | Create, track, and complete tasks |
+| **Weather & News** | Real-time updates and briefings |
+| **Smart Home** | IFTTT, Home Assistant, Philips Hue |
+
+---
 
 ## 🏗️ Architecture
 
-```mermaid
-graph TB
-    A[WhatsApp User] --> B[WAHA Service]
-    B --> C[Wednesday AI Core]
-    C --> D[SQLite/Firebase DB]
-    C --> E[Service Monitor]
-    C --> F[Notification System]
-    C --> G[Media Generator]
-    C --> H[Google Services]
-    C --> I[Spotify API]
-    C --> J[Google Cloud TTS/STT]
-    E --> K[Auto Recovery]
-    F --> L[Background Workers]
-    G --> M[DALL-E/Stability AI]
 ```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Wednesday AI Assistant                        │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────────┐   │
+│  │   WhatsApp   │    │    Flask     │    │    MCP Agent         │   │
+│  │   Service    │───▶│    Server    │───▶│    (Gemini 2.5)      │   │
+│  │   (Baileys)  │    │   (main.py)  │    │    52 Tools          │   │
+│  └──────────────┘    └──────────────┘    └──────────────────────┘   │
+│         │                   │                      │                 │
+│         │                   │                      ▼                 │
+│         │                   │            ┌──────────────────┐       │
+│         │                   │            │   Tool Handlers   │       │
+│         │                   │            ├──────────────────┤       │
+│         ▼                   ▼            │ • Gmail/Calendar │       │
+│  ┌──────────────┐    ┌──────────────┐   │ • Spotify        │       │
+│  │   Session    │    │   SQLite/    │   │ • Tasks/Reminders│       │
+│  │   Storage    │    │   Firebase   │   │ • Smart Home     │       │
+│  │   (GCS)      │    │   Database   │   │ • Voice/Media    │       │
+│  └──────────────┘    └──────────────┘   └──────────────────┘       │
+│                                                                      │
+│                        External Services                             │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │  Google APIs  │  Spotify API  │  OpenAI/Stability  │  IFTTT  │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### How It Works
+
+1. **WhatsApp Message** → Received via Baileys webhook
+2. **Voice Processing** → If voice message, transcribed via Gemini STT
+3. **MCP Agent** → Gemini analyzes message and decides which tools to call
+4. **Tool Execution** → Agent executes 0-N tools based on user request
+5. **Response** → Text or voice response sent back to WhatsApp
+
+---
+
+## 🔧 MCP Agent & Tools
+
+The **Model Context Protocol (MCP)** agent provides a structured interface for AI-driven automation. The agent uses **Gemini 2.5** to reason about user requests and execute the appropriate tools.
+
+### Core Tools (17)
+
+| Category | Tools | Description |
+|----------|-------|-------------|
+| **Chat** | `chat` | AI conversation with context |
+| **WhatsApp** | `send_whatsapp` | Send messages |
+| **Calendar** | `get_calendar_events`, `create_calendar_event` | Google Calendar |
+| **Email** | `get_emails`, `send_email` | Gmail integration |
+| **Tasks** | `get_tasks`, `create_task`, `complete_task` | Task management |
+| **Contacts** | `search_contacts`, `add_contact` | Contact lookup |
+| **Spotify** | `spotify_play`, `spotify_control`, `spotify_now_playing` | Music control |
+| **Weather** | `get_weather` | Weather information |
+| **News** | `get_news` | News headlines |
+| **Memory** | `search_memory` | Conversation history |
+| **System** | `service_status` | Health checks |
+
+### Advanced Tools (35)
+
+| Category | Tools | Description |
+|----------|-------|-------------|
+| **Workflows** | `run_workflow`, `list_workflows` | Automated routines (morning_routine, focus_mode) |
+| **Smart Home** | `smart_home_lights`, `smart_home_thermostat`, `smart_home_scene`, `smart_home_locks`, `smart_home_status` | Home automation |
+| **Voice** | `speak_this`, `voice_status`, `toggle_voice_mode` | Google Cloud TTS |
+| **Long-term Memory** | `remember_this`, `recall_memory`, `forget_memory`, `get_user_profile`, `memory_stats` | Persistent memories |
+| **Security** | `security_status`, `security_report`, `check_threat` | Security monitoring |
+| **Fitness** | `log_fitness`, `get_fitness_summary`, `get_fitness_history`, `set_fitness_goal` | Activity tracking |
+| **Expenses** | `add_expense`, `get_spending_report`, `set_budget` | Budget management |
+| **Briefings** | `get_daily_briefing`, `schedule_briefing`, `cancel_briefing` | Daily summaries |
+| **Mood Music** | `play_mood_music` | Context-aware music |
+| **Media** | `generate_image`, `generate_video` | AI content generation |
+| **JARVIS Core** | `jarvis_greeting`, `proactive_suggestions`, `jarvis_status` | Personality features |
+
+### MCP Server Modes
+
+```bash
+# STDIO Mode (for VS Code/Cursor)
+python -m mcp_server.server
+
+# HTTP Mode (for Kubernetes/API access)
+python -m mcp_server.http_server  # Port 8080
+```
+
+---
+
+## 📁 Project Structure
+
+```
+Wednesday_Whatsapp_assistant/
+├── main.py                    # Flask application entry point
+├── config.py                  # Environment configuration
+├── database.py                # SQLite/Firebase database manager
+├── requirements.txt           # Python dependencies
+│
+├── handlers/                  # Feature modules
+│   ├── mcp_agent.py          # MCP Agent (Gemini + 52 tools)
+│   ├── gemini.py             # Gemini AI integration
+│   ├── gmail.py              # Gmail API
+│   ├── calendar.py           # Google Calendar API
+│   ├── spotify.py            # Spotify playback control
+│   ├── speech.py             # Voice STT/TTS (Gemini, Google Cloud)
+│   ├── google_auth.py        # OAuth2 authentication
+│   ├── tasks.py              # Task management
+│   ├── contacts.py           # Contact search
+│   ├── weather.py            # Weather API
+│   ├── news.py               # News API
+│   ├── smart_home.py         # Home automation
+│   ├── security.py           # Owner verification & rate limiting
+│   ├── long_term_memory.py   # Persistent memory system
+│   ├── workflows.py          # Automated workflows
+│   ├── daily_briefing.py     # Morning briefings
+│   ├── fitness.py            # Activity tracking
+│   ├── expenses.py           # Budget tracking
+│   ├── media_generator.py    # AI image generation
+│   └── quick_commands.py     # Slash commands (/help, /voice, etc.)
+│
+├── mcp_server/               # MCP Protocol Server
+│   ├── server.py             # STDIO MCP server (52 tools)
+│   ├── http_server.py        # HTTP/SSE transport
+│   └── README.md             # MCP documentation
+│
+├── whatsapp-service/         # WhatsApp Baileys Service
+│   ├── server-baileys.js     # Node.js WhatsApp client
+│   ├── package.json          # Node dependencies
+│   └── session/              # WhatsApp session data
+│
+├── kubernetes/               # K8s/Rancher deployment
+│   ├── assistant-deployment.yaml
+│   ├── mcp-server-deployment.yaml
+│   ├── whatsapp-deployment.yaml
+│   ├── configmap.yaml
+│   ├── secrets.yaml
+│   ├── ingress.yaml
+│   ├── hpa.yaml              # Autoscaling
+│   └── fleet.yaml            # Rancher Fleet GitOps
+│
+├── scripts/                  # Setup scripts
+│   ├── setup-gcp.ps1         # GCP setup (PowerShell)
+│   └── setup-gcp.sh          # GCP setup (Bash)
+│
+├── docs/                     # Documentation
+│   └── GCP_DEPLOYMENT.md     # Google Cloud deployment guide
+│
+├── templates/                # HTML templates
+├── static/                   # Static assets
+├── frontend/                 # React dashboard (optional)
+├── task_data/                # Persistent token storage
+│
+├── Dockerfile                # Main container image
+├── Dockerfile.cloudrun       # Cloud Run optimized
+├── Dockerfile.mcp            # MCP server standalone
+├── docker-compose.yaml       # Multi-service setup
+├── render.yaml               # Render.com deployment
+└── mcp.json                  # VS Code MCP configuration
+```
+
+---
 
 ## 🚀 Quick Start
 
 ### Prerequisites
+
 - Python 3.12+
 - Node.js 18+ (for WhatsApp service)
-- Docker (optional)
-- 2GB RAM minimum (optimized for Render deployment)
+- Google Cloud account (for Gmail, Calendar, TTS)
+- Gemini API key
 
-### 1. Clone & Setup
+### 1. Clone & Install
+
 ```bash
 git clone https://github.com/WandileM7/Wednesday_Whatsapp_assistant.git
 cd Wednesday_Whatsapp_assistant
 
-# Install dependencies
+# Install Python dependencies
 pip install -r requirements.txt
 
-# Copy environment template
-cp .env.example .env
+# Install WhatsApp service dependencies
+cd whatsapp-service && npm install && cd ..
 ```
-
-### Persisting Logins (Recommended)
-- **Google**: After completing `/authorize`, tokens are saved to `task_data/google_tokens.json`. Keep `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in env; the app will refresh and reuse the stored refresh token on restart.
-- **Spotify**: Tokens are saved to `task_data/spotify_tokens.json` after OAuth/refresh. Set `SPOTIFY_CLIENT_ID`/`SPOTIFY_SECRET`/`SPOTIFY_REDIRECT_URI`; the app refreshes from storage or `SPOTIFY_REFRESH_TOKEN` if provided.
-- **WhatsApp (Baileys/WAHA)**: Persist the `whatsapp-service/session/` directory (or your configured session path). On Render, mount a persistent disk and point the session dir there. Set `WAHA_URL`/`WAHA_HEALTH_URL` to your deployed service (e.g., `https://whatsapp-service-8vgb.onrender.com`).
 
 ### 2. Configure Environment
+
 ```bash
-# Essential Configuration
-GEMINI_API_KEY=your_gemini_api_key_here
-OPENAI_API_KEY=your_openai_api_key_here  # For image generation
-STABILITY_API_KEY=your_stability_key_here  # Alternative image gen
-
-# WhatsApp Service
-WAHA_URL=http://localhost:3000/api/sendText
-WAHA_SESSION=default
-
-# Google Services (Required for Gmail, Calendar, TTS/STT)
-GOOGLE_APPLICATION_CREDENTIALS=path/to/credentials.json  # For TTS/STT
-GOOGLE_CLIENT_ID=your_client_id
-GOOGLE_CLIENT_SECRET=your_client_secret
-
-# Spotify (Optional)
-SPOTIFY_CLIENT_ID=your_spotify_client_id
-SPOTIFY_SECRET=your_spotify_secret
-
-# Owner Phone (for security features)
-OWNER_PHONE=your_phone_number
+cp .env.example .env
+# Edit .env with your API keys
 ```
 
-### 3. Launch Services
+### 3. Start Services
+
 ```bash
-# Option 1: Docker (Recommended)
+# Option 1: All services via Docker
 docker-compose up -d
 
-# Option 2: Manual
+# Option 2: Manual (separate terminals)
+# Terminal 1: WhatsApp service
+cd whatsapp-service && node server-baileys.js
+
+# Terminal 2: Flask backend
 python main.py
 ```
 
 ### 4. Setup Authentication
-1. Visit `http://localhost:5000/quick-setup`
-2. Authenticate Google services
-3. Connect Spotify account
-4. Scan WhatsApp QR code
 
-## 🎯 Feature Deep Dive
+1. Open `http://localhost:5000/quick-setup`
+2. Click **Google Login** to authenticate Gmail/Calendar
+3. Click **Spotify Login** if using music features
+4. Scan QR code at `http://localhost:5000/whatsapp-qr`
 
-### 🤖 AI Capabilities
+---
 
-#### **Conversational Intelligence**
-```python
-# Natural language understanding with function calling
-"Send an email to john@company.com about tomorrow's meeting"
-→ Creates email, sends it, confirms delivery
+## 🔑 Environment Variables
 
-"Generate an image of a futuristic cityscape"
-→ Creates AI image, optimizes for WhatsApp, shares result
+### Required
 
-"Remind me to call mom at 3 PM"
-→ Sets reminder, notifies at specified time
+| Variable | Description |
+|----------|-------------|
+| `GEMINI_API_KEY` | Google Gemini API key (primary AI) |
+| `OWNER_PHONE` | Your phone number for owner verification |
+
+### Google Services
+
+| Variable | Description |
+|----------|-------------|
+| `GOOGLE_CLIENT_ID` | OAuth2 client ID |
+| `GOOGLE_CLIENT_SECRET` | OAuth2 client secret |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Service account JSON (for TTS) |
+| `GOOGLE_REFRESH_TOKEN` | (Optional) Pre-saved refresh token |
+
+### WhatsApp
+
+| Variable | Description |
+|----------|-------------|
+| `WAHA_URL` | WhatsApp service base URL |
+| `WAHA_HEALTH_URL` | Health check endpoint |
+| `GCS_SESSION_BUCKET` | GCS bucket for session persistence |
+
+### Spotify
+
+| Variable | Description |
+|----------|-------------|
+| `SPOTIFY_CLIENT_ID` | Spotify app client ID |
+| `SPOTIFY_SECRET` | Spotify app secret |
+| `SPOTIFY_REDIRECT_URI` | OAuth callback URL |
+| `SPOTIFY_REFRESH_TOKEN` | (Optional) Pre-saved refresh token |
+
+### Smart Home
+
+| Variable | Description |
+|----------|-------------|
+| `IFTTT_WEBHOOK_KEY` | IFTTT webhook key |
+| `HOME_ASSISTANT_URL` | Home Assistant URL |
+| `HOME_ASSISTANT_TOKEN` | Home Assistant access token |
+
+### Media Generation
+
+| Variable | Description |
+|----------|-------------|
+| `OPENAI_API_KEY` | OpenAI API key (DALL-E) |
+| `STABILITY_API_KEY` | Stability AI key |
+
+### Optional
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `FLASK_DEBUG` | Debug mode | `false` |
+| `USE_MEMORY_DB` | In-memory SQLite | `false` |
+| `PERSONALITY_PROMPT` | AI personality | Built-in |
+| `NEWS_API_KEY` | NewsAPI.org key | - |
+| `WEATHERAPI_KEY` | WeatherAPI.com key | - |
+
+---
+
+## 🚢 Deployment
+
+### Local Development
+
+```bash
+python main.py
+# Access: http://localhost:5000
 ```
 
-#### **Advanced Function Library**
-- 🎵 **Music Control**: Play, pause, skip, playlist management
-- 📧 **Email Management**: Send, schedule, template responses
-- 📅 **Calendar Integration**: Create events, check availability
-- 🌤️ **Weather & News**: Real-time updates and forecasts
-- 🏃 **Fitness Tracking**: Activity logging and goal setting
-- 🏠 **Smart Home**: IoT device control (extensible)
-- 🎤 **Voice Control**: Speech-to-text transcription, text-to-speech responses
+### Docker Compose
 
-### 📱 Enhanced WhatsApp Features
+```bash
+docker-compose up -d
 
-#### **Smart Contact Management**
-```python
-# Intelligent contact resolution
-"Send WhatsApp to John: Meeting at 3pm"
-→ Searches Google Contacts → Finds John Smith → Sends message
-→ Confirms: "✅ Message sent to John Smith (+1234567890)"
+# Services:
+# - wednesday-assistant: Port 5000
+# - whatsapp-service: Port 3000
 ```
 
-#### **Media Generation & Sharing**
-```python
-# AI-powered content creation
-"Create a professional avatar for my profile"
-→ Generates custom avatar → Optimizes for WhatsApp → Shares
+### Render.com
 
-"Generate a cartoon image of a happy robot"
-→ DALL-E/Stability AI → WhatsApp-optimized → Direct sharing
+The repo includes `render.yaml` for one-click deployment:
+
+1. Connect GitHub repo to Render
+2. Add environment variables in Render dashboard
+3. Deploy both `wednesday-assistant` and `whatsapp-service`
+
+### Google Cloud Run
+
+See [docs/GCP_DEPLOYMENT.md](docs/GCP_DEPLOYMENT.md) for detailed setup.
+
+```bash
+# Quick deploy via GitHub Actions
+# Push to main triggers .github/workflows/deploy-gcp.yml
 ```
 
-### 🔧 System Administration
+Required GitHub Secrets:
+- `GCP_PROJECT_ID`
+- `GCP_REGION`
+- `GCP_SA_KEY` (base64 encoded)
+- `GEMINI_API_KEY`
 
-#### **Service Monitoring Dashboard**
-- **Real-time Metrics**: CPU, memory, disk usage
-- **Service Health**: 6 core services monitored
-- **Auto-recovery**: Failed services restart automatically
-- **Performance Analytics**: Response times, success rates
-- **Alert Management**: Proactive issue notifications
+### Kubernetes/Rancher
 
-#### **Database Management**
-```sql
--- Automated schema with 7 optimized tables
-conversations: Message history with metadata
-tasks: Advanced task management
-reminders: Time-based notifications
-user_preferences: Personalized settings
-media: Generated content tracking
-system_state: Service configuration
+```bash
+kubectl create namespace wednesday
+kubectl apply -f kubernetes/ -n wednesday
 ```
+
+For Rancher Fleet GitOps, import the repo and Fleet will use `kubernetes/fleet.yaml`.
+
+---
 
 ## 🛠️ API Reference
 
-### Core Endpoints
+### Health & Status
 
-#### **Health & Status**
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/` | Home - redirects to setup |
-| GET | `/health` | System health check with memory/CPU stats |
-| GET | `/status` | Basic status check |
-| GET | `/services` | Overview of all configured services |
-| GET | `/assistant/status` | Full assistant status with all capabilities |
+| GET | `/health` | System health with memory/CPU stats |
+| GET | `/services` | All configured services overview |
+| GET | `/assistant/status` | Full agent status |
+| GET | `/api/dashboard` | Dashboard data (JSON) |
 
-#### **Setup & Dashboard**
+### WhatsApp
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/quick-setup` | Interactive setup wizard |
-| GET | `/dashboard` | Main monitoring dashboard |
-| GET | `/auth-dashboard` | Authentication dashboard |
-| GET | `/google-services-dashboard` | Google services management |
+| POST | `/webhook` | Message webhook receiver |
+| POST | `/send` | Send message |
+| GET | `/whatsapp-status` | Connection status |
+| GET | `/whatsapp-qr` | QR code page |
+| POST | `/whatsapp-reconnect` | Force reconnection |
+| POST | `/whatsapp-logout` | Logout session |
 
-#### **WhatsApp Integration**
+### Google Services
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/webhook` | WhatsApp message webhook receiver |
-| POST | `/send` | Send a WhatsApp message |
-| GET | `/whatsapp-status` | WhatsApp connection status |
-| GET | `/whatsapp-qr` | QR code page for WhatsApp login |
-| GET | `/whatsapp-qr-image` | Raw QR code image |
-| GET | `/waha-status` | WAHA service status |
-| POST | `/waha-restart-keepalive` | Restart WAHA keepalive |
-| GET | `/waha-config-test` | Test WAHA configuration |
-| POST | `/api/whatsapp/send` | API endpoint to send WhatsApp messages |
-| POST | `/api/make-call` | Initiate WhatsApp call |
-| POST | `/api/end-call` | End active call |
+| GET | `/google-login` | Start OAuth flow |
+| GET | `/google-status` | Auth status |
+| GET | `/test-google-services` | Test all services |
+| GET | `/test-gmail` | Test Gmail |
 
-#### **Google Services**
+### Spotify
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/google-login` | Start Google OAuth flow |
-| GET | `/google-status` | Google authentication status |
-| GET | `/google-auth-status` | Detailed auth status |
-| GET | `/google-debug` | Debug Google credentials |
-| GET | `/test-google-services` | Test all Google services |
-| GET | `/test-gmail` | Test Gmail integration |
-| GET | `/test-email-send` | Send test email |
-| GET | `/test-current-email` | Test current email configuration |
-| GET | `/refresh-google-token` | Refresh Google OAuth token |
-| GET | `/force-google-auth` | Force re-authentication |
-| GET | `/setup-google-auto-auth` | Setup automatic auth |
-| GET | `/save-current-google-tokens` | Save tokens for auto-refresh |
+| GET | `/login` | Start Spotify OAuth |
+| GET | `/spotify-status` | Connection status |
+| GET | `/test-spotify` | Test integration |
 
-#### **Spotify Integration**
+### MCP Server (HTTP Mode)
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/login` | Start Spotify OAuth flow |
-| GET | `/callback` | OAuth callback |
-| GET | `/spotify-callback` | Spotify OAuth callback |
-| GET | `/spotify-status` | Spotify connection status |
-| GET | `/test-spotify` | Test Spotify integration |
-| GET | `/clear-spotify-tokens` | Clear stored tokens |
+| GET | `/tools` | List all 52 tools |
+| POST | `/tools/<name>` | Execute specific tool |
+| POST | `/call` | Unified tool call |
+| GET | `/health` | MCP server health |
 
-#### **Tasks & Reminders**
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/tasks` | List all tasks |
-| POST | `/tasks` | Create new task |
-| POST | `/tasks/<id>/complete` | Mark task complete |
-| DELETE | `/tasks/<id>` | Delete task |
-| GET | `/tasks/summary` | Get tasks summary |
-| GET | `/tasks/sync-status` | Check sync status |
-| GET | `/reminders` | List reminders |
-| POST | `/reminders` | Create reminder |
+---
 
-#### **Contacts**
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/contacts` | List contacts |
-| POST | `/contacts` | Add contact |
-| GET | `/contacts/search` | Search contacts |
-| GET | `/contacts/google` | List Google contacts |
-| GET | `/contacts/summary` | Contacts summary |
+## 🎤 Voice Features
 
-#### **Weather & News**
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/weather` | Current weather |
-| GET | `/weather/forecast` | Weather forecast |
-| GET | `/news` | Latest news |
-| GET | `/news/search` | Search news |
-| GET | `/news/briefing` | News briefing |
+### Speech-to-Text (STT)
 
-#### **Media Generation (API)**
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/media/generate-image` | Generate AI image |
-| POST | `/api/media/create-avatar` | Create avatar |
+Voice messages are automatically transcribed using **Gemini 2.5 Flash**:
 
-#### **Service Monitoring (API)**
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/services/status` | All services status |
-| GET | `/api/services/health` | Health check details |
-| POST | `/api/services/ping/<name>` | Ping specific service |
-| GET | `/api/notifications/stats` | Notification statistics |
+1. WhatsApp voice message received
+2. Audio downloaded and processed
+3. Gemini transcribes to text
+4. Text processed by MCP agent
 
-#### **Database Management (API)**
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/database/stats` | Database statistics |
-| POST | `/api/database/cleanup` | Cleanup old data |
+### Text-to-Speech (TTS)
 
-#### **Advanced Features (API)**
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/advanced/generate-video` | Generate video content |
-| POST | `/api/advanced/synthesize-voice` | Voice synthesis |
-| POST | `/api/advanced/analyze-image` | Analyze image |
-| POST | `/api/advanced/predict-behavior` | Behavior prediction |
-| GET | `/api/advanced/test-suite` | Run test suite |
-| GET | `/api/advanced/test-results` | Get test results |
-| GET | `/api/advanced/diagnostics` | System diagnostics |
-| POST | `/api/advanced/optimize` | Run optimization |
-| POST | `/api/advanced/backup` | Create backup |
-| GET | `/api/advanced/status` | Advanced features status |
+Voice responses via **Google Cloud TTS**:
 
-#### **Testing & Debug**
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/test-speech` | Test speech synthesis |
-| GET | `/test-new-services` | Test new services |
-| GET | `/test-all-services` | Comprehensive service test |
-| GET | `/demo-new-features` | Demo all features |
-| POST | `/test-webhook-simple` | Test webhook |
-| GET | `/test-webhook-auth` | Test webhook authentication |
-| POST | `/voice-preprocessor` | Process voice message |
-
-#### **Session & Cache**
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/session-cache` | View session cache |
-| POST | `/session-cache` | Update session cache |
-| GET | `/auth-status` | Authentication status |
-| GET | `/setup-all-auto-auth` | Setup all auto authentication |
-
-## 📈 Performance Metrics
-
-### **System Requirements**
-- **Minimum**: 2 CPU cores, 4GB RAM, 10GB storage
-- **Recommended**: 4 CPU cores, 8GB RAM, 50GB storage
-- **Render Optimized**: 2 CPU, 8GB RAM limit compliance
-
-### **Benchmarks**
-- **Response Time**: <100ms for most endpoints
-- **Throughput**: 1000+ requests/minute
-- **Memory Usage**: 135MB average
-- **Database**: 0.08MB baseline, scales efficiently
-- **Uptime**: 99.9% with auto-recovery
-
-## 🚀 Deployment
-
-### **Local Development**
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Enable voice mode via WhatsApp
+/voice on
 
-# Start development server
-python main.py
-
-# Access dashboard
-open http://localhost:5000/dashboard
+# Or use the toggle_voice_mode tool
 ```
 
-### **Docker Deployment**
+When voice mode is enabled, all responses are sent as voice messages.
+
+### Quick Commands
+
+| Command | Description |
+|---------|-------------|
+| `/voice on` | Enable voice responses |
+| `/voice off` | Disable voice responses |
+| `/voice status` | Check current mode |
+| `/help` | List all commands |
+
+---
+
+## 🧪 Testing
+
+### Manual Validation
+
 ```bash
-# Build and run
-docker-compose up -d
+# Health check
+curl http://localhost:5000/health
 
-# View logs
-docker-compose logs -f wednesday-assistant
+# Test Google services
+curl http://localhost:5000/test-google-services
 
-# Scale services
-docker-compose up -d --scale wednesday-assistant=2
+# Test webhook
+curl -X POST http://localhost:5000/test-webhook-simple \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello"}'
 ```
 
-### **Render Deployment** (Recommended)
-```yaml
-# render.yaml
-services:
-  - type: web
-    name: wednesday-assistant
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python main.py
-    envVars:
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: OPENAI_API_KEY
-        sync: false
+### Test Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `/test-google-services` | Gmail, Calendar tests |
+| `/test-gmail` | Gmail specific |
+| `/test-spotify` | Spotify connection |
+| `/test-speech` | TTS functionality |
+| `/test-all-services` | Comprehensive test |
+
+---
+
+## 🔧 Troubleshooting
+
+### WhatsApp Connection Issues
+
+```bash
+# Check status
+curl http://localhost:5000/whatsapp-status
+
+# Force reconnect
+curl -X POST http://localhost:5000/whatsapp-reconnect
+
+# Clear session and re-scan QR
+curl -X POST http://localhost:5000/whatsapp-logout
 ```
 
-## 🆘 Support
+### Google Auth Issues
 
-### **Documentation**
-- 📖 [User Guide](docs/user-guide.md)
-- 🔧 [API Documentation](docs/api.md)
-- 🚀 [Deployment Guide](docs/deployment.md)
-- 🐛 [Troubleshooting](docs/troubleshooting.md)
+```bash
+# Check auth status
+curl http://localhost:5000/google-auth-status
 
-### **Community**
-- 💬 [Discord Server](https://discord.gg/wednesday-ai)
-- 📧 [Email Support](mailto:support@wednesday-ai.com)
-- 🐛 [Bug Reports](https://github.com/WandileM7/Wednesday_Whatsapp_assistant/issues)
-- 💡 [Feature Requests](https://github.com/WandileM7/Wednesday_Whatsapp_assistant/discussions)
+# Force re-authentication
+# Visit: http://localhost:5000/google-login
+```
+
+### Voice Not Working
+
+1. Check `GOOGLE_APPLICATION_CREDENTIALS` is set
+2. Test TTS: `curl http://localhost:5000/test-speech`
+3. Check logs for Gemini STT errors
+
+### Common Fixes
+
+| Issue | Solution |
+|-------|----------|
+| "No credentials" | Complete OAuth at `/google-login` |
+| Duplicate messages | Check webhook deduplication |
+| Voice transcription fails | Verify Gemini API key |
+| Spotify not playing | Re-authenticate at `/login` |
+
+---
+
+## 📈 Performance
+
+| Metric | Value |
+|--------|-------|
+| Response Time | <100ms (most endpoints) |
+| Memory Usage | ~135MB average |
+| Throughput | 1000+ requests/min |
+| Uptime | 99.9% with auto-recovery |
+
+### Resource Requirements
+
+| Environment | CPU | RAM | Storage |
+|-------------|-----|-----|---------|
+| Minimum | 1 core | 2GB | 5GB |
+| Recommended | 2 cores | 4GB | 10GB |
+| Production | 4 cores | 8GB | 50GB |
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
 <div align="center">
 
-**Built with ❤️ by the Wednesday AI Team**
+**Built with ❤️ using Google Gemini, Flask, and MCP**
 
-[Website](https://wednesday-ai.com) • [Documentation](docs/) • [Discord](https://discord.gg/wednesday-ai) • [Twitter](https://twitter.com/wednesday_ai)
+[Report Bug](https://github.com/WandileM7/Wednesday_Whatsapp_assistant/issues) • [Request Feature](https://github.com/WandileM7/Wednesday_Whatsapp_assistant/discussions)
 
 </div>
