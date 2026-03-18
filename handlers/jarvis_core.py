@@ -552,10 +552,10 @@ class ProactiveBriefingService:
                 self.send_message_callback(phone, briefing)
                 logger.info(f"Morning briefing sent to {phone}")
                 
-                # Also send voice version if ElevenLabs configured
+                # Also send voice version if TTS configured
                 try:
-                    from handlers.elevenlabs_voice import jarvis_speak
-                    audio_path = jarvis_speak(briefing[:500])  # Limit for voice
+                    from handlers.speech import text_to_speech
+                    audio_path = text_to_speech(briefing[:500])  # Limit for voice
                     if audio_path:
                         # Would need voice sending capability
                         pass
@@ -611,8 +611,14 @@ class JARVISCore:
     def voice(self):
         if self._voice is None:
             try:
-                from handlers.elevenlabs_voice import elevenlabs_voice
-                self._voice = elevenlabs_voice
+                from handlers.speech import text_to_speech, get_tts_client
+                # Create a simple voice wrapper
+                class VoiceWrapper:
+                    def __init__(self):
+                        self.enabled = get_tts_client() is not None
+                    def text_to_speech(self, text, **kwargs):
+                        return text_to_speech(text)
+                self._voice = VoiceWrapper()
             except ImportError:
                 self._voice = None
         return self._voice

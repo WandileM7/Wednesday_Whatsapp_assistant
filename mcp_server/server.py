@@ -151,11 +151,8 @@ def load_services():
     except Exception as e:
         logger.warning(f"Smart home not available: {e}")
     
-    try:
-        from handlers.elevenlabs_voice import elevenlabs_voice
-        _elevenlabs = elevenlabs_voice
-    except Exception as e:
-        logger.warning(f"ElevenLabs not available: {e}")
+    # Voice synthesis uses Google Cloud TTS (configured in handlers/speech.py)
+    _elevenlabs = None  # ElevenLabs disabled, using Google Cloud TTS
     
     try:
         from handlers.long_term_memory import long_term_memory

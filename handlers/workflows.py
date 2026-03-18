@@ -594,10 +594,10 @@ class WorkflowEngine:
     async def _action_speak_text(self, params: Dict, context: Dict) -> Dict:
         """Convert text to speech"""
         try:
-            from handlers.elevenlabs_voice import jarvis_speak
+            from handlers.speech import text_to_speech
             briefing = context.get('briefing', {}).get('data', '')
             if briefing:
-                audio_path = jarvis_speak(briefing, style=params.get('style', 'default'))
+                audio_path = text_to_speech(briefing)
                 return {'success': True, 'data': audio_path}
             return {'success': False, 'error': 'No text to speak'}
         except Exception as e:

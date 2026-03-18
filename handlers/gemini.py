@@ -2188,47 +2188,36 @@ def execute_function(call: dict, phone: str = "") -> str:
             except Exception as e:
                 return f"❌ Cancel error: {e}"
         
-        # Voice Control (ElevenLabs)
+        # Voice Control (Google Cloud TTS)
         if name == "speak_this":
             try:
-                from handlers.elevenlabs_voice import elevenlabs_voice
-                if not elevenlabs_voice.enabled:
-                    return "❌ Voice synthesis not configured. Set ELEVENLABS_API_KEY."
+                from handlers.speech import text_to_speech, get_tts_client
+                if not get_tts_client():
+                    return "❌ Voice synthesis not configured. Google Cloud TTS not available."
                 
                 text = params.get("text", "")
-                style = params.get("style", "default")
-                audio_path = elevenlabs_voice.text_to_speech(text, voice="jarvis", style=style)
+                audio_path = text_to_speech(text)
                 
                 if audio_path:
-                    return f"🗣️ Voice generated!\n\n📝 Text: {text[:100]}{'...' if len(text) > 100 else ''}\n🎭 Style: {style}\n💾 Audio ready"
+                    return f"🗣️ Voice generated!\n\n📝 Text: {text[:100]}{'...' if len(text) > 100 else ''}\n💾 Audio ready"
                 return "❌ Voice generation failed"
             except Exception as e:
                 return f"❌ Voice error: {e}"
         
         if name == "change_voice":
-            try:
-                from handlers.elevenlabs_voice import elevenlabs_voice
-                voice = params.get("voice", "jarvis")
-                elevenlabs_voice.set_voice(voice)
-                return f"✅ Voice changed to: {voice}"
-            except Exception as e:
-                return f"❌ Voice change error: {e}"
+            return "ℹ️ Voice presets not available with Google Cloud TTS. Using default voice."
         
         if name == "voice_status":
             try:
-                from handlers.elevenlabs_voice import elevenlabs_voice
-                if not elevenlabs_voice.enabled:
-                    return "❌ Voice synthesis not enabled. Set ELEVENLABS_API_KEY."
-                
-                usage = elevenlabs_voice.get_usage()
-                voices = elevenlabs_voice.get_voices_list()
+                from handlers.speech import get_tts_client
+                tts_client = get_tts_client()
+                if not tts_client:
+                    return "❌ Voice synthesis not enabled. Google Cloud TTS not configured."
                 
                 result = ["🎤 **Voice Status**\n"]
-                result.append(f"**Tier**: {usage.get('tier', 'unknown')}")
-                result.append(f"**Characters**: {usage.get('character_count', 0)} / {usage.get('character_limit', 0)}")
-                result.append(f"\n**Available Voices** ({len(voices)}):")
-                for v in voices[:8]:
-                    result.append(f"  • {v.get('name', 'Unknown')}")
+                result.append(f"**Provider**: Google Cloud TTS")
+                result.append(f"**Status**: ✅ Available")
+                result.append(f"**Voice**: Default (en-US)")
                 
                 return '\n'.join(result)
             except Exception as e:
