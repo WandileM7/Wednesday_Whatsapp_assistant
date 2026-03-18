@@ -22,14 +22,15 @@ Wednesday is an advanced AI assistant that brings Jarvis-like intelligence to Wh
 
 ### 🧠 **AI-Powered Intelligence**
 - **Google Gemini Integration**: Advanced conversational AI with function calling
+- **Google Cloud TTS/STT**: Voice synthesis and speech recognition via Google Cloud
 - **OpenAI DALL-E**: AI image generation with multiple art styles
 - **Stability AI**: Alternative image generation with professional quality
-- **Smart Context Memory**: Persistent conversation history with SQLite
+- **Smart Context Memory**: Persistent conversation history with SQLite/Firebase
 - **Proactive Behavior**: Task completion notifications and status updates
 
 ### 📱 **WhatsApp Integration**
 - **Contact Messaging**: Send messages to any contact (Google Contacts + Local)
-- **Voice Messages**: Speech-to-text and text-to-speech capabilities
+- **Voice Messages**: Speech-to-text (Gemini) and text-to-speech (Google Cloud TTS)
 - **Media Sharing**: Images, videos, and AI-generated content
 - **Group Management**: Handle group conversations and mentions
 - **Real-time Status**: Delivery confirmations and typing indicators
@@ -54,15 +55,16 @@ Wednesday is an advanced AI assistant that brings Jarvis-like intelligence to Wh
 graph TB
     A[WhatsApp User] --> B[WAHA Service]
     B --> C[Wednesday AI Core]
-    C --> D[SQLite Database]
+    C --> D[SQLite/Firebase DB]
     C --> E[Service Monitor]
     C --> F[Notification System]
     C --> G[Media Generator]
     C --> H[Google Services]
     C --> I[Spotify API]
-    E --> J[Auto Recovery]
-    F --> K[Background Workers]
-    G --> L[DALL-E/Stability AI]
+    C --> J[Google Cloud TTS/STT]
+    E --> K[Auto Recovery]
+    F --> L[Background Workers]
+    G --> M[DALL-E/Stability AI]
 ```
 
 ## 🚀 Quick Start
@@ -101,14 +103,17 @@ STABILITY_API_KEY=your_stability_key_here  # Alternative image gen
 WAHA_URL=http://localhost:3000/api/sendText
 WAHA_SESSION=default
 
-# Google Services (Optional)
-GOOGLE_APPLICATION_CREDENTIALS=path/to/credentials.json
+# Google Services (Required for Gmail, Calendar, TTS/STT)
+GOOGLE_APPLICATION_CREDENTIALS=path/to/credentials.json  # For TTS/STT
 GOOGLE_CLIENT_ID=your_client_id
 GOOGLE_CLIENT_SECRET=your_client_secret
 
 # Spotify (Optional)
 SPOTIFY_CLIENT_ID=your_spotify_client_id
 SPOTIFY_SECRET=your_spotify_secret
+
+# Owner Phone (for security features)
+OWNER_PHONE=your_phone_number
 ```
 
 ### 3. Launch Services
@@ -150,6 +155,7 @@ python main.py
 - 🌤️ **Weather & News**: Real-time updates and forecasts
 - 🏃 **Fitness Tracking**: Activity logging and goal setting
 - 🏠 **Smart Home**: IoT device control (extensible)
+- 🎤 **Voice Control**: Speech-to-text transcription, text-to-speech responses
 
 ### 📱 Enhanced WhatsApp Features
 
