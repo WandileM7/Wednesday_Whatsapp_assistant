@@ -2843,7 +2843,7 @@ def api_dashboard_data():
             ('Gmail', bool(os.getenv('GOOGLE_CLIENT_ID')), 'Mail'),
             ('Calendar', bool(os.getenv('GOOGLE_CLIENT_ID')), 'Calendar'),
             ('Smart Home', bool(os.getenv('IFTTT_WEBHOOK_KEY') or os.getenv('HOME_ASSISTANT_URL')), 'Home'),
-            ('ElevenLabs', bool(os.getenv('ELEVENLABS_API_KEY')), 'Mic'),
+            ('Voice TTS', bool(os.getenv('GOOGLE_APPLICATION_CREDENTIALS') or os.getenv('GOOGLE_CLIENT_ID')), 'Mic'),
         ]
         
         for name, available, icon in service_checks:
@@ -2906,7 +2906,7 @@ def api_dashboard_data():
             'stats': stats,
             'google_auth': google_auth,
             'spotify_auth': spotify_auth,
-            'elevenlabs_available': bool(os.getenv('ELEVENLABS_API_KEY')),
+            'voice_tts_available': bool(os.getenv('GOOGLE_APPLICATION_CREDENTIALS') or os.getenv('GOOGLE_CLIENT_ID')),
             'owner_configured': owner_configured,
             'owner_hint': owner_hint,
             'recent_activity': recent_activity,

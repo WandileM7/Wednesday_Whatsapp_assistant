@@ -726,25 +726,16 @@ TOOLS = [
         }
     ),
     
-    # === ElevenLabs Voice Tools ===
+    # === Voice Tools (Google Cloud TTS) ===
     Tool(
         name="speak_this",
-        description="Use premium ElevenLabs AI voice to speak text aloud with natural intonation",
+        description="Convert text to speech using Google Cloud TTS",
         inputSchema={
             "type": "object",
             "properties": {
                 "text": {
                     "type": "string",
                     "description": "Text to speak"
-                },
-                "voice": {
-                    "type": "string",
-                    "description": "Voice preset: jarvis (default), friday, butler",
-                    "enum": ["jarvis", "friday", "butler"]
-                },
-                "style": {
-                    "type": "string",
-                    "description": "Speaking style: natural, dramatic, calm, urgent"
                 }
             },
             "required": ["text"]
@@ -752,7 +743,7 @@ TOOLS = [
     ),
     Tool(
         name="change_voice",
-        description="Change the assistant's voice to a different preset",
+        description="Voice presets not available with Google Cloud TTS (uses default voice)",
         inputSchema={
             "type": "object",
             "properties": {

@@ -26,7 +26,7 @@ The Wednesday WhatsApp Assistant has many features spread across multiple handle
 |--------------|-------|-------------|
 | **Workflows** | `run_workflow`, `list_workflows` | Automated multi-step workflows (morning_routine, focus_mode, etc.) |
 | **Smart Home** | `smart_home_lights`, `smart_home_thermostat`, `smart_home_scene`, `smart_home_locks`, `smart_home_status` | Control lights, temperature, scenes, locks |
-| **Voice** | `speak_this`, `change_voice`, `voice_status` | ElevenLabs premium voice synthesis |
+| **Voice** | `speak_this`, `change_voice`, `voice_status` | Google Cloud TTS voice synthesis |
 | **Memory** | `remember_this`, `recall_memory`, `forget_memory`, `get_user_profile`, `memory_stats` | Long-term memory system |
 | **Security** | `security_status`, `security_report`, `check_threat` | Security monitoring and threat detection |
 | **Fitness** | `log_fitness`, `get_fitness_summary`, `get_fitness_history`, `set_fitness_goal` | Fitness tracking |
@@ -136,9 +136,7 @@ For Rancher Fleet (GitOps):
 #### JARVIS Advanced Features
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ELEVENLABS_API_KEY` | No | ElevenLabs premium voice synthesis |
-| `ELEVENLABS_JARVIS_VOICE_ID` | No | JARVIS voice ID |
-| `ELEVENLABS_FRIDAY_VOICE_ID` | No | FRIDAY voice ID |
+| `GOOGLE_APPLICATION_CREDENTIALS` | No | Google Cloud TTS credentials |
 | `IFTTT_WEBHOOK_KEY` | No | IFTTT smart home triggers |
 | `HOME_ASSISTANT_URL` | No | Home Assistant API URL |
 | `HOME_ASSISTANT_TOKEN` | No | Home Assistant long-lived access token |

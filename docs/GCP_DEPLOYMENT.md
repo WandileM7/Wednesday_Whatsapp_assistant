@@ -43,7 +43,7 @@ This guide will help you deploy the **JARVIS-powered Wednesday WhatsApp Assistan
 │                    ┌──────────────────┐                             │
 │                    │ External Services │                            │
 │                    │ • Vertex AI/Gemini│                            │
-│                    │ • ElevenLabs      │                            │
+│                    │ • Google Cloud TTS│                            │
 │                    │ • Smart Home      │                            │
 │                    │ • Spotify/Google  │                            │
 │                    └──────────────────┘                             │
@@ -207,7 +207,6 @@ Add these secrets to your GitHub repository (Settings → Secrets → Actions):
 ### Optional - JARVIS Advanced Features
 | Secret Name | Description | Example |
 |-------------|-------------|---------|
-| `ELEVENLABS_API_KEY` | ElevenLabs premium voice synthesis | `sk_...` |
 | `IFTTT_WEBHOOK_KEY` | IFTTT webhook key for smart home | `abc123...` |
 | `HOME_ASSISTANT_URL` | Home Assistant URL | `http://homeassistant.local:8123` |
 | `HOME_ASSISTANT_TOKEN` | Home Assistant long-lived access token | `eyJ...` |
