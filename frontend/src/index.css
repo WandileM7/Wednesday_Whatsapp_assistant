@@ -2,112 +2,138 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --jarvis-blue: #00d4ff;
-  --jarvis-blue-dim: rgba(0, 212, 255, 0.3);
-  --jarvis-gold: #ffd700;
-  --jarvis-red: #ff3b3b;
-  --jarvis-green: #00ff88;
-  --jarvis-orange: #ff9500;
-  --bg-dark: #0a0a12;
-  --bg-panel: rgba(10, 15, 30, 0.85);
-}
+/* ── Base ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 
 body {
-  font-family: 'Rajdhani', sans-serif;
-  background: var(--bg-dark);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: #060610;
   min-height: 100vh;
-  color: #e0e6ed;
+  color: #c8d0dc;
   overflow-x: hidden;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+::selection { background: rgba(0, 212, 255, 0.25); color: #fff; }
 
-::-webkit-scrollbar-track {
-  background: rgba(0, 212, 255, 0.1);
-}
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0, 212, 255, 0.25); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 212, 255, 0.45); }
 
-::-webkit-scrollbar-thumb {
-  background: var(--jarvis-blue);
-  border-radius: 3px;
-}
-
-/* Glow effects */
-.glow-blue {
-  text-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
-}
-
-.glow-green {
-  text-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
-}
-
-.box-glow-blue {
-  box-shadow: 0 0 30px rgba(0, 212, 255, 0.3);
-}
-
-/* Background animation */
+/* ── Background grid ── */
 .bg-grid {
-  background-image: 
-    linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
-  background-size: 50px 50px;
+  background-image:
+    linear-gradient(rgba(0, 212, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 212, 255, 0.025) 1px, transparent 1px);
+  background-size: 48px 48px;
+  animation: gridScan 20s linear infinite;
 }
 
-/* Panel styling */
-.panel {
-  background: var(--bg-panel);
-  border: 1px solid rgba(0, 212, 255, 0.4);
-  border-radius: 12px;
-  backdrop-filter: blur(10px);
+@keyframes gridScan {
+  0%   { background-position: 0 0; }
+  100% { background-position: 0 48px; }
+}
+
+/* ── Glass card ── */
+@layer components {
+  .glass {
+    @apply relative rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-xl;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.03) inset,
+      0 2px 20px rgba(0,0,0,0.3);
+  }
+  .glass::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      135deg,
+      rgba(0, 212, 255, 0.12) 0%,
+      transparent 40%,
+      transparent 60%,
+      rgba(0, 212, 255, 0.06) 100%
+    );
+    -webkit-mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  .glass-hover {
+    @apply glass transition-all duration-300;
+  }
+  .glass-hover:hover {
+    border-color: rgba(0, 212, 255, 0.15);
+    box-shadow:
+      0 0 0 1px rgba(0, 212, 255, 0.08) inset,
+      0 4px 30px rgba(0,0,0,0.35),
+      0 0 40px rgba(0, 212, 255, 0.04);
+    transform: translateY(-1px);
+  }
+}
+
+/* ── Status pulse ── */
+.pulse-live {
   position: relative;
 }
-
-.panel::before {
+.pulse-live::after {
   content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--jarvis-blue), transparent);
+  inset: -3px;
+  border-radius: 50%;
+  background: inherit;
+  opacity: 0;
+  animation: statusPing 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes statusPing {
+  0%   { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2.5); opacity: 0; }
 }
 
-/* Status indicators */
-.status-online {
-  background: var(--jarvis-green);
-  box-shadow: 0 0 10px var(--jarvis-green);
+/* ── Gradient text ── */
+.text-gradient {
+  background: linear-gradient(135deg, #00d4ff 0%, #a78bfa 50%, #00d4ff 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 4s ease-in-out infinite;
+}
+@keyframes shimmer {
+  0%, 100% { background-position: 0% center; }
+  50%      { background-position: 200% center; }
 }
 
-.status-offline {
-  background: var(--jarvis-red);
-  box-shadow: 0 0 10px var(--jarvis-red);
+/* ── Glow accents ── */
+.glow-line {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0,212,255,0.5), transparent);
 }
 
-.status-warning {
-  background: var(--jarvis-orange);
-  box-shadow: 0 0 10px var(--jarvis-orange);
+.glow-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
 }
+.glow-dot-green  { background: #34d399; box-shadow: 0 0 8px #34d399, 0 0 20px rgba(52,211,153,0.3); }
+.glow-dot-red    { background: #f87171; box-shadow: 0 0 8px #f87171, 0 0 20px rgba(248,113,113,0.3); }
+.glow-dot-orange { background: #fb923c; box-shadow: 0 0 8px #fb923c, 0 0 20px rgba(251,146,60,0.3); }
+.glow-dot-cyan   { background: #00d4ff; box-shadow: 0 0 8px #00d4ff, 0 0 20px rgba(0,212,255,0.3); }
 
-/* Reactor animation */
-@keyframes reactorGlow {
-  0%, 100% {
-    box-shadow: 0 0 60px #00d4ff, 0 0 100px rgba(0, 212, 255, 0.5), inset 0 0 40px rgba(0, 212, 255, 0.3);
-  }
-  50% {
-    box-shadow: 0 0 80px #00d4ff, 0 0 140px rgba(0, 212, 255, 0.7), inset 0 0 60px rgba(0, 212, 255, 0.4);
-  }
+/* ── Skeleton loading ── */
+.skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%);
+  background-size: 200% 100%;
+  animation: skeletonWave 1.8s ease-in-out infinite;
+  border-radius: 8px;
 }
-
-.reactor-core {
-  animation: reactorGlow 3s ease-in-out infinite;
+@keyframes skeletonWave {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }

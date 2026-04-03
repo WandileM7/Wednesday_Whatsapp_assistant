@@ -6,12 +6,12 @@ export default defineConfig({
   server: {
     port: 3001,
     proxy: {
-      '/api': {
-        target: 'http://localhost:5000',
-        changeOrigin: true,
-      },
       '/health': 'http://localhost:5000',
-      '/services': 'http://localhost:5000',
+      '/webhook': 'http://localhost:5000',
+      '/send': 'http://localhost:5000',
+      '/whatsapp-status': 'http://localhost:5000',
+      '/whatsapp-qr': 'http://localhost:5000',
+      '/n8n-status': 'http://localhost:5000',
     }
   },
   build: {

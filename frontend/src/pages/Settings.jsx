@@ -1,328 +1,283 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
-import { 
-  Settings as SettingsIcon, Shield, Key, Database, 
-  Mail, Music, Brain, Check, X, ExternalLink,
-  RefreshCw, AlertTriangle, Info, CheckCircle
+import { motion } from 'framer-motion'
+import {
+  BookOpen,
+  Check,
+  ClipboardCopy,
+  Code2,
+  ExternalLink,
+  Globe,
+  Key,
+  Server,
+  Settings as SettingsIcon,
+  Terminal,
+  Workflow,
 } from 'lucide-react'
-import { StatusDot } from '../components/UIComponents'
+import {
+  Card,
+  SectionTitle,
+  ActionButton,
+  Badge,
+} from '../components/UIComponents'
 
-export default function Settings() {
-  const [config, setConfig] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [notification, setNotification] = useState(null)
-  const [searchParams, setSearchParams] = useSearchParams()
+// ---------------------------------------------------------------------------
+// Copyable code block
+// ---------------------------------------------------------------------------
+function CodeBlock({ children, label }) {
+  const [copied, setCopied] = useState(false)
 
-  // Check for auth callback params
-  useEffect(() => {
-    const spotify = searchParams.get('spotify')
-    const google = searchParams.get('google')
-    const message = searchParams.get('message')
-    
-    if (spotify === 'success') {
-      setNotification({ type: 'success', message: 'Spotify connected successfully!' })
-      // Clear params
-      setSearchParams({})
-      // Refresh config
-      fetchConfig()
-    } else if (spotify === 'error') {
-      setNotification({ type: 'error', message: `Spotify error: ${message || 'Unknown error'}` })
-      setSearchParams({})
-    } else if (google === 'already_authenticated') {
-      setNotification({ type: 'success', message: 'Google is already authenticated!' })
-      setSearchParams({})
-    } else if (google === 'success') {
-      setNotification({ type: 'success', message: 'Google connected successfully!' })
-      setSearchParams({})
-      fetchConfig()
-    } else if (google === 'error') {
-      setNotification({ type: 'error', message: `Google error: ${message || 'Unknown error'}` })
-      setSearchParams({})
-    }
-    
-    // Auto-dismiss notification
-    if (notification) {
-      const timer = setTimeout(() => setNotification(null), 5000)
-      return () => clearTimeout(timer)
-    }
-  }, [searchParams, notification])
-
-  const fetchConfig = async () => {
-    try {
-      const [dashboardRes, servicesRes] = await Promise.all([
-        fetch('/api/dashboard/data'),
-        fetch('/api/services/status')
-      ])
-      
-      if (dashboardRes.ok) {
-        const data = await dashboardRes.json()
-        setConfig(prev => ({ ...prev, ...data }))
-      }
-      if (servicesRes.ok) {
-        const data = await servicesRes.json()
-        setConfig(prev => ({ ...prev, services_detail: data }))
-      }
-    } catch (err) {
-      console.error('Failed to fetch config:', err)
-    } finally {
-      setLoading(false)
-    }
+  const handleCopy = () => {
+    navigator.clipboard.writeText(children)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
-
-  useEffect(() => {
-    fetchConfig()
-  }, [])
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <motion.div
-          className="w-16 h-16 rounded-full border-4 border-jarvis-blue/30 border-t-jarvis-blue"
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-        />
-      </div>
-    )
-  }
-
-  const authServices = [
-    { 
-      name: 'Google Services', 
-      icon: Mail, 
-      configured: config?.google_auth,
-      loginUrl: '/api/google-login',
-      description: 'Gmail, Calendar, Keep, Contacts',
-      features: ['Read/Send emails', 'Manage calendar', 'Sync tasks from Keep']
-    },
-    { 
-      name: 'Spotify', 
-      icon: Music, 
-      configured: config?.spotify_auth,
-      loginUrl: '/api/spotify-login',
-      description: 'Music playback control',
-      features: ['Play/pause music', 'Search tracks', 'Control playback']
-    },
-    { 
-      name: 'Owner Authentication', 
-      icon: Shield, 
-      configured: config?.owner_configured,
-      description: 'Admin access control',
-      features: ['Whitelist management', 'Block users', 'Admin commands'],
-      envVar: 'OWNER_PHONE'
-    },
-    { 
-      name: 'ElevenLabs', 
-      icon: Brain, 
-      configured: config?.elevenlabs_available,
-      description: 'Voice synthesis',
-      features: ['Text-to-speech', 'Custom voices', 'Audio responses'],
-      envVar: 'ELEVENLABS_API_KEY'
-    },
-  ]
 
   return (
-    <div className="space-y-6">
-      {/* Auth Notification */}
-      <AnimatePresence>
-        {notification && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className={`p-4 rounded-lg flex items-center gap-3 ${
-              notification.type === 'success' 
-                ? 'bg-jarvis-green/20 border border-jarvis-green/50' 
-                : 'bg-jarvis-red/20 border border-jarvis-red/50'
-            }`}
-          >
-            {notification.type === 'success' ? (
-              <CheckCircle className="w-6 h-6 text-jarvis-green" />
-            ) : (
-              <AlertTriangle className="w-6 h-6 text-jarvis-red" />
-            )}
-            <span className={notification.type === 'success' ? 'text-jarvis-green' : 'text-jarvis-red'}>
-              {notification.message}
-            </span>
-            <button 
-              onClick={() => setNotification(null)}
-              className="ml-auto text-gray-400 hover:text-white"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </motion.div>
+    <div className="relative group">
+      {label && (
+        <p className="text-[10px] font-mono text-gray-600 uppercase tracking-wider mb-1.5">{label}</p>
+      )}
+      <div className="bg-surface-1 border border-white/[0.06] rounded-xl px-4 py-3 font-mono text-sm text-gray-300 overflow-x-auto">
+        <pre className="whitespace-pre-wrap break-all">{children}</pre>
+      </div>
+      <button
+        onClick={handleCopy}
+        className="absolute top-2 right-2 p-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white/[0.08]"
+      >
+        {copied ? (
+          <Check size={12} className="text-wed-green" />
+        ) : (
+          <ClipboardCopy size={12} className="text-gray-500" />
         )}
-      </AnimatePresence>
+      </button>
+    </div>
+  )
+}
 
+// ---------------------------------------------------------------------------
+// Environment variable row
+// ---------------------------------------------------------------------------
+function EnvRow({ name, value, description }) {
+  return (
+    <div className="py-3 border-b border-white/[0.04] last:border-0">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="font-mono text-xs text-wed-cyan">{name}</span>
+        <span className="text-xs text-gray-600">=</span>
+        <span className="font-mono text-xs text-gray-400">{value}</span>
+      </div>
+      {description && (
+        <p className="text-xs text-gray-600">{description}</p>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Settings page
+// ---------------------------------------------------------------------------
+export default function Settings() {
+  const [n8nStatus, setN8nStatus] = useState(null)
+
+  useEffect(() => {
+    fetch('/n8n-status')
+      .then(r => r.json())
+      .then(setN8nStatus)
+      .catch(() => {})
+  }, [])
+
+  return (
+    <div className="space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-orbitron text-2xl font-bold tracking-wider">SETTINGS</h1>
-          <p className="font-mono text-sm text-gray-500 mt-1">System configuration and authentication</p>
-        </div>
-        <button 
-          onClick={fetchConfig}
-          className="flex items-center gap-2 px-4 py-2 bg-jarvis-blue/10 border border-jarvis-blue/30 rounded-lg hover:bg-jarvis-blue/20 transition-colors"
+      <div>
+        <motion.h1
+          className="text-3xl font-display font-bold text-gradient"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
         >
-          <RefreshCw className="w-4 h-4 text-jarvis-blue" />
-          <span className="font-mono text-sm">REFRESH</span>
-        </button>
+          Settings
+        </motion.h1>
+        <motion.p
+          className="text-sm text-gray-500 mt-1"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.1 }}
+        >
+          Configuration & setup guide
+        </motion.p>
       </div>
 
-      {/* Quick Setup Status */}
-      <div className="panel p-6">
-        <h2 className="font-orbitron text-sm font-semibold text-jarvis-blue tracking-widest mb-4 flex items-center gap-2">
-          <span className="text-xs">◆</span> QUICK STATUS
-        </h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="text-center p-4 bg-jarvis-blue/5 rounded-lg">
-            <div className={`font-orbitron text-2xl ${config?.google_auth ? 'text-jarvis-green' : 'text-jarvis-red'}`}>
-              {config?.google_auth ? <Check className="w-8 h-8 mx-auto" /> : <X className="w-8 h-8 mx-auto" />}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* n8n Config */}
+        <Card>
+          <SectionTitle subtitle="Current n8n connection settings">
+            n8n Configuration
+          </SectionTitle>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between p-3 rounded-xl bg-surface-1 border border-white/[0.06]">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-wed-cyan/[0.06] border border-wed-cyan/10 flex items-center justify-center">
+                  <Globe size={14} className="text-wed-cyan" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Webhook URL</p>
+                  <p className="text-sm font-mono text-gray-300">
+                    {n8nStatus?.webhook || 'Loading…'}
+                  </p>
+                </div>
+              </div>
+              <Badge color={n8nStatus?.healthy ? 'green' : 'red'}>
+                {n8nStatus?.healthy ? 'Healthy' : 'Down'}
+              </Badge>
             </div>
-            <div className="text-xs text-gray-400 mt-2">GOOGLE</div>
-          </div>
-          <div className="text-center p-4 bg-jarvis-blue/5 rounded-lg">
-            <div className={`font-orbitron text-2xl ${config?.spotify_auth ? 'text-jarvis-green' : 'text-jarvis-red'}`}>
-              {config?.spotify_auth ? <Check className="w-8 h-8 mx-auto" /> : <X className="w-8 h-8 mx-auto" />}
-            </div>
-            <div className="text-xs text-gray-400 mt-2">SPOTIFY</div>
-          </div>
-          <div className="text-center p-4 bg-jarvis-blue/5 rounded-lg">
-            <div className={`font-orbitron text-2xl ${config?.whatsapp_connected ? 'text-jarvis-green' : 'text-jarvis-red'}`}>
-              {config?.whatsapp_connected ? <Check className="w-8 h-8 mx-auto" /> : <X className="w-8 h-8 mx-auto" />}
-            </div>
-            <div className="text-xs text-gray-400 mt-2">WHATSAPP</div>
-          </div>
-          <div className="text-center p-4 bg-jarvis-blue/5 rounded-lg">
-            <div className={`font-orbitron text-2xl ${config?.owner_configured ? 'text-jarvis-green' : 'text-jarvis-orange'}`}>
-              {config?.owner_configured ? <Check className="w-8 h-8 mx-auto" /> : <AlertTriangle className="w-8 h-8 mx-auto" />}
-            </div>
-            <div className="text-xs text-gray-400 mt-2">OWNER</div>
-          </div>
-        </div>
-      </div>
 
-      {/* Authentication Services */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {authServices.map((service, i) => {
-          const Icon = service.icon
-          return (
-            <motion.div 
-              key={i}
-              className="panel p-6"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1 }}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-surface-1 border border-white/[0.06]">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-wed-purple/[0.06] border border-wed-purple/10 flex items-center justify-center">
+                  <Server size={14} className="text-wed-purple" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Base URL</p>
+                  <p className="text-sm font-mono text-gray-300">
+                    {n8nStatus?.url || 'Loading…'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {n8nStatus?.healthy && (
+            <a
+              href={`${n8nStatus.url}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 mt-4 text-xs text-wed-cyan hover:text-wed-cyan/80 transition-colors"
             >
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-lg bg-jarvis-blue/10 flex items-center justify-center">
-                    <Icon className="w-6 h-6 text-jarvis-blue" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold">{service.name}</h3>
-                    <p className="text-xs text-gray-500">{service.description}</p>
-                  </div>
-                </div>
-                <StatusDot status={service.configured ? 'online' : 'offline'} />
-              </div>
+              Open n8n Dashboard <ExternalLink size={11} />
+            </a>
+          )}
+        </Card>
 
-              <div className="mb-4">
-                <div className="text-xs text-gray-400 mb-2">FEATURES</div>
-                <div className="flex flex-wrap gap-1">
-                  {service.features.map((feature, j) => (
-                    <span key={j} className="text-xs px-2 py-1 bg-jarvis-blue/5 rounded">
-                      {feature}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {service.envVar && !service.configured && (
-                <div className="mb-4 p-3 bg-jarvis-orange/10 rounded-lg text-sm">
-                  <div className="flex items-center gap-2 text-jarvis-orange">
-                    <Info className="w-4 h-4" />
-                    <span>Set <code className="font-mono">{service.envVar}</code> environment variable</span>
-                  </div>
-                </div>
-              )}
-
-              {service.loginUrl && !service.configured && (
-                <a
-                  href={service.loginUrl}
-                  className="flex items-center justify-center gap-2 w-full py-3 bg-jarvis-blue/10 border border-jarvis-blue/30 rounded-lg font-mono text-sm hover:bg-jarvis-blue/20 transition-colors"
-                >
-                  <Key className="w-4 h-4" />
-                  AUTHENTICATE
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              )}
-
-              {service.configured && (
-                <div className="flex items-center justify-center gap-2 py-3 bg-jarvis-green/10 border border-jarvis-green/30 rounded-lg text-jarvis-green text-sm">
-                  <Check className="w-4 h-4" />
-                  CONFIGURED
-                </div>
-              )}
-            </motion.div>
-          )
-        })}
-      </div>
-
-      {/* Environment Variables */}
-      <div className="panel p-6">
-        <h2 className="font-orbitron text-sm font-semibold text-jarvis-blue tracking-widest mb-4 flex items-center gap-2">
-          <span className="text-xs">◆</span> ENVIRONMENT CONFIGURATION
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {[
-            { name: 'GEMINI_API_KEY', required: true },
-            { name: 'OWNER_PHONE', required: true },
-            { name: 'WAHA_URL', required: true },
-            { name: 'GOOGLE_CLIENT_ID', required: false },
-            { name: 'GOOGLE_CLIENT_SECRET', required: false },
-            { name: 'SPOTIFY_CLIENT_ID', required: false },
-            { name: 'SPOTIFY_SECRET', required: false },
-            { name: 'ELEVENLABS_API_KEY', required: false },
-            { name: 'HOME_ASSISTANT_URL', required: false },
-          ].map((env, i) => (
-            <div key={i} className="flex items-center justify-between p-3 bg-jarvis-blue/5 rounded-lg">
-              <code className="font-mono text-xs">{env.name}</code>
-              <span className={`text-xs px-2 py-0.5 rounded ${env.required ? 'bg-jarvis-orange/20 text-jarvis-orange' : 'bg-gray-700 text-gray-400'}`}>
-                {env.required ? 'REQUIRED' : 'OPTIONAL'}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* MCP Tools Info */}
-      <div className="panel p-6">
-        <h2 className="font-orbitron text-sm font-semibold text-jarvis-blue tracking-widest mb-4 flex items-center gap-2">
-          <span className="text-xs">◆</span> MCP TOOLS
-        </h2>
-        <div className="flex items-center justify-between mb-4">
+        {/* Environment variables */}
+        <Card>
+          <SectionTitle subtitle="Required .env variables">
+            Environment
+          </SectionTitle>
           <div>
-            <div className="font-orbitron text-3xl text-jarvis-blue">{config?.tools_count || 0}</div>
-            <div className="text-xs text-gray-400">TOOLS AVAILABLE</div>
+            <EnvRow
+              name="N8N_WEBHOOK_URL"
+              value="http://n8n:5678"
+              description="Base URL of the n8n instance"
+            />
+            <EnvRow
+              name="N8N_WEBHOOK_PATH"
+              value="/webhook/whatsapp-webhook"
+              description="Path that the n8n workflow listens on"
+            />
+            <EnvRow
+              name="N8N_TIMEOUT"
+              value="120"
+              description="Max seconds to wait for n8n response"
+            />
+            <EnvRow
+              name="WAHA_URL"
+              value="http://whatsapp-service:3000"
+              description="WAHA / Baileys WhatsApp gateway"
+            />
+            <EnvRow
+              name="FLASK_DEBUG"
+              value="false"
+              description="Enable Flask debug mode"
+            />
           </div>
-          <a
-            href="/api/mcp/tools"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 px-4 py-2 bg-jarvis-blue/10 border border-jarvis-blue/30 rounded-lg font-mono text-sm hover:bg-jarvis-blue/20 transition-colors"
-          >
-            VIEW ALL TOOLS
-            <ExternalLink className="w-3 h-3" />
-          </a>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {config?.tool_categories?.map((cat, i) => (
-            <span key={i} className="font-mono text-xs px-3 py-1.5 rounded bg-jarvis-blue/10 border border-jarvis-blue/20 text-jarvis-blue">
-              {cat}
-            </span>
-          ))}
-        </div>
+        </Card>
+
+        {/* Quick start */}
+        <Card className="lg:col-span-2">
+          <SectionTitle subtitle="Get everything running in seconds">
+            Quick Start
+          </SectionTitle>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Step 1 */}
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0 }}
+              className="space-y-3"
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-full bg-wed-cyan/10 border border-wed-cyan/20 text-wed-cyan text-xs font-mono flex items-center justify-center">
+                  1
+                </div>
+                <p className="text-sm font-medium text-gray-200">Start the stack</p>
+              </div>
+              <CodeBlock label="Terminal">docker compose up -d</CodeBlock>
+              <p className="text-xs text-gray-500">
+                Starts n8n, WAHA, and the relay service
+              </p>
+            </motion.div>
+
+            {/* Step 2 */}
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="space-y-3"
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-full bg-wed-cyan/10 border border-wed-cyan/20 text-wed-cyan text-xs font-mono flex items-center justify-center">
+                  2
+                </div>
+                <p className="text-sm font-medium text-gray-200">Import workflow</p>
+              </div>
+              <CodeBlock label="n8n Dashboard">http://localhost:5678</CodeBlock>
+              <p className="text-xs text-gray-500">
+                Import <span className="font-mono text-gray-400">n8n/workflow-jarvis-whatsapp.json</span>
+              </p>
+            </motion.div>
+
+            {/* Step 3 */}
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="space-y-3"
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-full bg-wed-cyan/10 border border-wed-cyan/20 text-wed-cyan text-xs font-mono flex items-center justify-center">
+                  3
+                </div>
+                <p className="text-sm font-medium text-gray-200">Connect WhatsApp</p>
+              </div>
+              <CodeBlock label="Scan QR">Go to /whatsapp tab</CodeBlock>
+              <p className="text-xs text-gray-500">
+                Scan the QR code with your phone
+              </p>
+            </motion.div>
+          </div>
+        </Card>
+
+        {/* Testing */}
+        <Card className="lg:col-span-2">
+          <SectionTitle subtitle="Verify your setup is working">
+            Test Commands
+          </SectionTitle>
+          <div className="space-y-3">
+            <CodeBlock label="Health check">
+              {`curl http://localhost:5000/health`}
+            </CodeBlock>
+            <CodeBlock label="n8n status">
+              {`curl http://localhost:5000/n8n-status`}
+            </CodeBlock>
+            <CodeBlock label="WhatsApp status">
+              {`curl http://localhost:5000/whatsapp-status`}
+            </CodeBlock>
+            <CodeBlock label="Webhook test">
+              {`curl -X POST http://localhost:5000/webhook \\
+  -H "Content-Type: application/json" \\
+  -d '{"payload":{"chatId":"test","body":"hello","id":"1"}}'`}
+            </CodeBlock>
+          </div>
+        </Card>
       </div>
     </div>
   )

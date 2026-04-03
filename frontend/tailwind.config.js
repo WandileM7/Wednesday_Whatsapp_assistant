@@ -7,43 +7,80 @@ export default {
   theme: {
     extend: {
       colors: {
-        jarvis: {
-          blue: '#00d4ff',
-          'blue-dim': 'rgba(0, 212, 255, 0.3)',
-          gold: '#ffd700',
-          red: '#ff3b3b',
-          green: '#00ff88',
-          orange: '#ff9500',
-          dark: '#0a0a12',
-          panel: 'rgba(10, 15, 30, 0.85)',
+        wed: {
+          50:  '#edfffe',
+          100: '#c0fffc',
+          200: '#81fef8',
+          300: '#3afbf2',
+          400: '#00e5dc',
+          500: '#00c8c1',
+          600: '#00a19e',
+          cyan:   '#00d4ff',
+          green:  '#34d399',
+          red:    '#f87171',
+          orange: '#fb923c',
+          purple: '#a78bfa',
+        },
+        surface: {
+          0:   '#060610',
+          1:   '#0c0c1d',
+          2:   '#12122a',
+          3:   '#1a1a38',
+          4:   '#222246',
         }
       },
       fontFamily: {
-        orbitron: ['Orbitron', 'sans-serif'],
-        rajdhani: ['Rajdhani', 'sans-serif'],
-        mono: ['Share Tech Mono', 'monospace'],
+        display: ['Outfit', 'sans-serif'],
+        body:    ['Inter', 'sans-serif'],
+        mono:    ['JetBrains Mono', 'monospace'],
+      },
+      borderRadius: {
+        '2xl': '1rem',
+        '3xl': '1.25rem',
       },
       animation: {
-        'pulse-glow': 'pulseGlow 3s ease-in-out infinite',
-        'spin-slow': 'spin 10s linear infinite',
-        'spin-slower': 'spin 15s linear infinite reverse',
-        'reactor-pulse': 'reactorPulse 3s ease-in-out infinite',
-        'grid-pulse': 'gridPulse 4s ease-in-out infinite',
+        'glow-pulse': 'glowPulse 3s ease-in-out infinite',
+        'float':      'float 6s ease-in-out infinite',
+        'slide-up':   'slideUp 0.5s ease-out',
+        'fade-in':    'fadeIn 0.4s ease-out',
+        'grid-scan':  'gridScan 8s linear infinite',
+        'border-glow':'borderGlow 3s ease-in-out infinite',
+        'ping-slow':  'ping 3s cubic-bezier(0, 0, 0.2, 1) infinite',
       },
       keyframes: {
-        pulseGlow: {
-          '0%, 100%': { filter: 'brightness(1)' },
-          '50%': { filter: 'brightness(1.2)' },
+        glowPulse: {
+          '0%, 100%': { opacity: '0.4' },
+          '50%':      { opacity: '1' },
         },
-        reactorPulse: {
-          '0%, 100%': { boxShadow: '0 0 60px #00d4ff, 0 0 100px rgba(0, 212, 255, 0.5)' },
-          '50%': { boxShadow: '0 0 80px #00d4ff, 0 0 140px rgba(0, 212, 255, 0.7)' },
+        float: {
+          '0%, 100%': { transform: 'translateY(0px)' },
+          '50%':      { transform: 'translateY(-8px)' },
         },
-        gridPulse: {
-          '0%, 100%': { opacity: '0.5' },
-          '50%': { opacity: '1' },
-        }
-      }
+        slideUp: {
+          '0%':   { opacity: '0', transform: 'translateY(20px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        fadeIn: {
+          '0%':   { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
+        gridScan: {
+          '0%':   { backgroundPosition: '0 0' },
+          '100%': { backgroundPosition: '0 50px' },
+        },
+        borderGlow: {
+          '0%, 100%': { borderColor: 'rgba(0, 212, 255, 0.15)' },
+          '50%':      { borderColor: 'rgba(0, 212, 255, 0.4)' },
+        },
+      },
+      backgroundImage: {
+        'grid-pattern': `linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+                         linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px)`,
+        'glow-radial':  'radial-gradient(ellipse at center, rgba(0, 212, 255, 0.08) 0%, transparent 70%)',
+      },
+      backgroundSize: {
+        'grid': '50px 50px',
+      },
     },
   },
   plugins: [],

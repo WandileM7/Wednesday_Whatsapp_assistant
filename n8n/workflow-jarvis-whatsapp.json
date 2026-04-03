@@ -1,0 +1,899 @@
+{
+  "name": "Wednesday: AI Assistant for WhatsApp with MCPs",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-webhook",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "whatsapp-webhook-trigger",
+      "name": "WhatsApp Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "position": [368, 240],
+      "webhookId": "whatsapp-webhook-wednesday",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "id": "openai-chat-model",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "position": [1536, 304],
+      "typeVersion": 1.2
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('WhatsApp Webhook').item.json.payload?.chatId || $('WhatsApp Webhook').item.json.from }}"
+      },
+      "id": "simple-memory",
+      "name": "Conversation Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "position": [1616, 416],
+      "typeVersion": 1.3
+    },
+    {
+      "parameters": {
+        "path": "gmail-mcp"
+      },
+      "id": "gmail-mcp-server",
+      "name": "Gmail MCP Server",
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "position": [1728, 832],
+      "webhookId": "gmail-mcp-server",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $fromAI('To', '', 'string') }}",
+        "subject": "={{ $fromAI('Subject', '', 'string') }}",
+        "message": "={{ $fromAI('Message', '', 'string') }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.gmailTool",
+      "position": [1600, 992],
+      "typeVersion": 2.1
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Reply to an email message",
+        "operation": "reply",
+        "messageId": "={{ $fromAI('Message_ID', '', 'string') }}",
+        "emailType": "text",
+        "message": "={{ $fromAI('Message', '', 'string') }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "reply-email",
+      "name": "Reply to Email",
+      "type": "n8n-nodes-base.gmailTool",
+      "position": [1696, 1056],
+      "typeVersion": 2.1
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Get emails from inbox",
+        "operation": "getAll",
+        "returnAll": "={{ $fromAI('Return_All', '', 'boolean') }}",
+        "filters": {
+          "q": "={{ $fromAI('Search', '', 'string') }}",
+          "receivedAfter": "={{ $fromAI('Received_After', '', 'string') }}"
+        }
+      },
+      "id": "get-emails",
+      "name": "Get Emails",
+      "type": "n8n-nodes-base.gmailTool",
+      "position": [1808, 1120],
+      "typeVersion": 2.1
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Create an email draft",
+        "resource": "draft",
+        "subject": "={{ $fromAI('Subject', '', 'string') }}",
+        "emailType": "html",
+        "message": "={{ $fromAI('Message', '', 'string') }}",
+        "options": {
+          "sendTo": "={{ $fromAI('To_Email', '', 'string') }}"
+        }
+      },
+      "id": "draft-email",
+      "name": "Draft Email",
+      "type": "n8n-nodes-base.gmailTool",
+      "position": [2080, 1040],
+      "typeVersion": 2.1
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Check calendar availability",
+        "resource": "calendar",
+        "calendar": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "timeMin": "={{ $fromAI('Start_Time', '', 'string') }}",
+        "timeMax": "={{ $fromAI('End_Time', '', 'string') }}",
+        "options": {}
+      },
+      "id": "check-availability",
+      "name": "Check Availability",
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "position": [864, 880],
+      "typeVersion": 1.3
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Get upcoming calendar events",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "returnAll": true,
+        "timeMin": "={{ $fromAI('After', 'Should be a future date', 'string') }}",
+        "timeMax": "={{ $fromAI('Before', '', 'string') }}",
+        "options": {
+          "orderBy": "startTime"
+        }
+      },
+      "id": "get-calendar-events",
+      "name": "Get Calendar Events",
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "position": [960, 960],
+      "typeVersion": 1.3
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Create a calendar event",
+        "calendar": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "start": "={{ $fromAI('Start', '', 'string') }}",
+        "end": "={{ $fromAI('End', '', 'string') }}",
+        "useDefaultReminders": true,
+        "additionalFields": {
+          "description": "={{ $fromAI('Description', '', 'string') }}",
+          "summary": "={{ $fromAI('Summary', '', 'string') }}"
+        }
+      },
+      "id": "create-calendar-event",
+      "name": "Create Event",
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "position": [1344, 864],
+      "typeVersion": 1.3
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Delete a calendar event",
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "eventId": "={{ $fromAI('Event_ID', 'Event ID to delete', 'string') }}",
+        "options": {}
+      },
+      "id": "delete-calendar-event",
+      "name": "Delete Event",
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "position": [1040, 1072],
+      "typeVersion": 1.3
+    },
+    {
+      "parameters": {
+        "path": "calendar-mcp"
+      },
+      "id": "calendar-mcp-server",
+      "name": "Calendar MCP Server",
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "position": [976, 704],
+      "webhookId": "calendar-mcp-server",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "task": "",
+        "title": "={{ $fromAI('Title', '', 'string') }}",
+        "additionalFields": {
+          "dueDate": "={{ $fromAI('Due_Date', 'Use future dates', 'string') }}",
+          "notes": "={{ $fromAI('Notes', '', 'string') }}"
+        }
+      },
+      "id": "create-task",
+      "name": "Create Task",
+      "type": "n8n-nodes-base.googleTasksTool",
+      "position": [256, 720],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "task": "",
+        "taskId": "={{ $fromAI('Task_ID', '', 'string') }}"
+      },
+      "id": "get-task",
+      "name": "Get Task",
+      "type": "n8n-nodes-base.googleTasksTool",
+      "position": [352, 832],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Get all tasks",
+        "operation": "getAll",
+        "task": "",
+        "returnAll": "={{ $fromAI('Return_All', '', 'boolean') }}",
+        "additionalFields": {
+          "showCompleted": "={{ $fromAI('Show_Completed', '', 'boolean') }}"
+        }
+      },
+      "id": "get-tasks",
+      "name": "Get Tasks",
+      "type": "n8n-nodes-base.googleTasksTool",
+      "position": [592, 848],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "task": "",
+        "taskId": "={{ $fromAI('Task_ID', 'Task ID to complete', 'string') }}",
+        "updateFields": {
+          "completed": "={{ $fromAI('Completion_Date', '', 'string') }}",
+          "status": "completed"
+        }
+      },
+      "id": "complete-task",
+      "name": "Complete Task",
+      "type": "n8n-nodes-base.googleTasksTool",
+      "position": [656, 704],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "task": "",
+        "taskId": "={{ $fromAI('Task_ID', '', 'string') }}"
+      },
+      "id": "delete-task",
+      "name": "Delete Task",
+      "type": "n8n-nodes-base.googleTasksTool",
+      "position": [480, 896],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "path": "tasks-mcp"
+      },
+      "id": "tasks-mcp-server",
+      "name": "Tasks MCP Server",
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "position": [304, 560],
+      "webhookId": "tasks-mcp-server",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "path": "finance-mcp"
+      },
+      "id": "finance-mcp-server",
+      "name": "Finance MCP Server",
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "position": [2432, 512],
+      "webhookId": "finance-mcp-server",
+      "typeVersion": 1.1
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        }
+      },
+      "id": "get-expenses",
+      "name": "Get Expenses",
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "position": [2432, 672],
+      "typeVersion": 4.6
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        }
+      },
+      "id": "create-expense",
+      "name": "Create Expense",
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "position": [2560, 736],
+      "typeVersion": 4.6
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "fields": ["names", "emailAddresses"],
+        "useQuery": "={{ $fromAI('Use_Query', '', 'boolean') }}",
+        "query": "={{ $fromAI('Query', '', 'string') }}",
+        "rawData": true,
+        "options": {}
+      },
+      "id": "get-contacts",
+      "name": "Get Contacts",
+      "type": "n8n-nodes-base.googleContactsTool",
+      "position": [2560, 1200],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "path": "contacts-mcp"
+      },
+      "id": "contacts-mcp-server",
+      "name": "Contacts MCP Server",
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "position": [2544, 1040],
+      "webhookId": "contacts-mcp-server",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "filter-allowed-numbers",
+              "operator": {
+                "name": "filter.operator.contains",
+                "type": "string",
+                "operation": "contains"
+              },
+              "leftValue": "={{ $json.payload?.chatId || $json.from }}",
+              "rightValue": "={{ $env.ALLOWED_WHATSAPP_NUMBERS || '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "filter-allowed",
+      "name": "Filter Allowed Users",
+      "type": "n8n-nodes-base.filter",
+      "position": [576, 240],
+      "typeVersion": 2.2
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "version": 2,
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "text-check",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "leftValue": "={{ $json.payload?.body || $json.text || $json.message }}",
+                    "rightValue": ""
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "Text"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "version": 2,
+                  "caseSensitive": true,
+                  "typeValidation": "strict"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "id": "voice-check",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "leftValue": "={{ $json.payload?.type || $json.type }}",
+                    "rightValue": "voice"
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "Voice"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "message-type-switch",
+      "name": "Message Type",
+      "type": "n8n-nodes-base.switch",
+      "position": [800, 240],
+      "typeVersion": 3.2
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.payload?.body || $json.text || $json.message }}",
+        "options": {
+          "systemMessage": "You are Wednesday, an intelligent productivity assistant for WhatsApp. You help manage daily tasks, communications, schedules, and expenses efficiently.\n\n## Core Identity\n- You are professional, helpful, and proactive\n- Current date/time: {{ $now }}\n- Timezone: Africa/Johannesburg\n\n## Available Capabilities\n\n### Email Management (Gmail)\n- Read, send, reply to, and draft emails\n- Search and filter emails\n- Use well-formatted HTML for composition\n\n### Calendar Management (Google Calendar)\n- Check availability and conflicts\n- Create, update, reschedule, delete events\n- Retrieve upcoming meetings\n\n### Task Management (Google Tasks)\n- Create, update, complete, delete tasks\n- Set due dates and notes\n- Retrieve task lists\n\n### Finance Tracking (Google Sheets)\n- Log expenses with categories\n- Get expense summaries\n- Track spending patterns\n\n### Contact Management\n- Search contacts by name\n- Get email addresses and phone numbers\n\n## Response Guidelines\n- Be concise but complete\n- Confirm actions taken\n- Proactively suggest related actions\n- For dates, use future dates unless specified\n- Check calendar conflicts before scheduling\n\n## WhatsApp Formatting\n- Use *bold* for emphasis\n- Use _italic_ for subtle emphasis\n- Use ```code``` for technical content\n- Keep responses mobile-friendly (shorter paragraphs)"
+        }
+      },
+      "id": "wednesday-agent",
+      "name": "Wednesday AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "position": [1696, 144],
+      "typeVersion": 2.2,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "set-reply",
+              "name": "reply",
+              "type": "string",
+              "value": "={{ $json.output || $json.error || 'Sorry, I encountered an error.' }}"
+            },
+            {
+              "id": "set-chat-id",
+              "name": "chatId",
+              "type": "string",
+              "value": "={{ $('WhatsApp Webhook').item.json.payload?.chatId || $('WhatsApp Webhook').item.json.from }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-reply",
+      "name": "Set Reply",
+      "type": "n8n-nodes-base.set",
+      "position": [2304, 144],
+      "typeVersion": 3.4
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WAHA_URL || 'http://whatsapp-service:3000/api/sendText' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chatId\": \"{{ $json.chatId }}\",\n  \"text\": \"{{ $json.reply.replace(/\"/g, '\\\\\"').replace(/\\n/g, '\\\\n') }}\",\n  \"session\": \"default\"\n}"
+      },
+      "id": "send-whatsapp",
+      "name": "Send WhatsApp Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [2720, -48],
+      "typeVersion": 4.2
+    },
+    {
+      "parameters": {},
+      "id": "think-tool",
+      "name": "Think",
+      "type": "@n8n/n8n-nodes-langchain.toolThink",
+      "position": [1648, 544],
+      "typeVersion": 1.1
+    },
+    {
+      "parameters": {
+        "content": "## Wednesday AI Agent 🤖\nWhatsApp-powered personal assistant\n- Orchestrates tasks, calendar, emails, contacts & expenses\n- Uses memory + OpenAI/Gemini for smart decisions\n- Sends responses back to WhatsApp",
+        "height": 704,
+        "width": 720
+      },
+      "id": "sticky-agent",
+      "name": "Agent Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [1488, -32],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## Gmail MCP 📧\nFull email management\n- Send & draft messages\n- Reply, label, and fetch emails",
+        "height": 640,
+        "width": 768,
+        "color": 3
+      },
+      "id": "sticky-gmail",
+      "name": "Gmail Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [1552, 704],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## Finance MCP 💵\nTrack expenses via Google Sheets\n- Create new expenses\n- Get expense reports\n- Budget tracking",
+        "height": 544,
+        "width": 496,
+        "color": 4
+      },
+      "id": "sticky-finance",
+      "name": "Finance Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [2352, 352],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## Calendar MCP 📅\nScheduling hub\n- Check availability\n- Create/reschedule/delete events",
+        "height": 704,
+        "width": 624,
+        "color": 5
+      },
+      "id": "sticky-calendar",
+      "name": "Calendar Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [816, 544],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## Tasks MCP ✅\nTo-do management\n- Create/complete/delete tasks\n- Due dates and notes",
+        "height": 624,
+        "width": 560,
+        "color": 6
+      },
+      "id": "sticky-tasks",
+      "name": "Tasks Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [224, 416],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## WhatsApp Integration 📱\nReceives messages from WAHA service\n- Filters allowed users\n- Handles text and voice messages\n- Sends responses back via HTTP",
+        "height": 300,
+        "width": 400,
+        "color": 2
+      },
+      "id": "sticky-whatsapp",
+      "name": "WhatsApp Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [300, 80],
+      "typeVersion": 1
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "WhatsApp Webhook": {
+      "main": [
+        [
+          {
+            "node": "Filter Allowed Users",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Allowed Users": {
+      "main": [
+        [
+          {
+            "node": "Message Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message Type": {
+      "main": [
+        [
+          {
+            "node": "Wednesday AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Wednesday AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conversation Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Wednesday AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Think": {
+      "ai_tool": [
+        [
+          {
+            "node": "Wednesday AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wednesday AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Set Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Reply": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email": {
+      "ai_tool": [
+        [
+          {
+            "node": "Gmail MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reply to Email": {
+      "ai_tool": [
+        [
+          {
+            "node": "Gmail MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Emails": {
+      "ai_tool": [
+        [
+          {
+            "node": "Gmail MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Email": {
+      "ai_tool": [
+        [
+          {
+            "node": "Gmail MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Availability": {
+      "ai_tool": [
+        [
+          {
+            "node": "Calendar MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Calendar Events": {
+      "ai_tool": [
+        [
+          {
+            "node": "Calendar MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Event": {
+      "ai_tool": [
+        [
+          {
+            "node": "Calendar MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Event": {
+      "ai_tool": [
+        [
+          {
+            "node": "Calendar MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Task": {
+      "ai_tool": [
+        [
+          {
+            "node": "Tasks MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Task": {
+      "ai_tool": [
+        [
+          {
+            "node": "Tasks MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Tasks": {
+      "ai_tool": [
+        [
+          {
+            "node": "Tasks MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Complete Task": {
+      "ai_tool": [
+        [
+          {
+            "node": "Tasks MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Task": {
+      "ai_tool": [
+        [
+          {
+            "node": "Tasks MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Expenses": {
+      "ai_tool": [
+        [
+          {
+            "node": "Finance MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Expense": {
+      "ai_tool": [
+        [
+          {
+            "node": "Finance MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Contacts": {
+      "ai_tool": [
+        [
+          {
+            "node": "Contacts MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "meta": {
+    "templateId": "whatsapp-wednesday",
+    "description": "Wednesday WhatsApp AI Assistant - Adapted from Jarvis Telegram template for WhatsApp integration"
+  },
+  "tags": ["whatsapp", "ai-assistant", "mcp", "productivity"]
+}

@@ -1,79 +1,40 @@
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.pkl
-
 # Environment
 .env
 .env.*
+!.env.example
 
-# VSCode
-.vscode/
+# Python
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Google credentials and tokens
-credentials.json
-token.json
-token.pickle
-tokens/
-*.pickle
+# IDE
+.vscode/
 
-# GCP Service Account Keys (NEVER commit these!)
-gcp-sa-key.json
-*-sa-key.json
-*.serviceaccount.json
+# WhatsApp session data
+whatsapp-session/
+whatsapp-service/session/
+whatsapp-service/uploads/
+whatsapp-service/node_modules/
 
-# ChromaDB/Spotipy caches
-.cache/
-.cache
-*.cache
+# n8n data (Docker volume)
+n8n_data/
+
+# Frontend build output
+static/dashboard/
+frontend/node_modules/
+
+# Docker
+*.pid
 
 # Logs
 *.log
 
-# Docker
-*.pid
-redis-data/
-waha-data/
-whatsapp-session/
-
-# WhatsApp Service
-whatsapp-service/node_modules/
-whatsapp-service/session/
-whatsapp-service/uploads/
-
-# Render/Deployment
-secrets/
-
-# Flask session files
-flask_session/
-
-# Audio files (temporary)
-/tmp/audio/
-*.ogg
-*.wav
-*.mp3
-
-# Enhanced features generated content
-generated_media/
-assistant.db
-assistant.db-journal
-*.sqlite
-*.sqlite3
-
-# Task and reminder data
-task_data/
-reminder_data/
-
-# Media generation cache
-media_cache/
-avatar_cache/
-
-# System monitoring logs
-monitoring_logs/
-service_logs/
+# Backups
+*.bak

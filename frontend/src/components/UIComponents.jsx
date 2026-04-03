@@ -1,181 +1,207 @@
 import { motion } from 'framer-motion'
 
-export default function ArcReactor({ toolsCount, isOnline }) {
+// ---------------------------------------------------------------------------
+// StatusDot — pulsing colored indicator
+// ---------------------------------------------------------------------------
+export function StatusDot({ status = 'offline', size = 'md' }) {
+  const sizes = { sm: 'w-1.5 h-1.5', md: 'w-2 h-2', lg: 'w-2.5 h-2.5' }
+  const colors = {
+    online:      'glow-dot-green',
+    connected:   'glow-dot-green',
+    healthy:     'glow-dot-green',
+    offline:     'glow-dot-red',
+    unreachable: 'glow-dot-red',
+    error:       'glow-dot-red',
+    warning:     'glow-dot-orange',
+    loading:     'glow-dot-cyan',
+  }
+  const dotClass = colors[status] || 'glow-dot-red'
+  const isAlive = ['online', 'connected', 'healthy', 'loading'].includes(status)
+
   return (
-    <div className="relative flex items-center justify-center py-12">
-      {/* Outer rings */}
-      <motion.div 
-        className="absolute w-72 h-72 rounded-full border border-jarvis-blue/20"
-        animate={{ scale: [1, 1.1, 1], opacity: [0.5, 0.8, 0.5] }}
-        transition={{ duration: 4, repeat: Infinity }}
-      />
-      <motion.div 
-        className="absolute w-64 h-64 rounded-full border border-jarvis-blue/30"
-        animate={{ rotate: 360 }}
-        transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-      />
-      
-      {/* Core */}
-      <motion.div 
-        className="reactor-core w-48 h-48 rounded-full flex items-center justify-center relative"
-        style={{
-          background: `
-            radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.3) 0%, transparent 50%),
-            radial-gradient(circle, #00d4ff 0%, rgba(0, 100, 150, 0.8) 50%, #0a0a12 100%)
-          `
-        }}
-      >
-        {/* Inner rings */}
-        <motion.div 
-          className="absolute w-36 h-36 rounded-full border-2 border-jarvis-blue/50"
-          animate={{ rotate: 360 }}
-          transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
-        />
-        <motion.div 
-          className="absolute w-28 h-28 rounded-full border-2 border-dashed border-jarvis-blue/30"
-          animate={{ rotate: -360 }}
-          transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
-        />
-        
-        {/* Center display */}
-        <div className="text-center z-10">
-          <motion.span 
-            className="font-orbitron text-4xl font-bold text-white"
-            style={{ textShadow: '0 0 20px #00d4ff' }}
-            key={toolsCount}
-            initial={{ scale: 0.5, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-          >
-            {toolsCount}
-          </motion.span>
-        </div>
-      </motion.div>
-      
-      {/* Label */}
-      <div className="absolute -bottom-4 text-center">
-        <span className="font-mono text-xs text-gray-400 tracking-widest">
-          MCP TOOLS {isOnline ? 'ACTIVE' : 'OFFLINE'}
-        </span>
+    <span className={`inline-block ${sizes[size]} ${dotClass} rounded-full ${isAlive ? 'pulse-live' : ''}`} />
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Card — glass morphism container
+// ---------------------------------------------------------------------------
+export function Card({ children, className = '', hover = false, ...props }) {
+  const Component = hover ? motion.div : 'div'
+  const motionProps = hover
+    ? { whileHover: { y: -2, transition: { duration: 0.2 } } }
+    : {}
+
+  return (
+    <Component
+      className={`${hover ? 'glass-hover' : 'glass'} p-5 ${className}`}
+      {...motionProps}
+      {...props}
+    >
+      {children}
+    </Component>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// SectionTitle
+// ---------------------------------------------------------------------------
+export function SectionTitle({ children, subtitle, action }) {
+  return (
+    <div className="flex items-end justify-between mb-5">
+      <div>
+        <h2 className="text-lg font-display font-semibold text-white tracking-tight">
+          {children}
+        </h2>
+        {subtitle && (
+          <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>
+        )}
       </div>
+      {action}
     </div>
   )
 }
 
-// Status Dot Component
-export function StatusDot({ status, size = 'md' }) {
-  const sizeClasses = {
-    sm: 'w-2 h-2',
-    md: 'w-3 h-3',
-    lg: 'w-4 h-4'
-  }
-  
-  const statusClasses = {
-    online: 'status-online',
-    offline: 'status-offline',
-    warning: 'status-warning'
-  }
-  
+// ---------------------------------------------------------------------------
+// ServiceRow — status row for a service
+// ---------------------------------------------------------------------------
+export function ServiceRow({ name, status, detail, icon: Icon }) {
   return (
-    <motion.div 
-      className={`rounded-full ${sizeClasses[size]} ${statusClasses[status] || statusClasses.offline}`}
-      animate={{ scale: [1, 1.2, 1], opacity: [1, 0.7, 1] }}
-      transition={{ duration: 2, repeat: Infinity }}
-    />
-  )
-}
-
-// Service Card Component
-export function ServiceCard({ name, status, icon: Icon, onClick }) {
-  return (
-    <motion.div 
-      className="flex items-center justify-between p-4 rounded-lg bg-jarvis-blue/5 border border-jarvis-blue/20 hover:bg-jarvis-blue/10 hover:border-jarvis-blue transition-all cursor-pointer"
-      whileHover={{ x: 4 }}
-      onClick={onClick}
-    >
+    <div className="flex items-center justify-between py-3 border-b border-white/[0.04] last:border-0">
       <div className="flex items-center gap-3">
-        <Icon className="w-5 h-5 text-jarvis-blue" />
-        <span className="font-medium">{name}</span>
+        {Icon && (
+          <div className="w-8 h-8 rounded-lg bg-white/[0.04] flex items-center justify-center">
+            <Icon size={14} className="text-gray-400" />
+          </div>
+        )}
+        <div>
+          <p className="text-sm font-medium text-gray-200">{name}</p>
+          {detail && <p className="text-xs text-gray-500 mt-0.5">{detail}</p>}
+        </div>
       </div>
       <div className="flex items-center gap-2">
-        <span className={`font-mono text-xs px-2 py-1 rounded border ${
-          status === 'online' 
-            ? 'bg-jarvis-green/15 text-jarvis-green border-jarvis-green/30' 
-            : status === 'warning'
-            ? 'bg-jarvis-orange/15 text-jarvis-orange border-jarvis-orange/30'
-            : 'bg-jarvis-red/15 text-jarvis-red border-jarvis-red/30'
+        <span className={`text-xs font-mono px-2 py-0.5 rounded-md ${
+          status === 'connected' || status === 'healthy'
+            ? 'text-wed-green bg-wed-green/10'
+            : status === 'loading'
+            ? 'text-wed-cyan bg-wed-cyan/10'
+            : 'text-wed-red bg-wed-red/10'
         }`}>
-          {status.toUpperCase()}
+          {status}
         </span>
-      </div>
-    </motion.div>
-  )
-}
-
-// Stat Card Component
-export function StatCard({ value, label, icon: Icon }) {
-  return (
-    <motion.div 
-      className="panel p-5 text-center"
-      whileHover={{ scale: 1.02 }}
-    >
-      <div className="flex justify-center mb-2">
-        <Icon className="w-5 h-5 text-jarvis-blue/50" />
-      </div>
-      <div className="font-orbitron text-3xl font-bold text-jarvis-blue glow-blue">
-        {value}
-      </div>
-      <div className="text-xs text-gray-400 tracking-widest mt-2">{label}</div>
-    </motion.div>
-  )
-}
-
-// Quick Action Button
-export function ActionButton({ label, icon: Icon, to, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex flex-col items-center gap-2 p-4 rounded-lg bg-gradient-to-br from-jarvis-blue/10 to-jarvis-blue/5 border border-jarvis-blue/30 hover:from-jarvis-blue/20 hover:to-jarvis-blue/10 hover:border-jarvis-blue transition-all group"
-    >
-      <Icon className="w-6 h-6 text-jarvis-blue group-hover:scale-110 transition-transform" />
-      <span className="text-sm font-medium">{label}</span>
-    </button>
-  )
-}
-
-// Console Output
-export function Console({ lines }) {
-  return (
-    <div className="panel p-4 font-mono text-sm">
-      <div className="flex justify-between items-center mb-3 pb-2 border-b border-jarvis-blue/20">
-        <span className="text-jarvis-blue">JARVIS TERMINAL</span>
-        <span className="text-gray-500">v2.0.0</span>
-      </div>
-      <div className="space-y-1 text-jarvis-green">
-        {lines.map((line, i) => (
-          <div key={i}>
-            <span className="text-jarvis-blue">JARVIS &gt;</span> {line}
-          </div>
-        ))}
+        <StatusDot status={status} size="sm" />
       </div>
     </div>
   )
 }
 
-// Tool Category Tag
-export function ToolTag({ name }) {
+// ---------------------------------------------------------------------------
+// StatCard — key metric display
+// ---------------------------------------------------------------------------
+export function StatCard({ label, value, sub, icon: Icon, color = 'cyan' }) {
+  const colorMap = {
+    cyan:   'from-wed-cyan/10 to-transparent border-wed-cyan/10 text-wed-cyan',
+    green:  'from-wed-green/10 to-transparent border-wed-green/10 text-wed-green',
+    purple: 'from-wed-purple/10 to-transparent border-wed-purple/10 text-wed-purple',
+    orange: 'from-wed-orange/10 to-transparent border-wed-orange/10 text-wed-orange',
+  }
+
   return (
-    <span className="font-mono text-xs px-3 py-1.5 rounded bg-jarvis-blue/10 border border-jarvis-blue/20 text-jarvis-blue">
-      {name}
+    <motion.div
+      className="glass-hover p-4"
+      whileHover={{ y: -2 }}
+      transition={{ duration: 0.2 }}
+    >
+      <div className="flex items-start justify-between mb-3">
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">{label}</p>
+        {Icon && (
+          <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${colorMap[color]} border flex items-center justify-center`}>
+            <Icon size={14} />
+          </div>
+        )}
+      </div>
+      <p className="text-2xl font-display font-bold text-white tracking-tight">{value}</p>
+      {sub && <p className="text-xs text-gray-500 mt-1">{sub}</p>}
+    </motion.div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// ActionButton
+// ---------------------------------------------------------------------------
+export function ActionButton({ children, onClick, variant = 'primary', icon: Icon, loading, disabled }) {
+  const variants = {
+    primary:   'bg-wed-cyan/10 text-wed-cyan border-wed-cyan/20 hover:bg-wed-cyan/20 hover:border-wed-cyan/30',
+    success:   'bg-wed-green/10 text-wed-green border-wed-green/20 hover:bg-wed-green/20 hover:border-wed-green/30',
+    danger:    'bg-wed-red/10 text-wed-red border-wed-red/20 hover:bg-wed-red/20 hover:border-wed-red/30',
+    ghost:     'bg-transparent text-gray-400 border-white/[0.06] hover:bg-white/[0.04] hover:text-gray-200',
+  }
+
+  return (
+    <motion.button
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
+      onClick={onClick}
+      disabled={disabled || loading}
+      className={`
+        inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium
+        border transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed
+        ${variants[variant]}
+      `}
+    >
+      {loading ? (
+        <motion.div
+          className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full"
+          animate={{ rotate: 360 }}
+          transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}
+        />
+      ) : Icon ? (
+        <Icon size={14} />
+      ) : null}
+      {children}
+    </motion.button>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Badge
+// ---------------------------------------------------------------------------
+export function Badge({ children, color = 'cyan' }) {
+  const colors = {
+    cyan:   'text-wed-cyan bg-wed-cyan/10 border-wed-cyan/20',
+    green:  'text-wed-green bg-wed-green/10 border-wed-green/20',
+    red:    'text-wed-red bg-wed-red/10 border-wed-red/20',
+    orange: 'text-wed-orange bg-wed-orange/10 border-wed-orange/20',
+    purple: 'text-wed-purple bg-wed-purple/10 border-wed-purple/20',
+  }
+
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-mono border ${colors[color]}`}>
+      {children}
     </span>
   )
 }
 
-// Activity Item
-export function ActivityItem({ time, message, type }) {
+// ---------------------------------------------------------------------------
+// EmptyState
+// ---------------------------------------------------------------------------
+export function EmptyState({ icon: Icon, title, description }) {
   return (
-    <div className="py-3 border-b border-jarvis-blue/10 last:border-0">
-      <div className="font-mono text-xs text-jarvis-blue">{time}</div>
-      <div className="text-sm text-gray-400 mt-1">{message}</div>
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      {Icon && (
+        <div className="w-12 h-12 rounded-2xl bg-white/[0.04] flex items-center justify-center mb-4">
+          <Icon size={20} className="text-gray-500" />
+        </div>
+      )}
+      <p className="text-sm font-medium text-gray-300">{title}</p>
+      {description && <p className="text-xs text-gray-500 mt-1 max-w-xs">{description}</p>}
     </div>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Skeleton loader
+// ---------------------------------------------------------------------------
+export function Skeleton({ className = '' }) {
+  return <div className={`skeleton ${className}`} />
 }

@@ -1,11 +1,11 @@
 /**
  * Baileys-based WhatsApp Service
  * 
- * A lightweight, memory-efficient WhatsApp service using Baileys library.
- * Uses WebSocket connection directly - NO Chromium/Puppeteer required!
+ * Lightweight WhatsApp gateway using Baileys (WebSocket, no Chromium).
+ * Forwards incoming messages to n8n via webhook and exposes
+ * /api/sendText for n8n to send replies back.
  * 
- * Memory usage: ~50-100MB (vs 400MB+ with whatsapp-web.js)
- * Perfect for Render free tier (512MB)
+ * Memory usage: ~50-100MB
  */
 
 const express = require('express');
@@ -56,6 +56,7 @@ const mediaStore = new Map();
 const MAX_MEDIA_CACHE = 200;
 
 const WEBHOOK_URL = process.env.WHATSAPP_HOOK_URL;
+const SELF_URL = (process.env.SELF_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
 const SESSION_PATH = process.env.SESSION_PATH || './session';
 
 // Ensure session directory exists
@@ -104,7 +105,7 @@ async function initializeClient() {
                 creds: state.creds,
                 keys: makeCacheableSignalKeyStore(state.keys, baileysLogger)
             },
-            browser: ['JARVIS Assistant', 'Chrome', '122.0.0'],
+            browser: ['Wednesday Assistant', 'Chrome', '122.0.0'],
             generateHighQualityLinkPreview: false,
             syncFullHistory: false,
             markOnlineOnConnect: true,
@@ -282,35 +283,40 @@ async function forwardToWebhook(message) {
             hasMedia = true;
             mediaType = 'video';
         } else if (messageContent?.audioMessage) {
-            body = '[Audio]';
+            body = '[Voice]';
             hasMedia = true;
-            mediaType = 'audio';
+            mediaType = 'voice';
         } else if (messageContent?.documentMessage) {
             body = messageContent.documentMessage.fileName || '[Document]';
             hasMedia = true;
             mediaType = 'document';
         }
 
-        // Build media URL if available so downstream can fetch
+        // Build media URL using public SELF_URL so n8n (on a separate VM) can fetch it
         let mediaUrl = null;
+        let mimetype = null;
         if (hasMedia) {
-            const base = process.env.MEDIA_BASE_URL || process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
-            mediaUrl = `${base.replace(/\/$/, '')}/api/media/${mediaId}`;
+            mediaUrl = `${SELF_URL}/api/media/${mediaId}`;
+            // Extract mimetype from the media node
+            const node = messageContent?.imageMessage
+                || messageContent?.videoMessage
+                || messageContent?.audioMessage
+                || messageContent?.documentMessage;
+            mimetype = node?.mimetype || null;
         }
 
         const webhookPayload = {
+            event: 'message',
             payload: {
                 id: mediaId,
-                messageId: mediaId,  // Alias for deduplication
-                chatId: message.key.remoteJid,  // For compatibility with main.py
-                from: message.key.remoteJid,
-                to: message.key.participant || message.key.remoteJid,
+                chatId: message.key.remoteJid,
                 body: body,
                 type: hasMedia ? mediaType : 'text',
                 timestamp: message.messageTimestamp,
                 fromMe: message.key.fromMe || false,
                 hasMedia: hasMedia,
                 mediaUrl: mediaUrl,
+                mimetype: mimetype,
                 pushName: message.pushName || null
             }
         };
@@ -624,7 +630,7 @@ app.get('/api/media/:messageId', async (req, res) => {
             mediaType = 'video';
         } else if (messageContent?.audioMessage) {
             node = messageContent.audioMessage;
-            mediaType = 'audio';
+            mediaType = 'voice';
         } else if (messageContent?.documentMessage) {
             node = messageContent.documentMessage;
             mediaType = 'document';
@@ -634,7 +640,9 @@ app.get('/api/media/:messageId', async (req, res) => {
             return res.status(404).json({ error: 'Media payload unavailable' });
         }
 
-        const stream = await downloadContentFromMessage(node, mediaType || 'unknown');
+        // Baileys expects 'audio' as the download type, not 'voice'
+        const baileysType = mediaType === 'voice' ? 'audio' : mediaType;
+        const stream = await downloadContentFromMessage(node, baileysType || 'unknown');
         const chunks = [];
         for await (const chunk of stream) {
             chunks.push(chunk);
