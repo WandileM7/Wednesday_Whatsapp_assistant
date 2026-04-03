@@ -143,7 +143,7 @@ jobs:
             --timeout=3600
             --port=3000
             --execution-environment=gen2
-            --add-volume=name=whatsapp-session,type=cloud-storage,bucket=${{ steps.setup-bucket.outputs.bucket_name }},mount-options=allow_other:uid=1001:gid=1001
+            --add-volume=name=whatsapp-session,type=cloud-storage,bucket=${{ steps.setup-bucket.outputs.bucket_name }}
             --add-volume-mount=volume=whatsapp-session,mount-path=/app/session
 
       - name: Deploy to Cloud Run (without persistent session)
