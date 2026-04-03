@@ -351,37 +351,18 @@ function storeMediaMessage(message, mediaType) {
 
 // ==================== API ENDPOINTS ====================
 
-// Health check
+// Health check (includes fields expected by the dashboard)
 app.get('/health', (req, res) => {
     res.json({
         status: 'healthy',
         service: 'baileys-whatsapp-service',
         client_ready: isClientReady,
         mode: ENABLE_REAL_WHATSAPP ? 'production' : 'mock',
+        n8n: WEBHOOK_URL ? 'connected' : 'unreachable',
+        whatsapp: isClientReady ? 'connected' : 'unreachable',
         memory_mb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
-        uptime: process.uptime()
-    });
-});
-
-// Root endpoint
-app.get('/', (req, res) => {
-    res.json({
-        service: 'Baileys WhatsApp Service',
-        status: isClientReady ? 'connected' : 'disconnected',
-        mode: ENABLE_REAL_WHATSAPP ? 'production' : 'mock',
-        version: '2.0.0',
-        engine: 'baileys',
-        memory_efficient: true,
-        endpoints: [
-            'GET /health',
-            'GET /api/qr',
-            'GET /api/info',
-            'POST /api/sendText',
-            'POST /api/sendVoice',
-            'POST /api/sendMedia',
-            'GET /api/sessions/:sessionName',
-            'POST /api/sessions/:sessionName/start'
-        ]
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString()
     });
 });
 
@@ -806,6 +787,57 @@ app.post('/api/sessions/:sessionName/restart', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+// ==================== DASHBOARD COMPAT ROUTES ====================
+
+// Dashboard expects these paths from the old Flask relay
+app.get('/whatsapp-status', (req, res) => {
+    res.json({
+        name: 'default',
+        status: isClientReady ? 'WORKING' : 'DISCONNECTED',
+        mode: ENABLE_REAL_WHATSAPP ? 'production' : 'mock',
+        me: sock?.user || null,
+        engine: 'baileys'
+    });
+});
+
+app.get('/whatsapp-qr', (req, res) => {
+    if (qrCodeData) {
+        res.json({ qr: qrCodeData, timestamp: lastQRTime?.toISOString() });
+    } else if (isClientReady) {
+        res.json({ status: 'authenticated', message: 'Client is ready' });
+    } else {
+        res.json({ status: 'waiting', message: 'Waiting for QR code' });
+    }
+});
+
+app.get('/n8n-status', (req, res) => {
+    res.json({
+        url: WEBHOOK_URL || 'not configured',
+        webhook: WEBHOOK_URL,
+        healthy: !!WEBHOOK_URL
+    });
+});
+
+app.post('/send', async (req, res) => {
+    const { chatId, phone, text, message } = req.body;
+    const id = chatId || phone;
+    const msg = text || message;
+    if (!id || !msg) return res.status(400).json({ error: 'chatId and text required' });
+    const success = await sendMessage(id, msg);
+    res.json({ success });
+});
+
+// ==================== DASHBOARD STATIC FILES ====================
+
+const dashboardPath = path.join(__dirname, 'dashboard');
+if (fs.existsSync(dashboardPath)) {
+    app.use(express.static(dashboardPath));
+    // SPA fallback: serve index.html for any unmatched GET request
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(dashboardPath, 'index.html'));
+    });
+}
 
 // Error handling
 app.use((error, req, res, next) => {

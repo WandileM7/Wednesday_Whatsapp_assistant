@@ -1,6 +1,13 @@
-# Baileys WhatsApp Service - NO Chromium Required!
-# Memory usage: ~50-100MB (perfect for Render free tier)
-FROM node:20-alpine AS base
+# Stage 1: Build frontend dashboard
+FROM node:20-alpine AS frontend
+WORKDIR /build
+COPY frontend/package.json ./
+RUN npm install
+COPY frontend/ .
+RUN npm run build -- --outDir dist
+
+# Stage 2: Baileys WhatsApp Service
+FROM node:20-alpine AS app
 WORKDIR /app
 
 # Minimal system dependencies for native modules
@@ -12,13 +19,11 @@ RUN apk add --no-cache \
     git \
     && rm -rf /var/cache/apk/*
 
-# Copy package files
-COPY package.json ./
-
-# Install dependencies
+# Copy package files and install
+COPY whatsapp-service/package.json ./
 RUN npm install && npm cache clean --force
 
-# Environment variables - keep simple, no experimental flags
+# Environment variables
 ENV NODE_ENV=production \
     SESSION_PATH=/app/session \
     SHOW_QR=false \
@@ -26,7 +31,10 @@ ENV NODE_ENV=production \
     ENABLE_REAL_WHATSAPP=true
 
 # Copy application files
-COPY . .
+COPY whatsapp-service/ .
+
+# Copy built dashboard from stage 1
+COPY --from=frontend /build/dist ./dashboard
 
 # Create session directory with proper permissions
 RUN mkdir -p session uploads && chmod 755 session uploads
