@@ -1,4 +1,5 @@
 /**
+/**
  * Baileys-based WhatsApp Service
  * 
  * Lightweight WhatsApp gateway using Baileys (WebSocket, no Chromium).
@@ -544,7 +545,39 @@ app.get('/api/info', (req, res) => {
         waha_compatible: true
     });
 });
+app.post('/api/sendAudioBase64', async (req, res) => {
+    if (!isClientReady) {
+        return res.status(503).json({ error: 'WhatsApp client not ready' });
+    }
 
+    const { chatId, audioBase64 } = req.body;
+
+    if (!chatId || !audioBase64) {
+        return res.status(400).json({ error: 'chatId and audioBase64 are required' });
+    }
+
+    try {
+        if (ENABLE_REAL_WHATSAPP && sock) {
+            const jid = chatId.includes('@') ? chatId : `${chatId}@s.whatsapp.net`;
+            const audioBuffer = Buffer.from(audioBase64, 'base64');
+
+            await sock.sendMessage(jid, {
+                audio: audioBuffer,
+                mimetype: 'audio/ogg; codecs=opus',
+                ptt: true
+            });
+
+            console.log(`🎤 Voice note sent to ${jid}`);
+            res.json({ success: true, message: 'Voice note sent' });
+        } else {
+            console.log(`🎤 Mock voice to ${chatId}`);
+            res.json({ success: true, message: 'Voice note simulated' });
+        }
+    } catch (error) {
+        console.error('❌ Send audio error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 // Voice message endpoint
 app.post('/api/sendVoice', upload.single('audio'), async (req, res) => {
     if (!isClientReady) {
@@ -801,9 +834,15 @@ app.get('/whatsapp-status', (req, res) => {
     });
 });
 
-app.get('/whatsapp-qr', (req, res) => {
+app.get('/whatsapp-qr', async (req, res) => {
     if (qrCodeData) {
-        res.json({ qr: qrCodeData, timestamp: lastQRTime?.toISOString() });
+        try {
+            // Convert raw QR string to base64 PNG so the frontend can render it
+            const qrImage = await QRCode.toDataURL(qrCodeData, { width: 300, margin: 2 });
+            res.json({ qr: qrImage, timestamp: lastQRTime?.toISOString() });
+        } catch {
+            res.json({ qr: qrCodeData, timestamp: lastQRTime?.toISOString() });
+        }
     } else if (isClientReady) {
         res.json({ status: 'authenticated', message: 'Client is ready' });
     } else {
