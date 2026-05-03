@@ -1,4 +1,4 @@
-﻿services:
+services:
   backend:
     build: .
     ports:
@@ -19,6 +19,7 @@
     environment:
       WHATSAPP_HOOK_URL: http://backend:8000/whatsapp/webhook
       ENABLE_REAL_WHATSAPP: "true"
+      SESSION_PATH: /app/auth_info_baileys
     volumes:
       - whatsapp-auth:/app/auth_info_baileys
     restart: unless-stopped
@@ -26,13 +27,11 @@
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: wednesday
-      POSTGRES_PASSWORD: wednesday
-      POSTGRES_DB: wednesday
+      POSTGRES_USER: ${POSTGRES_USER:-wednesday}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wednesday}
+      POSTGRES_DB: ${POSTGRES_DB:-wednesday}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     restart: unless-stopped
 
 volumes:

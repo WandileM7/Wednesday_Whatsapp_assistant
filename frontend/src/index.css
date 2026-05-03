@@ -1,9 +1,22 @@
-﻿@tailwind base;
+@tailwind base;
 @tailwind components;
 @tailwind utilities;
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
 html, body, #root { height: 100%; }
-body { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #0a0a0f; color: #e6e8f0; -webkit-font-smoothing: antialiased; }
-::selection { background: rgba(124,92,255,0.35); color: #fff; }
-::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: rgba(124,92,255,0.3); border-radius: 3px; }
+
+body {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #0a0a0f;
+  color: #e6e8f0;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection { background: rgba(124, 92, 255, 0.35); color: #fff; }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(124, 92, 255, 0.3); border-radius: 3px; }
+
 .pixelated { image-rendering: pixelated; image-rendering: crisp-edges; }
