@@ -1,59 +1,40 @@
-services:
-  # n8n - Self-hosted workflow automation (AI agent + MCP tools)
-  n8n:
-    image: docker.n8n.io/n8nio/n8n:latest
-    container_name: n8n
-    ports:
-      - "5678:5678"
-    environment:
-      - N8N_HOST=0.0.0.0
-      - N8N_PORT=5678
-      - N8N_PROTOCOL=http
-      - WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://localhost:5678}
-      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-change-me-32-chars-minimum-key!!}
-      - N8N_BASIC_AUTH_ACTIVE=true
-      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
-      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-wednesday123}
-      - GENERIC_TIMEZONE=Africa/Johannesburg
-      - TZ=Africa/Johannesburg
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - WAHA_URL=http://whatsapp-service:3000/api/sendText
-    volumes:
-      - n8n_data:/home/node/.n8n
-    restart: unless-stopped
-
-  # Baileys WhatsApp service
-  whatsapp-service:
-    build:
-      context: .
-      dockerfile: ./whatsapp-service/Dockerfile
-    container_name: whatsapp-service
-    ports:
-      - "3000:3000"
-    environment:
-      - WHATSAPP_HOOK_URL=http://assistant:5000/webhook
-      - SESSION_PATH=/app/session
-      - NODE_OPTIONS=--max-old-space-size=128 --expose-gc
-    volumes:
-      - ./whatsapp-session:/app/session
-    restart: unless-stopped
-
-  # Thin relay: WhatsApp ↔ n8n
-  assistant:
+﻿services:
+  backend:
     build: .
-    container_name: assistant
     ports:
-      - "5000:5000"
+      - "8000:8000"
+    env_file: .env
     environment:
-      - N8N_WEBHOOK_URL=http://n8n:5678
-      - N8N_WEBHOOK_PATH=/webhook/whatsapp-webhook
-      - N8N_TIMEOUT=120
-      - WAHA_URL=http://whatsapp-service:3000/api/sendText
-      - FLASK_DEBUG=false
+      DATABASE_URL: postgresql+asyncpg://wednesday:wednesday@db:5432/wednesday
+      WAHA_URL: http://whatsapp-service:3000
     depends_on:
-      - n8n
+      - db
       - whatsapp-service
     restart: unless-stopped
 
+  whatsapp-service:
+    build: ./whatsapp-service
+    ports:
+      - "3000:3000"
+    environment:
+      WHATSAPP_HOOK_URL: http://backend:8000/whatsapp/webhook
+      ENABLE_REAL_WHATSAPP: "true"
+    volumes:
+      - whatsapp-auth:/app/auth_info_baileys
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: wednesday
+      POSTGRES_PASSWORD: wednesday
+      POSTGRES_DB: wednesday
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
 volumes:
-  n8n_data:
+  whatsapp-auth:
+  pgdata:
