@@ -35,7 +35,10 @@ def _new_state() -> str:
 
 def verify_state(state: str) -> bool:
     """Consume and validate a state token (one-time use)."""
-    return _valid_states.discard(state) or not state  # allow empty only in dev
+    if state in _valid_states:
+        _valid_states.discard(state)
+        return True
+    return False
 
 
 def _redirect(service: str) -> str:
