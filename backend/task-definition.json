@@ -1,0 +1,41 @@
+{
+  "family": "wednesday-backend",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::926753674963:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "wednesday-backend",
+      "image": "926753674963.dkr.ecr.us-east-1.amazonaws.com/wednesday-backend:latest",
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "PORT", "value": "8000" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL",      "valueFrom": "arn:aws:secretsmanager:us-east-1:926753674963:secret:wednesday/DATABASE_URL" },
+        { "name": "ANTHROPIC_API_KEY", "valueFrom": "arn:aws:secretsmanager:us-east-1:926753674963:secret:wednesday/ANTHROPIC_API_KEY" },
+        { "name": "OLLAMA_HOST",       "valueFrom": "arn:aws:secretsmanager:us-east-1:926753674963:secret:wednesday/OLLAMA_HOST" },
+        { "name": "GOOGLE_CLIENT_ID",  "valueFrom": "arn:aws:secretsmanager:us-east-1:926753674963:secret:wednesday/GOOGLE_CLIENT_ID" },
+        { "name": "GOOGLE_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:us-east-1:926753674963:secret:wednesday/GOOGLE_CLIENT_SECRET" },
+        { "name": "SPOTIFY_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:us-east-1:926753674963:secret:wednesday/SPOTIFY_CLIENT_ID" },
+        { "name": "SPOTIFY_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:us-east-1:926753674963:secret:wednesday/SPOTIFY_CLIENT_SECRET" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/wednesday-backend",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "essential": true
+    }
+  ]
+}
