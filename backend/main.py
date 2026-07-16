@@ -92,3 +92,7 @@ async def whatsapp_status():
             r = await client.get(f"{settings.waha_url.rstrip('/')}/api/sessions/default")
             return r.json()
         except Exception as exc: return {"status": "unreachable", "error": str(exc)}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
