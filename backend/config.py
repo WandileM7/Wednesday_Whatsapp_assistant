@@ -6,10 +6,9 @@ class Settings(BaseSettings):
     session_secret: str = "change-me-in-production"
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "llama3.1:8b"
-    openai_api_key: str = ""
-    tts_voice: str = "nova"
-    tts_model: str = "tts-1"
-    stt_model: str = "whisper-1"
+    whisper_model: str = "base"          # faster-whisper size: tiny/base/small/medium
+    piper_voice: str = "en_US-lessac-medium"
+    voice_cache_dir: str = "~/.cache/wednesday/voices"
     database_url: str = "sqlite+aiosqlite:///./wednesday.db"
     waha_url: str = "http://whatsapp-service:3000"
     whatsapp_enabled: bool = True

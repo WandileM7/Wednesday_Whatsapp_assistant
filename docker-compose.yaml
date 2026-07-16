@@ -7,10 +7,31 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://wednesday:wednesday@db:5432/wednesday
       WAHA_URL: http://whatsapp-service:3000
+      OLLAMA_HOST: http://ollama:11434
+      VOICE_CACHE_DIR: /data/voices
+    volumes:
+      - voice-models:/data/voices
     depends_on:
       - db
+      - ollama
       - whatsapp-service
     restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+    # Uncomment for NVIDIA GPU acceleration:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
 
   whatsapp-service:
     build: ./whatsapp-service
@@ -19,7 +40,6 @@ services:
     environment:
       WHATSAPP_HOOK_URL: http://backend:8000/whatsapp/webhook
       ENABLE_REAL_WHATSAPP: "true"
-      SESSION_PATH: /app/auth_info_baileys
     volumes:
       - whatsapp-auth:/app/auth_info_baileys
     restart: unless-stopped
@@ -27,13 +47,17 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-wednesday}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wednesday}
-      POSTGRES_DB: ${POSTGRES_DB:-wednesday}
+      POSTGRES_USER: wednesday
+      POSTGRES_PASSWORD: wednesday
+      POSTGRES_DB: wednesday
     volumes:
       - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     restart: unless-stopped
 
 volumes:
   whatsapp-auth:
   pgdata:
+  ollama-models:
+  voice-models:
