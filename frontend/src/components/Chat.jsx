@@ -38,6 +38,7 @@ export default function Chat() {
   useEffect(()=>{
     const ws=connect({
       transcript:m=>setMessages(xs=>[...xs,{role:"user",text:m.text}]),
+      notice:m=>setMessages(xs=>[...xs,{role:"assistant",text:m.text}]),
       delta:m=>{ setToolStatus(null); setTalking(true); pendingRef.current+=m.text; setMessages(xs=>{ const last=xs[xs.length-1]
         if(last?.role==="assistant"&&last.streaming)return[...xs.slice(0,-1),{...last,text:pendingRef.current}]
         return[...xs,{role:"assistant",text:pendingRef.current,streaming:true}] }) },

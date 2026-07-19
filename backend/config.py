@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     whatsapp_allowed_jids: str = ""
     # Prompt slice of the context window left for history (≈4 chars/token)
     history_budget_tokens: int = 2500
+    # Proactive check-ins every N minutes; 0 = off (default until trusted)
+    heartbeat_minutes: int = 0
+    # No proactive pings between these hours (24h clock, "start-end", wraps midnight)
+    heartbeat_quiet: str = "22-07"
+    # Hard cap on proactive pings per calendar day
+    heartbeat_daily_cap: int = 8
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:3b"
     whisper_model: str = "base"          # faster-whisper size: tiny/base/small/medium

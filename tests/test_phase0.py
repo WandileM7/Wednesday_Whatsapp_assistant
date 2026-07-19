@@ -1,17 +1,7 @@
-import pathlib
-
-import pytest
-
 from backend import db, oauth, whatsapp
 from backend.agent import _slice, _est_tokens
 from backend.config import settings
 from backend.main import _speakable, _tts_clean
-
-
-@pytest.fixture(autouse=True, scope="module")
-def _test_db():
-    yield
-    pathlib.Path("test_wednesday.db").unlink(missing_ok=True)
 
 
 async def test_message_persistence_round_trip():

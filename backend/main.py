@@ -4,7 +4,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
-from . import agent, db, markers, oauth, voice, whatsapp
+from . import agent, db, live, markers, oauth, scheduler, voice, whatsapp
 from .config import settings
 
 logging.basicConfig(level=logging.INFO)
@@ -30,6 +30,7 @@ async def _startup():
     await db.init()
     asyncio.create_task(voice.preload())
     asyncio.create_task(agent.warmup())
+    asyncio.create_task(scheduler.run())
 
 _SENTENCE_END = re.compile(r"(?<=[.!?…])\s")
 _MIN_TTS_CHARS = 20       # first segment: speak as soon as possible
@@ -86,6 +87,7 @@ async def chat_ws(ws: WebSocket):
     if settings.api_token and ws.query_params.get("token", "") != settings.api_token:
         await ws.close(code=4401); return
     await ws.accept(); channel = settings.default_user
+    live.register(channel, ws)
     try:
         while True:
             raw = await ws.receive_text(); msg = json.loads(raw); kind = msg.get("type")
@@ -132,6 +134,7 @@ async def chat_ws(ws: WebSocket):
         logging.exception("ws error")
         try: await ws.send_json({"type": "error", "message": str(exc)})
         finally: await ws.close()
+    finally: live.unregister(channel, ws)
 
 @app.post("/voice/stt")
 async def stt(file: UploadFile):

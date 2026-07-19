@@ -34,6 +34,17 @@ class Memory(Base):
     content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[_dt.datetime] = mapped_column(DateTime, default=_dt.datetime.utcnow)
 
+class Job(Base):
+    __tablename__ = "jobs"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_key: Mapped[str] = mapped_column(String(64), index=True)
+    kind: Mapped[str] = mapped_column(String(16), default="reminder")
+    text: Mapped[str] = mapped_column(Text)
+    due_at: Mapped[_dt.datetime] = mapped_column(DateTime)  # local time
+    recur_minutes: Mapped[int | None] = mapped_column(nullable=True)
+    done: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[_dt.datetime] = mapped_column(DateTime, default=_dt.datetime.now)
+
 class Summary(Base):
     __tablename__ = "summaries"
     user_key: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -115,6 +126,39 @@ async def search_messages(user_key: str, terms: list[str], limit: int = 200) -> 
                                 .order_by(Message.id.desc()).limit(limit))).scalars().all()
     return [{"when": r.created_at.isoformat(timespec="minutes"), "role": r.role,
              "text": r.content} for r in rows]
+
+async def add_job(user_key: str, text: str, due_at: _dt.datetime,
+                  recur_minutes: int | None = None, kind: str = "reminder") -> int:
+    async with SessionLocal() as s:
+        job = Job(user_key=user_key, kind=kind, text=text, due_at=due_at,
+                  recur_minutes=recur_minutes)
+        s.add(job); await s.commit(); return job.id
+
+async def due_jobs(now: _dt.datetime) -> list[Job]:
+    async with SessionLocal() as s:
+        return list((await s.execute(select(Job).where(Job.done == False, Job.due_at <= now)  # noqa: E712
+                                     .order_by(Job.due_at))).scalars().all())
+
+async def complete_job(job_id: int, next_due: _dt.datetime | None = None) -> None:
+    """Mark done, or roll a recurring job forward to next_due."""
+    async with SessionLocal() as s:
+        job = await s.get(Job, job_id)
+        if job is None: return
+        if next_due is not None: job.due_at = next_due
+        else: job.done = True
+        await s.commit()
+
+async def pending_jobs(user_key: str) -> list[Job]:
+    async with SessionLocal() as s:
+        return list((await s.execute(select(Job).where(Job.user_key == user_key,
+                                     Job.done == False)  # noqa: E712
+                                     .order_by(Job.due_at))).scalars().all())
+
+async def cancel_job(user_key: str, job_id: int) -> bool:
+    async with SessionLocal() as s:
+        job = await s.get(Job, job_id)
+        if job is None or job.user_key != user_key or job.done: return False
+        job.done = True; await s.commit(); return True
 
 async def get_summary(user_key: str) -> str | None:
     async with SessionLocal() as s:
