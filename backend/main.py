@@ -159,9 +159,9 @@ async def chat_ws(ws: WebSocket):
                 for task in tts_tasks: await _send_audio(ws, await task)
             await ws.send_json({"type": "done"})
     except WebSocketDisconnect: pass  # history persists; nothing to clean up
-    except Exception as exc:
-        logging.exception("ws error")
-        try: await ws.send_json({"type": "error", "message": str(exc)})
+    except Exception:
+        logging.exception("ws error")  # details stay server-side
+        try: await ws.send_json({"type": "error", "message": "Something went wrong on my end — check the backend logs."})
         finally: await ws.close()
     finally: live.unregister(channel, ws)
 
@@ -191,7 +191,9 @@ async def whatsapp_status():
         try:
             r = await client.get(f"{settings.waha_url.rstrip('/')}/api/sessions/default")
             return r.json()
-        except Exception as exc: return {"status": "unreachable", "error": str(exc)}
+        except Exception:
+            logging.exception("whatsapp status check failed")
+            return {"status": "unreachable"}
 
 if __name__ == "__main__":
     import uvicorn
