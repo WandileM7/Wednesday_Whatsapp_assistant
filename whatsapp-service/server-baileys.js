@@ -10,6 +10,7 @@
  */
 
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const fs = require('fs-extra');
 const path = require('path');
 const multer = require('multer');
@@ -41,7 +42,19 @@ const uploadDir = path.join(__dirname, 'uploads');
 fs.ensureDirSync(uploadDir);
 const upload = multer({ dest: uploadDir });
 
-// Express middleware
+// Only touch files that actually live inside the upload dir. Resolve symlinks
+// on both sides so a symlink planted in the dir can't redirect us outside it.
+const uploadRoot = fs.realpathSync(uploadDir);
+function safeUploadPath(p) {
+    const resolved = fs.realpathSync(path.resolve(p));
+    if (resolved !== uploadRoot && !resolved.startsWith(uploadRoot + path.sep)) {
+        throw new Error('upload path escapes upload directory');
+    }
+    return resolved;
+}
+
+// Express middleware — rate limit before body parsing so rejects are cheap
+app.use(rateLimit({ windowMs: 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -629,7 +642,7 @@ app.post('/api/sendVoice', upload.single('audio'), async (req, res) => {
     try {
         if (ENABLE_REAL_WHATSAPP && sock) {
             const jid = chatId.includes('@') ? chatId : `${chatId}@s.whatsapp.net`;
-            const audioBuffer = await fs.readFile(audioFile.path);
+            const audioBuffer = await fs.readFile(safeUploadPath(audioFile.path));
             
             await sock.sendMessage(jid, {
                 audio: audioBuffer,
@@ -647,9 +660,9 @@ app.post('/api/sendVoice', upload.single('audio'), async (req, res) => {
         console.error('❌ Send voice error:', error);
         res.status(500).json({ error: error.message });
     } finally {
-        if (audioFile?.path && fs.existsSync(audioFile.path)) {
-            fs.unlinkSync(audioFile.path);
-        }
+        try {
+            if (audioFile?.path) fs.unlinkSync(safeUploadPath(audioFile.path));
+        } catch { /* nothing to clean up */ }
     }
 });
 
@@ -728,7 +741,7 @@ app.post('/api/sendMedia', upload.single('media'), async (req, res) => {
     try {
         if (ENABLE_REAL_WHATSAPP && sock) {
             const jid = chatId.includes('@') ? chatId : `${chatId}@s.whatsapp.net`;
-            const mediaBuffer = await fs.readFile(mediaFile.path);
+            const mediaBuffer = await fs.readFile(safeUploadPath(mediaFile.path));
             
             let messageContent = {};
             
@@ -772,9 +785,9 @@ app.post('/api/sendMedia', upload.single('media'), async (req, res) => {
         console.error('❌ Send media error:', error);
         res.status(500).json({ error: error.message });
     } finally {
-        if (mediaFile?.path && fs.existsSync(mediaFile.path)) {
-            fs.unlinkSync(mediaFile.path);
-        }
+        try {
+            if (mediaFile?.path) fs.unlinkSync(safeUploadPath(mediaFile.path));
+        } catch { /* nothing to clean up */ }
     }
 });
 

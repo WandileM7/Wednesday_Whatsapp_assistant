@@ -15,11 +15,13 @@ function renderText(text){
     if(m.index>last)parts.push(text.slice(last,m.index))
     const trail=m[0].match(/[).,;:!?'"»]+$/)?.[0]??""
     const url=trail?m[0].slice(0,-trail.length):m[0]
-    let label; try{ const u=new URL(url)
+    let label,safe=false; try{ const u=new URL(url)
+      safe=u.protocol==="http:"||u.protocol==="https:"
       label=u.hostname.replace(/^www\./,"")+(u.pathname!=="/"||u.search?"/…":"") }
     catch{ label=url.slice(0,32)+"…" }
-    parts.push(<a key={parts.length} href={url} target="_blank" rel="noreferrer"
+    if(safe)parts.push(<a key={parts.length} href={url} target="_blank" rel="noreferrer"
       className="underline decoration-dotted underline-offset-2 hover:text-white">{label}</a>)
+    else parts.push(label)
     if(trail)parts.push(trail)
     last=m.index+m[0].length
   }
