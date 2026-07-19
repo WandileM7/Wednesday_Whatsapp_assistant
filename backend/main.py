@@ -1,10 +1,10 @@
 ﻿from __future__ import annotations
-import asyncio, base64, json, logging
+import asyncio, base64, json, logging, re
 import httpx
 from fastapi import FastAPI, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
-from . import agent, db, oauth, voice, whatsapp
+from . import agent, db, markers, oauth, voice, whatsapp
 from .config import settings
 
 logging.basicConfig(level=logging.INFO)
@@ -13,7 +13,36 @@ app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins,
                    allow_methods=["*"], allow_headers=["*"])
 
 @app.on_event("startup")
-async def _startup(): await db.init()
+async def _startup():
+    await db.init()
+    asyncio.create_task(voice.preload())
+    asyncio.create_task(agent.warmup())
+
+_SENTENCE_END = re.compile(r"(?<=[.!?…])\s")
+_MIN_TTS_CHARS = 20       # first segment: speak as soon as possible
+_MIN_TTS_CHARS_NEXT = 80  # later segments: batch sentences so prosody flows
+_MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+_BARE_URL = re.compile(r"https?://\S+")
+_MD_MARKS = re.compile(r"[*_#`~]+")
+_BULLET = re.compile(r"^\s*(?:[-•+]|\d+[.)])\s+", re.MULTILINE)
+
+def _tts_clean(text: str) -> str:
+    """Make text speakable: keep link labels, drop URLs and markdown syntax."""
+    text = _MD_LINK.sub(r"\1", text)
+    text = _BARE_URL.sub("", text)
+    text = _MD_MARKS.sub("", text)
+    text = _BULLET.sub("", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+def _speakable(text: str, spoken: int) -> int:
+    """Index just past the last complete sentence after `spoken`, or `spoken`."""
+    min_chars = _MIN_TTS_CHARS if spoken == 0 else _MIN_TTS_CHARS_NEXT
+    matches = list(_SENTENCE_END.finditer(text, spoken))
+    if not matches or matches[-1].end() - spoken < min_chars: return spoken
+    return matches[-1].end()
+
+async def _send_audio(ws: WebSocket, wav: bytes):
+    await ws.send_json({"type": "audio", "audio_b64": base64.b64encode(wav).decode()})
 
 @app.get("/health")
 async def health(): return {"status": "ok"}
@@ -51,13 +80,35 @@ async def chat_ws(ws: WebSocket):
             elif kind == "text": user_text = msg.get("text", "")
             else: continue
             if not user_text.strip(): await ws.send_json({"type": "done"}); continue
-            chunks = []
-            async for delta in agent.stream_reply(channel, user_text):
-                chunks.append(delta); await ws.send_json({"type": "delta", "text": delta})
-            full = "".join(chunks).strip()
-            if msg.get("voice") and full:
-                audio = await voice.synthesize(full)
-                await ws.send_json({"type": "audio", "audio_b64": base64.b64encode(audio).decode()})
+            want_voice = bool(msg.get("voice"))
+            chunks, tts_tasks, spoken, shown = [], [], 0, 0
+            async for event in agent.stream_reply(channel, user_text):
+                if event["type"] == "delta":
+                    chunks.append(event["text"])
+                    text = "".join(chunks)
+                    if want_voice:
+                        end = _speakable(text, spoken)
+                        if end > spoken:
+                            segment, spoken = _tts_clean(text[spoken:end]), end
+                            if segment:
+                                tts_tasks.append(asyncio.create_task(voice.synthesize(segment)))
+                    # display text: markers are spoken, never shown
+                    visible = markers.strip(text[:markers.safe_len(text)])
+                    if len(visible) > shown:
+                        await ws.send_json({"type": "delta", "text": visible[shown:]})
+                        shown = len(visible)
+                else:
+                    await ws.send_json(event)
+                while tts_tasks and tts_tasks[0].done():
+                    await _send_audio(ws, tts_tasks.pop(0).result())
+            full = "".join(chunks)
+            visible = markers.strip(full)
+            if len(visible) > shown:
+                await ws.send_json({"type": "delta", "text": visible[shown:]})
+            if want_voice:
+                tail = _tts_clean(full[spoken:])
+                if tail: tts_tasks.append(asyncio.create_task(voice.synthesize(tail)))
+                for task in tts_tasks: await _send_audio(ws, await task)
             await ws.send_json({"type": "done"})
     except WebSocketDisconnect: agent.reset(channel)
     except Exception as exc:

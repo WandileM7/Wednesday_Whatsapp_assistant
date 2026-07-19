@@ -20,14 +20,21 @@ export async function recordUntilStop(onStop) {
   mr.onstop=async()=>{ analyser.detach(); stream.getTracks().forEach(t=>t.stop()); await ctx.close(); onStop(new Blob(chunks,{type:"audio/webm"})) }
   mr.start(); return {stop:()=>mr.state!=="inactive"&&mr.stop(),analyser}
 }
+let currentAudio=null
 export function playAudio(b64,analyser,mime="audio/wav"){
   return new Promise((resolve,reject)=>{
     const audio=new Audio(`data:${mime};base64,`+b64)
     const ctx=new AC(); const source=ctx.createMediaElementSource(audio)
     source.connect(ctx.destination); if(analyser)analyser.attach(source)
-    audio.onended=async()=>{if(analyser)analyser.detach();await ctx.close();resolve()}
+    currentAudio=audio
+    audio.onended=async()=>{if(currentAudio===audio)currentAudio=null
+      if(analyser)analyser.detach();await ctx.close();resolve()}
     audio.onerror=reject; audio.play().catch(reject)
   })
+}
+export function stopAudio(){
+  const a=currentAudio; if(!a)return
+  currentAudio=null; a.pause(); a.onended?.()
 }
 export async function blobToBase64(blob){
   const buf=await blob.arrayBuffer(); const bytes=new Uint8Array(buf); let bin=""

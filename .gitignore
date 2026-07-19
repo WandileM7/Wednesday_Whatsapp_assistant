@@ -6,6 +6,11 @@
 # Python
 __pycache__/
 *.pyc
+.venv/
+
+# Local runtime state
+wednesday.db
+.claude/
 
 # Node
 node_modules/

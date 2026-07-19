@@ -5,9 +5,14 @@ class Settings(BaseSettings):
     public_url: str = "http://localhost:8000"
     session_secret: str = "change-me-in-production"
     ollama_host: str = "http://localhost:11434"
-    ollama_model: str = "llama3.1:8b"
+    ollama_model: str = "qwen2.5:3b"
     whisper_model: str = "base"          # faster-whisper size: tiny/base/small/medium
-    piper_voice: str = "en_US-lessac-medium"
+    piper_voice: str = "en_GB-alba-medium"
+    # Fish Audio hosted TTS — used when a key is set, otherwise Piper (local, free)
+    fish_api_key: str = ""
+    fish_voice_id: str = "bf6b1cbc1a394928adfb6927726d8b17"
+    fish_tts_model: str = "s2.1-pro-free"
+    fish_speed: float = 1.0
     voice_cache_dir: str = "~/.cache/wednesday/voices"
     database_url: str = "sqlite+aiosqlite:///./wednesday.db"
     waha_url: str = "http://whatsapp-service:3000"
@@ -27,11 +32,12 @@ class Settings(BaseSettings):
         "user-read-currently-playing user-read-private streaming"
     )
     cors_origins: list[str] = ["*"]
+    okf_dir: str = "okf"                 # OKF bundle: persona, style, routing
+    # Fallback only — the live prompt is assembled from the OKF bundle above
     system_prompt: str = (
-        "You are Wednesday, a personal assistant for Wandile. "
-        "Be concise, warm, direct. Reply in 1-3 sentences unless detail is "
-        "requested. Use tools when they help. Don't ask for confirmation on "
-        "read-only tools; do confirm before destructive actions."
+        "You are Wednesday, Wandile's personal AI — British, dry, darkly "
+        "funny, effortlessly competent. Answer first, attitude second. One "
+        "to three spoken-style sentences, no markdown, never read out URLs."
     )
 
 settings = Settings()

@@ -1,14 +1,16 @@
-"""Fully local, free voice pipeline.
+"""Voice pipeline.
 
 STT: faster-whisper (models auto-download from Hugging Face on first use).
-TTS: Piper (voice model auto-downloads from Hugging Face on first use).
-No API keys, no billing.
+TTS: Fish Audio hosted voice when FISH_API_KEY is set, otherwise Piper
+(local, free, auto-downloads from Hugging Face on first use). Piper also
+serves as the fallback if a Fish request fails.
 """
 from __future__ import annotations
 import asyncio, io, logging, tempfile, wave
 from pathlib import Path
 
 import httpx
+from . import markers
 from .config import settings
 
 log = logging.getLogger(__name__)
@@ -73,6 +75,21 @@ async def _ensure_whisper():
         return _whisper
 
 
+async def preload():
+    """Load STT + TTS models ahead of the first request."""
+    if settings.fish_api_key:
+        try:  # open the TLS connection early so the first segment reuses it
+            await _fish().get("/v1/tts")
+        except Exception as exc:
+            log.warning("Fish Audio warm-up connect failed: %s", exc)
+    try:
+        await _ensure_whisper()
+        await _ensure_piper()
+        log.info("voice models preloaded")
+    except Exception:
+        log.exception("voice preload failed; will retry lazily on first use")
+
+
 async def transcribe(audio: bytes, filename: str = "audio.webm") -> str:
     model = await _ensure_whisper()
 
@@ -90,8 +107,52 @@ async def transcribe(audio: bytes, filename: str = "audio.webm") -> str:
     return await asyncio.to_thread(_run)
 
 
+_fish_client: httpx.AsyncClient | None = None
+
+
+def _fish() -> httpx.AsyncClient:
+    """Shared keep-alive client: the network path to Fish is flaky, so reuse
+    connections instead of a TLS handshake per segment, and retry connects."""
+    global _fish_client
+    if _fish_client is None:
+        _fish_client = httpx.AsyncClient(
+            base_url="https://api.fish.audio",
+            headers={
+                "Authorization": f"Bearer {settings.fish_api_key}",
+                "model": settings.fish_tts_model,
+            },
+            timeout=httpx.Timeout(60, connect=10),
+            limits=httpx.Limits(max_keepalive_connections=5, keepalive_expiry=120),
+            transport=httpx.AsyncHTTPTransport(retries=2),
+        )
+    return _fish_client
+
+
+async def _synthesize_fish(text: str) -> bytes:
+    """Returns WAV bytes from the Fish Audio TTS API."""
+    r = await _fish().post(
+        "/v1/tts",
+        json={
+            "text": text,
+            "reference_id": settings.fish_voice_id,
+            "format": "wav",
+            "normalize": True,           # smoother numbers, dates, abbreviations
+            "latency": "normal",         # quality over first-byte latency
+            "prosody": {"speed": settings.fish_speed},
+        },
+    )
+    r.raise_for_status()
+    return r.content
+
+
 async def synthesize(text: str) -> bytes:
     """Returns WAV bytes."""
+    if settings.fish_api_key:
+        try:
+            return await _synthesize_fish(text)
+        except Exception:
+            log.exception("Fish Audio TTS failed; falling back to Piper")
+    text = markers.strip(text).strip()  # Piper would read "[sighing]" out loud
     voice = await _ensure_piper()
 
     def _run() -> bytes:

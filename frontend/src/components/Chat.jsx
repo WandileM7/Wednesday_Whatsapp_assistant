@@ -2,23 +2,52 @@
 import { Mic, Send, Square, Volume2, VolumeX, RotateCcw } from "lucide-react"
 import Orb from "./Orb"
 import { connect } from "../lib/ws"
-import { recordUntilStop, blobToBase64, playAudio, makeAnalyser } from "../lib/audio"
+import { recordUntilStop, blobToBase64, playAudio, stopAudio, makeAnalyser } from "../lib/audio"
+
+// Long URLs wreck the bubble layout, so render them as short clickable
+// labels (domain + /… when there's a path) pointing at the full link.
+const URL_RE=/https?:\/\/\S+/g
+function renderText(text){
+  if(typeof text!=="string"||!text)return text
+  const parts=[]; let last=0, m
+  const re=new RegExp(URL_RE)
+  while((m=re.exec(text))){
+    if(m.index>last)parts.push(text.slice(last,m.index))
+    const trail=m[0].match(/[).,;:!?'"»]+$/)?.[0]??""
+    const url=trail?m[0].slice(0,-trail.length):m[0]
+    let label; try{ const u=new URL(url)
+      label=u.hostname.replace(/^www\./,"")+(u.pathname!=="/"||u.search?"/…":"") }
+    catch{ label=url.slice(0,32)+"…" }
+    parts.push(<a key={parts.length} href={url} target="_blank" rel="noreferrer"
+      className="underline decoration-dotted underline-offset-2 hover:text-white">{label}</a>)
+    if(trail)parts.push(trail)
+    last=m.index+m[0].length
+  }
+  if(last<text.length)parts.push(text.slice(last))
+  return parts
+}
 
 export default function Chat() {
   const [messages,setMessages]=useState([]),[input,setInput]=useState(""),[voice,setVoice]=useState(true)
   const [recording,setRecording]=useState(false),[speaking,setSpeaking]=useState(false),[connected,setConnected]=useState(false)
+  const [toolStatus,setToolStatus]=useState(null),[talking,setTalking]=useState(false)
+  const audioQueueRef=useRef(Promise.resolve()),audioEpochRef=useRef(0)
   const [analyser]=useState(()=>makeAnalyser())
   const wsRef=useRef(null),recRef=useRef(null),pendingRef=useRef(""),scrollRef=useRef(null)
 
   useEffect(()=>{
     const ws=connect({
       transcript:m=>setMessages(xs=>[...xs,{role:"user",text:m.text}]),
-      delta:m=>{ pendingRef.current+=m.text; setMessages(xs=>{ const last=xs[xs.length-1]
+      delta:m=>{ setToolStatus(null); setTalking(true); pendingRef.current+=m.text; setMessages(xs=>{ const last=xs[xs.length-1]
         if(last?.role==="assistant"&&last.streaming)return[...xs.slice(0,-1),{...last,text:pendingRef.current}]
         return[...xs,{role:"assistant",text:pendingRef.current,streaming:true}] }) },
-      audio:async m=>{ setSpeaking(true); try{await playAudio(m.audio_b64,analyser)}finally{setSpeaking(false)} },
-      done:()=>{ pendingRef.current=""; setMessages(xs=>xs.map(m=>({...m,streaming:false}))) },
-      error:m=>setMessages(xs=>[...xs,{role:"system",text:m.message}]),
+      tool:m=>setToolStatus(m.name),
+      audio:m=>{ const epoch=audioEpochRef.current
+        audioQueueRef.current=audioQueueRef.current.then(async()=>{
+          if(epoch!==audioEpochRef.current)return
+          setSpeaking(true); try{await playAudio(m.audio_b64,analyser)}catch{}finally{setSpeaking(false)} }) },
+      done:()=>{ setToolStatus(null); setTalking(false); pendingRef.current=""; setMessages(xs=>xs.map(m=>({...m,streaming:false}))) },
+      error:m=>{ setTalking(false); setToolStatus(null); setMessages(xs=>[...xs,{role:"system",text:m.message??"connection lost — is the backend running?"}]) },
       close:()=>setConnected(false),
     })
     ws.raw.onopen=()=>setConnected(true); wsRef.current=ws; return()=>ws.close()
@@ -37,6 +66,13 @@ export default function Chat() {
 
   const reset=()=>{ wsRef.current?.reset(); setMessages([]); pendingRef.current="" }
 
+  const onGesture=action=>{
+    if(action==="mic")toggleRecord()
+    else if(action==="voice_on")setVoice(true)
+    else if(action==="voice_off")setVoice(false)
+    else if(action==="hush"){ audioEpochRef.current++; stopAudio(); setSpeaking(false) }
+  }
+
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between border-b border-white/5 px-4 py-3">
@@ -54,17 +90,22 @@ export default function Chat() {
         </div>
       </header>
       <div className="min-h-0 flex-1">
-        <Orb analyser={analyser} active={speaking||recording}/>
+        <Orb analyser={analyser} active={speaking||recording} talking={talking&&!speaking} onGesture={onGesture}/>
       </div>
       <div ref={scrollRef} className="mx-auto max-h-[36vh] w-full max-w-2xl overflow-y-auto px-4 pb-2">
         {messages.map((m,i)=>(
           <div key={i} className={`my-2 flex ${m.role==="user"?"justify-end":"justify-start"}`}>
-            <div className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm leading-relaxed ${
+            <div className={`max-w-[80%] break-words [overflow-wrap:anywhere] rounded-2xl px-4 py-2 text-sm leading-relaxed ${
               m.role==="user"?"bg-white/[0.06] text-white":m.role==="system"?"bg-red-500/10 text-red-300":"bg-purple-500/10 text-purple-100"}`}>
-              {m.text}
+              {renderText(m.text)}
             </div>
           </div>
         ))}
+        {toolStatus&&(
+          <div className="my-2 flex justify-start">
+            <div className="max-w-[80%] rounded-2xl px-4 py-2 text-sm italic text-white/40">using {toolStatus}…</div>
+          </div>
+        )}
       </div>
       <div className="mx-auto flex w-full max-w-2xl items-center gap-2 border-t border-white/5 bg-black/20 p-3">
         <button onClick={toggleRecord}
