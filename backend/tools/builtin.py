@@ -3,6 +3,58 @@ import datetime as _dt, html, re
 import httpx
 from . import CURRENT_USER, register
 
+@register("fetch_page","Fetch a web page and return its readable text content. Use after web_search to read a promising result.",
+    {"type":"object","properties":{"url":{"type":"string"}},"required":["url"]})
+async def fetch_page(url: str):
+    if not url.startswith(("http://", "https://")): return "Only http(s) URLs."
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True,
+        headers={"User-Agent":"Mozilla/5.0 Wednesday/1.0"}) as client:
+        r = await client.get(url)
+        r.raise_for_status()
+    try:
+        import trafilatura
+        text = trafilatura.extract(r.text) or ""
+    except ImportError:
+        text = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", r.text, flags=re.S|re.I)
+        text = html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", text)))
+    text = text.strip()
+    if not text: return "Page fetched but no readable text found."
+    return text[:4000] + ("\n[truncated]" if len(text) > 4000 else "")
+
+@register("run_code","Run a short Python snippet in a disposable sandbox (no network, 30s limit) and return its output. For calculations and data wrangling.",
+    {"type":"object","properties":{"code":{"type":"string"}},"required":["code"]})
+async def run_code(code: str):
+    import asyncio
+    from ..config import settings
+    if not settings.enable_code_execution:
+        return "Code execution is disabled. Set ENABLE_CODE_EXECUTION=true to allow it."
+    proc = await asyncio.create_subprocess_exec(
+        "docker","run","--rm","--network","none","--memory","512m","--cpus","1",
+        "--pids-limit","128","-i","python:3.12-slim","python","-c",code,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+    except asyncio.TimeoutError:
+        proc.kill(); return "Timed out after 30s."
+    text = out.decode(errors="replace").strip() or "(no output)"
+    return text[:3000] + ("\n[truncated]" if len(text) > 3000 else "")
+
+@register("use_skill",
+    "Load the full instructions for one of your skills (listed in your system prompt) before doing a task it covers.",
+    {"type":"object","properties":{"name":{"type":"string"}},"required":["name"]})
+async def use_skill(name: str):
+    from .. import skills
+    return skills.body(name) or f"No skill named {name!r}. Available: " + \
+        (", ".join(s["name"] for s in skills.catalog()) or "none")
+
+@register("propose_skill",
+    "After completing a multi-step task worth repeating, draft it as a reusable skill. The user must review and approve it before it becomes active.",
+    {"type":"object","properties":{"name":{"type":"string"},"description":{"type":"string"},"content":{"type":"string","description":"Markdown how-to: steps, tools to call, pitfalls"}},"required":["name","description","content"]})
+async def propose_skill(name: str, description: str, content: str):
+    from .. import skills
+    path = skills.propose(name, description, content)
+    return f"Drafted. It activates once the user reviews {path.name} and moves it from proposals/ into okf/skills/."
+
 @register("search_conversations",
     "Search your past conversations with this user. Use when asked about something discussed before, or to recall details you no longer have in context.",
     {"type":"object","properties":{"query":{"type":"string"},"limit":{"type":"integer","default":5,"minimum":1,"maximum":10}},"required":["query"]})

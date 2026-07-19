@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     heartbeat_quiet: str = "22-07"
     # Hard cap on proactive pings per calendar day
     heartbeat_daily_cap: int = 8
+    # Sandboxed run_code tool (docker, no network); off until explicitly enabled
+    enable_code_execution: bool = False
+    # Model for background utility calls (summaries, fact extraction);
+    # empty = use ollama_model
+    ollama_model_utility: str = ""
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:3b"
     whisper_model: str = "base"          # faster-whisper size: tiny/base/small/medium

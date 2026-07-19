@@ -61,6 +61,34 @@ async def _send_audio(ws: WebSocket, wav: bytes):
 @app.get("/health")
 async def health(): return {"status": "ok"}
 
+@app.get("/doctor")
+async def doctor():
+    """One-stop diagnosis of every moving part."""
+    checks: dict[str, str] = {}
+    async with httpx.AsyncClient(timeout=5) as client:
+        try:
+            r = await client.get(f"{settings.ollama_host}/api/tags")
+            models = [m["name"] for m in r.json().get("models", [])]
+            checks["ollama"] = "ok" if any(settings.ollama_model in m for m in models) \
+                else f"up, but model {settings.ollama_model} not pulled"
+        except Exception as exc: checks["ollama"] = f"unreachable: {exc}"
+        if settings.whatsapp_enabled:
+            try:
+                await client.get(f"{settings.waha_url.rstrip('/')}/api/sessions/default")
+                checks["whatsapp_service"] = "ok"
+            except Exception as exc: checks["whatsapp_service"] = f"unreachable: {exc}"
+    try:
+        await db.get_token("google"); checks["database"] = "ok"
+    except Exception as exc: checks["database"] = f"error: {exc}"
+    checks["tts"] = "fish audio (piper fallback)" if settings.fish_api_key else "piper (local)"
+    checks["auth"] = "token required" if settings.api_token else "OPEN — set API_TOKEN"
+    checks["heartbeat"] = f"every {settings.heartbeat_minutes}m" if settings.heartbeat_minutes else "off"
+    checks["code_execution"] = "enabled (docker sandbox)" if settings.enable_code_execution else "off"
+    checks["google_linked"] = "yes" if await db.get_token("google") else "no — visit /auth/google"
+    checks["spotify_linked"] = "yes" if await db.get_token("spotify") else "no — visit /auth/spotify"
+    ok = all(not v.startswith(("unreachable", "error")) for v in checks.values())
+    return {"status": "ok" if ok else "degraded", "checks": checks}
+
 @app.get("/auth/google")
 async def auth_google(): return RedirectResponse(oauth.google_authz_url())
 

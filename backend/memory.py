@@ -73,7 +73,8 @@ async def extract(user: str, msgs: list[dict]) -> None:
             "dates. Ignore small talk and anything transient. Reply with JSON "
             '{"facts": ["...", ...]} — short standalone sentences, or an empty '
             "list if nothing qualifies.\n\n" + "\n".join(lines))
-        payload = {"model": settings.ollama_model, "stream": False, "format": "json",
+        payload = {"model": settings.ollama_model_utility or settings.ollama_model,
+                   "stream": False, "format": "json",
                    "keep_alive": "2h",
                    "messages": [{"role": "user", "content": prompt}],
                    "options": {"temperature": 0.1, "num_predict": 300}}

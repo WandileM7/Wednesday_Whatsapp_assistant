@@ -1,5 +1,7 @@
 ﻿from __future__ import annotations
+import base64 as _b64
 import datetime as _dt
+import hashlib as _hl
 import json
 from typing import AsyncIterator
 from sqlalchemy import DateTime, String, Text, delete, or_, select
@@ -8,6 +10,22 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from .config import settings
 
 class Base(DeclarativeBase): pass
+
+# OAuth tokens are encrypted at rest with a key derived from SESSION_SECRET.
+# Changing the secret orphans stored tokens (relink via /auth/*).
+def _fernet():
+    from cryptography.fernet import Fernet
+    key = _b64.urlsafe_b64encode(_hl.sha256(settings.session_secret.encode()).digest())
+    return Fernet(key)
+
+def _enc(value: str | None) -> str | None:
+    return _fernet().encrypt(value.encode()).decode() if value else value
+
+def _dec(value: str | None) -> str | None:
+    if not value: return value
+    from cryptography.fernet import InvalidToken
+    try: return _fernet().decrypt(value.encode()).decode()
+    except (InvalidToken, ValueError): return value  # legacy plaintext row
 
 class OAuthToken(Base):
     __tablename__ = "oauth_tokens"
@@ -60,6 +78,7 @@ async def init() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 async def save_token(service, access_token, refresh_token, expires_at, scope=None):
+    access_token, refresh_token = _enc(access_token), _enc(refresh_token)
     async with SessionLocal() as s:
         existing = await s.get(OAuthToken, service)
         if existing:
@@ -74,7 +93,11 @@ async def save_token(service, access_token, refresh_token, expires_at, scope=Non
 
 async def get_token(service: str) -> OAuthToken | None:
     async with SessionLocal() as s:
-        return await s.get(OAuthToken, service)
+        token = await s.get(OAuthToken, service)
+    if token is not None:  # decrypt on the detached instance only
+        token.access_token = _dec(token.access_token)
+        token.refresh_token = _dec(token.refresh_token)
+    return token
 
 async def add_messages(user_key: str, msgs: list[dict]) -> None:
     async with SessionLocal() as s:

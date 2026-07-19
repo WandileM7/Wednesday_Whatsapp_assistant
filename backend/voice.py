@@ -145,6 +145,31 @@ async def _synthesize_fish(text: str) -> bytes:
     return r.content
 
 
+def _wav_to_opus_ogg(wav: bytes) -> bytes:
+    """WhatsApp voice notes are ogg/opus; encode via PyAV (bundled ffmpeg)."""
+    import av
+    from av.audio.resampler import AudioResampler
+    inp = av.open(io.BytesIO(wav))
+    buf = io.BytesIO()
+    out = av.open(buf, "w", format="ogg")
+    stream = out.add_stream("libopus", rate=48000)
+    resampler = AudioResampler(format="s16", layout="mono", rate=48000)
+    for frame in inp.decode(audio=0):
+        for rf in resampler.resample(frame):
+            for pkt in stream.encode(rf):
+                out.mux(pkt)
+    for pkt in stream.encode(None):
+        out.mux(pkt)
+    out.close(); inp.close()
+    return buf.getvalue()
+
+
+async def synthesize_voice_note(text: str) -> bytes:
+    """Ogg/opus audio suitable for a WhatsApp voice note."""
+    wav = await synthesize(text)
+    return await asyncio.to_thread(_wav_to_opus_ogg, wav)
+
+
 async def synthesize(text: str) -> bytes:
     """Returns WAV bytes."""
     if settings.fish_api_key:

@@ -58,13 +58,29 @@ async def tick(now: _dt.datetime | None = None) -> list[int]:
     now = now or _dt.datetime.now()
     delivered = []
     for job in await db.due_jobs(now):
-        ok = await deliver(job.user_key, f"⏰ Reminder: {job.text}")
+        if job.kind == "curator":
+            from . import skills
+            report = skills.curator_report()
+            ok = await deliver(job.user_key, report) if report else True
+        else:
+            ok = await deliver(job.user_key, f"⏰ Reminder: {job.text}")
         next_due = (job.due_at + _dt.timedelta(minutes=job.recur_minutes)
                     if job.recur_minutes else None)
         # An undeliverable one-shot stays pending and retries next tick
         if ok or next_due: await db.complete_job(job.id, next_due)
         if ok: delivered.append(job.id)
     return delivered
+
+
+async def ensure_curator() -> None:
+    """One weekly curator job for the owner; created on first boot."""
+    if any(j.kind == "curator" for j in await db.pending_jobs(settings.default_user)):
+        return
+    now = _dt.datetime.now()
+    days_ahead = (6 - now.weekday()) % 7 or 7  # next Sunday
+    due = (now + _dt.timedelta(days=days_ahead)).replace(hour=10, minute=0, second=0, microsecond=0)
+    await db.add_job(settings.default_user, "weekly skill report", due,
+                     recur_minutes=7 * 24 * 60, kind="curator")
 
 
 async def _heartbeat() -> None:
@@ -82,6 +98,7 @@ async def _heartbeat() -> None:
 
 async def run() -> None:
     """Forever-loop started at app startup."""
+    await ensure_curator()
     last_beat = _dt.datetime.now()
     log.info("scheduler running (heartbeat: %s)",
              f"every {settings.heartbeat_minutes}m" if settings.heartbeat_minutes else "off")

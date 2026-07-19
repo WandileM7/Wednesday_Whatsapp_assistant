@@ -397,6 +397,38 @@ app.post('/api/sessions/:sessionName/start', (req, res) => {
 });
 
 // Send text message (WAHA compatibility)
+app.post('/api/sendAudio', async (req, res) => {
+    if (!isClientReady) {
+        return res.status(503).json({
+            error: 'WhatsApp client not ready',
+            mode: ENABLE_REAL_WHATSAPP ? 'production' : 'mock'
+        });
+    }
+
+    const { chatId, audio_b64 } = req.body;
+
+    if (!chatId || !audio_b64) {
+        return res.status(400).json({ error: 'chatId and audio_b64 are required' });
+    }
+
+    try {
+        const jid = chatId.includes('@') ? chatId : `${chatId}@s.whatsapp.net`;
+        if (ENABLE_REAL_WHATSAPP && sock) {
+            await sock.sendMessage(jid, {
+                audio: Buffer.from(audio_b64, 'base64'),
+                ptt: true,  // renders as a voice note, not an audio file
+                mimetype: 'audio/ogg; codecs=opus'
+            });
+        } else {
+            console.log(`📤 Mock voice note to ${chatId} (${audio_b64.length} b64 chars)`);
+        }
+        res.json({ success: true, mode: ENABLE_REAL_WHATSAPP ? 'production' : 'mock', chatId });
+    } catch (error) {
+        console.error('❌ Send audio error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.post('/api/sendText', async (req, res) => {
     if (!isClientReady) {
         return res.status(503).json({ 

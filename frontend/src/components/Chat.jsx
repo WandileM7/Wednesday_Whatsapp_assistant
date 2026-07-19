@@ -56,11 +56,15 @@ export default function Chat() {
 
   useEffect(()=>{ scrollRef.current?.scrollTo({top:scrollRef.current.scrollHeight,behavior:"smooth"}) },[messages])
 
+  const bargeIn=()=>{ audioEpochRef.current++; stopAudio(); setSpeaking(false) }
+
   const sendText=()=>{ const t=input.trim(); if(!t||!wsRef.current)return
+    bargeIn()
     setMessages(xs=>[...xs,{role:"user",text:t}]); wsRef.current.sendText(t,voice); setInput("") }
 
   const toggleRecord=async()=>{
     if(recording){recRef.current?.stop();setRecording(false);return}
+    bargeIn()
     const rec=await recordUntilStop(async blob=>{ const b64=await blobToBase64(blob); wsRef.current?.sendAudio(b64,voice) })
     recRef.current=rec; setRecording(true)
   }
@@ -71,7 +75,7 @@ export default function Chat() {
     if(action==="mic")toggleRecord()
     else if(action==="voice_on")setVoice(true)
     else if(action==="voice_off")setVoice(false)
-    else if(action==="hush"){ audioEpochRef.current++; stopAudio(); setSpeaking(false) }
+    else if(action==="hush")bargeIn()
   }
 
   return (

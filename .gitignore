@@ -16,6 +16,10 @@ test_wednesday.db
 # Personal user-model doc (auto-included in the system prompt when present)
 okf/user.md
 
+# Skill drafts awaiting review + local usage stats
+okf/skills/proposals/
+okf/skills/.usage.json
+
 # Node
 node_modules/
 
