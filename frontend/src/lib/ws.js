@@ -7,7 +7,8 @@
 export function connect(handlers) {
   const ws = new WebSocket(WS_URL)
   ws.onmessage = e => { let msg; try { msg = JSON.parse(e.data) } catch { return }
-    if (Object.prototype.hasOwnProperty.call(handlers, msg.type)) handlers[msg.type](msg) }
+    const handler = Object.prototype.hasOwnProperty.call(handlers, msg.type) ? handlers[msg.type] : null
+    if (typeof handler === "function") handler(msg) }
   ws.onclose = () => handlers.close?.()
   ws.onerror = err => handlers.error?.(err)
   return {

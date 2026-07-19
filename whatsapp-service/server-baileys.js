@@ -42,19 +42,21 @@ const uploadDir = path.join(__dirname, 'uploads');
 fs.ensureDirSync(uploadDir);
 const upload = multer({ dest: uploadDir });
 
-// Only touch files that actually live inside the upload dir
+// Only touch files that actually live inside the upload dir. Resolve symlinks
+// on both sides so a symlink planted in the dir can't redirect us outside it.
+const uploadRoot = fs.realpathSync(uploadDir);
 function safeUploadPath(p) {
-    const resolved = path.resolve(p);
-    if (!resolved.startsWith(path.resolve(uploadDir) + path.sep)) {
+    const resolved = fs.realpathSync(path.resolve(p));
+    if (resolved !== uploadRoot && !resolved.startsWith(uploadRoot + path.sep)) {
         throw new Error('upload path escapes upload directory');
     }
     return resolved;
 }
 
-// Express middleware
+// Express middleware — rate limit before body parsing so rejects are cheap
+app.use(rateLimit({ windowMs: 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(rateLimit({ windowMs: 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false }));
 
 // Global state
 let sock = null;
