@@ -1,8 +1,8 @@
 ﻿const WS_URL = (() => {
   const env = import.meta.env.VITE_BACKEND_WS
-  if (env) return env
-  const proto = location.protocol === "https:" ? "wss" : "ws"
-  return `${proto}://${location.host}/ws`
+  const base = env || `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`
+  const token = import.meta.env.VITE_API_TOKEN
+  return token ? `${base}${base.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}` : base
 })()
 export function connect(handlers) {
   const ws = new WebSocket(WS_URL)

@@ -9,6 +9,14 @@ _seen: dict[str, float] = {}
 _rate: dict[str, list[float]] = {}
 _DEDUPE_TTL = 300; _RATE_WINDOW = 60; _RATE_LIMIT = 30
 
+def _jid_allowed(sender):
+    allowed = {j.strip() for j in settings.whatsapp_allowed_jids.split(",") if j.strip()}
+    return not allowed or sender in allowed
+
+def _user_key(sender):
+    """The owner's WhatsApp shares the web identity; other senders get their own."""
+    return settings.default_user if sender == settings.whatsapp_owner_jid else f"wa:{sender}"
+
 def _allowed(sender):
     now = time.time()
     bucket = [t for t in _rate.get(sender, []) if now - t < _RATE_WINDOW]
@@ -27,8 +35,11 @@ async def handle_webhook(payload: dict) -> dict:
     message_id = payload.get("id") or payload.get("messageId") or ""
     sender = payload.get("from") or payload.get("chatId") or "unknown"
     text = (payload.get("body") or payload.get("text") or "").strip()
+    if not _jid_allowed(sender):
+        log.warning("blocked message from non-allowlisted sender %s", sender)
+        return {"status": "forbidden"}
     if not text or _is_duplicate(message_id) or not _allowed(sender): return {"status": "skipped"}
-    reply_text = markers.strip(await agent.reply(channel=f"wa:{sender}", user_text=text)).strip()
+    reply_text = markers.strip(await agent.reply(channel=_user_key(sender), user_text=text)).strip()
     await _send(sender, reply_text)
     return {"status": "ok", "reply": reply_text}
 

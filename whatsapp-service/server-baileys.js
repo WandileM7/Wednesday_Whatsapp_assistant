@@ -328,7 +328,10 @@ async function forwardToWebhook(message) {
 
         const response = await fetch(WEBHOOK_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                ...(process.env.API_TOKEN ? { 'Authorization': `Bearer ${process.env.API_TOKEN}` } : {})
+            },
             body: JSON.stringify(webhookPayload)
         });
 

@@ -4,6 +4,16 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     public_url: str = "http://localhost:8000"
     session_secret: str = "change-me-in-production"
+    # Stable identity: web + owner's WhatsApp share this user's history/brain
+    default_user: str = "wandile"
+    # Bearer token for HTTP + WS; empty disables auth (trusted local dev only)
+    api_token: str = ""
+    # This WhatsApp sender is the owner and shares default_user's identity
+    whatsapp_owner_jid: str = ""
+    # Comma-separated JIDs allowed to talk to Wednesday; empty = anyone
+    whatsapp_allowed_jids: str = ""
+    # Prompt slice of the context window left for history (≈4 chars/token)
+    history_budget_tokens: int = 2500
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:3b"
     whisper_model: str = "base"          # faster-whisper size: tiny/base/small/medium

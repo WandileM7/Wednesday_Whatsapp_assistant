@@ -2,16 +2,80 @@ from __future__ import annotations
 import asyncio, json, logging
 from typing import AsyncIterator
 import httpx
-from . import okf
+from . import db, okf
 from .config import settings
 from .tools import REGISTRY
 
 log = logging.getLogger(__name__)
-_HISTORIES: dict[str, list[dict]] = {}
+_HISTORIES: dict[str, list[dict]] = {}   # write-through cache over db.messages
+_SUMMARIES: dict[str, str] = {}
+_summarizing: set[str] = set()
 _MAX_TOOL_HOPS = 6
+_CACHE_LIMIT = 100        # in-RAM tail; older context lives in the summary
+_SUMMARIZE_BATCH = 8      # summarize once this many messages fall off the slice
 
-def reset(channel): _HISTORIES.pop(channel, None)
-def _history(channel): return _HISTORIES.setdefault(channel, [])
+async def reset(user: str) -> None:
+    """Forget this user's conversation, in RAM and on disk."""
+    _HISTORIES.pop(user, None); _SUMMARIES.pop(user, None)
+    await db.clear_messages(user)
+
+async def _history(user: str) -> list[dict]:
+    if user not in _HISTORIES:
+        _HISTORIES[user] = await db.recent_messages(user, limit=_CACHE_LIMIT)
+        _SUMMARIES[user] = await db.get_summary(user) or ""
+    return _HISTORIES[user]
+
+def _est_tokens(m: dict) -> int:
+    size = len(m.get("content") or "") + len(json.dumps(m.get("tool_calls") or []))
+    return size // 4 + 8
+
+def _slice(history: list[dict], budget: int | None = None) -> list[dict]:
+    """Newest messages that fit the token budget, never starting on a tool
+    result whose call was cut off."""
+    budget = budget or settings.history_budget_tokens
+    total, start = 0, len(history)
+    while start > 0 and total + _est_tokens(history[start - 1]) <= budget:
+        total += _est_tokens(history[start - 1]); start -= 1
+    while start < len(history) and history[start]["role"] == "tool":
+        start += 1
+    return history[start:]
+
+def _context(user: str, convo: list[dict]) -> list[dict]:
+    msgs = [{"role": "system", "content": okf.system_prompt()}]
+    if _SUMMARIES.get(user):
+        msgs.append({"role": "system",
+                     "content": f"Summary of earlier conversation:\n{_SUMMARIES[user]}"})
+    return msgs + convo
+
+async def _summarize(user: str) -> None:
+    """Fold messages that fell off the prompt slice into the rolling summary."""
+    if user in _summarizing: return
+    _summarizing.add(user)
+    try:
+        history = _HISTORIES.get(user, [])
+        dropped = history[:len(history) - len(_slice(history))]
+        if len(dropped) < _SUMMARIZE_BATCH: return
+        lines = [f"{m['role']}: {(m.get('content') or '')[:500]}"
+                 for m in dropped if m["role"] in ("user", "assistant") and m.get("content")]
+        prompt = ("Update this running summary of a conversation. Keep facts, "
+                  "decisions, names and open threads; max 150 words.\n\n"
+                  f"Current summary:\n{_SUMMARIES.get(user) or '(none)'}\n\n"
+                  "New messages:\n" + "\n".join(lines))
+        payload = {"model": settings.ollama_model, "stream": False, "keep_alive": "2h",
+                   "messages": [{"role": "user", "content": prompt}],
+                   "options": {"temperature": 0.2, "num_predict": 250}}
+        async with httpx.AsyncClient(timeout=httpx.Timeout(300, connect=30)) as client:
+            r = await client.post(f"{settings.ollama_host}/api/chat", json=payload)
+            r.raise_for_status()
+        summary = r.json().get("message", {}).get("content", "").strip()
+        if summary:
+            _SUMMARIES[user] = summary
+            await db.save_summary(user, summary)
+            _HISTORIES[user] = history[len(dropped):]
+    except Exception:
+        log.exception("summarize failed for %s", user)
+    finally:
+        _summarizing.discard(user)
 
 def _tool_specs():
     return [{"type": "function", "function": {"name": n, "description": s["description"],
@@ -59,21 +123,29 @@ async def _exec_tool(call):
 async def stream_reply(channel, user_text) -> AsyncIterator[dict]:
     """Yields {"type": "delta", "text"} for answer tokens as the model generates
     them and {"type": "tool", "name"} whenever a tool round starts."""
-    history = _history(channel); history.append({"role": "user", "content": user_text})
-    for _ in range(_MAX_TOOL_HOPS):
-        message = None
-        async for event in _stream_round(history):
-            if event["type"] == "round_end": message = event["message"]; continue
-            yield event
-        tool_calls = message.pop("tool_calls")
-        if not tool_calls:
-            history.append(message); return
-        history.append({**message, "tool_calls": tool_calls})
-        for call in tool_calls:
-            yield {"type": "tool", "name": call["function"]["name"]}
-        results = await asyncio.gather(*(_exec_tool(c) for c in tool_calls))
-        history.extend(results)
-    yield {"type": "delta", "text": "Sorry — I got stuck in a tool loop. Try rephrasing."}
+    history = await _history(channel)
+    new = [{"role": "user", "content": user_text}]
+    history.extend(new)
+    convo = _slice(history)
+    try:
+        for _ in range(_MAX_TOOL_HOPS):
+            message = None
+            async for event in _stream_round(_context(channel, convo)):
+                if event["type"] == "round_end": message = event["message"]; continue
+                yield event
+            tool_calls = message.pop("tool_calls")
+            if not tool_calls:
+                history.append(message); convo.append(message); new.append(message); return
+            with_calls = {**message, "tool_calls": tool_calls}
+            history.append(with_calls); convo.append(with_calls); new.append(with_calls)
+            for call in tool_calls:
+                yield {"type": "tool", "name": call["function"]["name"]}
+            results = await asyncio.gather(*(_exec_tool(c) for c in tool_calls))
+            history.extend(results); convo.extend(results); new.extend(results)
+        yield {"type": "delta", "text": "Sorry — I got stuck in a tool loop. Try rephrasing."}
+    finally:
+        await db.add_messages(channel, new)
+        asyncio.create_task(_summarize(channel))
 
 async def warmup():
     """Load the model and prefill the system prompt + tool schemas so

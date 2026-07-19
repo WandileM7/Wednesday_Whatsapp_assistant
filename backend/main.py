@@ -12,6 +12,19 @@ app = FastAPI(title="Wednesday")
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins,
                    allow_methods=["*"], allow_headers=["*"])
 
+# /health for probes; /auth/* are browser redirects that can't carry headers —
+# the OAuth callbacks are protected by one-time state tokens instead.
+_OPEN_PATHS = ("/health", "/auth/")
+
+@app.middleware("http")
+async def _require_token(request: Request, call_next):
+    if settings.api_token and not request.url.path.startswith(_OPEN_PATHS):
+        auth = request.headers.get("authorization", "")
+        token = auth.removeprefix("Bearer ").strip() or request.query_params.get("token", "")
+        if token != settings.api_token:
+            return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    return await call_next(request)
+
 @app.on_event("startup")
 async def _startup():
     await db.init()
@@ -70,11 +83,13 @@ async def auth_status():
 
 @app.websocket("/ws")
 async def chat_ws(ws: WebSocket):
-    await ws.accept(); channel = f"ws:{id(ws)}"
+    if settings.api_token and ws.query_params.get("token", "") != settings.api_token:
+        await ws.close(code=4401); return
+    await ws.accept(); channel = settings.default_user
     try:
         while True:
             raw = await ws.receive_text(); msg = json.loads(raw); kind = msg.get("type")
-            if kind == "reset": agent.reset(channel); continue
+            if kind == "reset": await agent.reset(channel); continue
             if kind == "audio":
                 audio_bytes = base64.b64decode(msg["audio_b64"])
                 user_text = await voice.transcribe(audio_bytes)
@@ -112,7 +127,7 @@ async def chat_ws(ws: WebSocket):
                 if tail: tts_tasks.append(asyncio.create_task(voice.synthesize(tail)))
                 for task in tts_tasks: await _send_audio(ws, await task)
             await ws.send_json({"type": "done"})
-    except WebSocketDisconnect: agent.reset(channel)
+    except WebSocketDisconnect: pass  # history persists; nothing to clean up
     except Exception as exc:
         logging.exception("ws error")
         try: await ws.send_json({"type": "error", "message": str(exc)})
