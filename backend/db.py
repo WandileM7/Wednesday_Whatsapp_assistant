@@ -2,7 +2,7 @@
 import datetime as _dt
 import json
 from typing import AsyncIterator
-from sqlalchemy import DateTime, String, Text, delete, select
+from sqlalchemy import DateTime, String, Text, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from .config import settings
@@ -25,6 +25,13 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text)
     tool_calls: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
     name: Mapped[str | None] = mapped_column(String(64), nullable=True)  # tool name
+    created_at: Mapped[_dt.datetime] = mapped_column(DateTime, default=_dt.datetime.utcnow)
+
+class Memory(Base):
+    __tablename__ = "memories"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_key: Mapped[str] = mapped_column(String(64), index=True)
+    content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[_dt.datetime] = mapped_column(DateTime, default=_dt.datetime.utcnow)
 
 class Summary(Base):
@@ -84,6 +91,30 @@ async def clear_messages(user_key: str) -> None:
         await s.execute(delete(Message).where(Message.user_key == user_key))
         await s.execute(delete(Summary).where(Summary.user_key == user_key))
         await s.commit()
+
+async def add_memories(user_key: str, facts: list[str]) -> None:
+    async with SessionLocal() as s:
+        for f in facts:
+            s.add(Memory(user_key=user_key, content=f))
+        await s.commit()
+
+async def all_memories(user_key: str, limit: int = 500) -> list[tuple[int, str]]:
+    """(id, content) pairs, newest first."""
+    async with SessionLocal() as s:
+        rows = (await s.execute(select(Memory).where(Memory.user_key == user_key)
+                                .order_by(Memory.id.desc()).limit(limit))).scalars().all()
+    return [(r.id, r.content) for r in rows]
+
+async def search_messages(user_key: str, terms: list[str], limit: int = 200) -> list[dict]:
+    """Messages containing any term (case-insensitive), newest first."""
+    if not terms: return []
+    cond = or_(*(Message.content.ilike(f"%{t}%") for t in terms))
+    async with SessionLocal() as s:
+        rows = (await s.execute(select(Message)
+                                .where(Message.user_key == user_key, Message.role != "tool", cond)
+                                .order_by(Message.id.desc()).limit(limit))).scalars().all()
+    return [{"when": r.created_at.isoformat(timespec="minutes"), "role": r.role,
+             "text": r.content} for r in rows]
 
 async def get_summary(user_key: str) -> str | None:
     async with SessionLocal() as s:

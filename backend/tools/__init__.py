@@ -1,5 +1,10 @@
 ﻿from __future__ import annotations
+from contextvars import ContextVar
 from typing import Any, Awaitable, Callable, TypedDict
+
+# Which user the agent is currently serving; set per turn so tools like
+# search_conversations can scope to the right history.
+CURRENT_USER: ContextVar[str] = ContextVar("CURRENT_USER", default="")
 
 ToolFn = Callable[..., Awaitable[Any]]
 class ToolSpec(TypedDict):

@@ -1,7 +1,16 @@
 ﻿from __future__ import annotations
 import datetime as _dt, html, re
 import httpx
-from . import register
+from . import CURRENT_USER, register
+
+@register("search_conversations",
+    "Search your past conversations with this user. Use when asked about something discussed before, or to recall details you no longer have in context.",
+    {"type":"object","properties":{"query":{"type":"string"},"limit":{"type":"integer","default":5,"minimum":1,"maximum":10}},"required":["query"]})
+async def search_conversations(query: str, limit: int = 5):
+    from .. import memory
+    user = CURRENT_USER.get()
+    if not user: return "No active user context."
+    return await memory.search_messages(user, query, limit)
 
 @register("get_time","Get current local date/time as ISO-8601.",
     {"type":"object","properties":{},"additionalProperties":False})

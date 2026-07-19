@@ -2,9 +2,9 @@ from __future__ import annotations
 import asyncio, json, logging
 from typing import AsyncIterator
 import httpx
-from . import db, okf
+from . import db, memory, okf
 from .config import settings
-from .tools import REGISTRY
+from .tools import CURRENT_USER, REGISTRY
 
 log = logging.getLogger(__name__)
 _HISTORIES: dict[str, list[dict]] = {}   # write-through cache over db.messages
@@ -40,8 +40,11 @@ def _slice(history: list[dict], budget: int | None = None) -> list[dict]:
         start += 1
     return history[start:]
 
-def _context(user: str, convo: list[dict]) -> list[dict]:
+def _context(user: str, convo: list[dict], memories: list[str]) -> list[dict]:
     msgs = [{"role": "system", "content": okf.system_prompt()}]
+    if memories:
+        msgs.append({"role": "system", "content":
+                     "Things you remember about this user:\n- " + "\n- ".join(memories)})
     if _SUMMARIES.get(user):
         msgs.append({"role": "system",
                      "content": f"Summary of earlier conversation:\n{_SUMMARIES[user]}"})
@@ -123,14 +126,16 @@ async def _exec_tool(call):
 async def stream_reply(channel, user_text) -> AsyncIterator[dict]:
     """Yields {"type": "delta", "text"} for answer tokens as the model generates
     them and {"type": "tool", "name"} whenever a tool round starts."""
+    CURRENT_USER.set(channel)
     history = await _history(channel)
+    memories = await memory.relevant(channel, user_text)
     new = [{"role": "user", "content": user_text}]
     history.extend(new)
     convo = _slice(history)
     try:
         for _ in range(_MAX_TOOL_HOPS):
             message = None
-            async for event in _stream_round(_context(channel, convo)):
+            async for event in _stream_round(_context(channel, convo, memories)):
                 if event["type"] == "round_end": message = event["message"]; continue
                 yield event
             tool_calls = message.pop("tool_calls")
@@ -146,6 +151,7 @@ async def stream_reply(channel, user_text) -> AsyncIterator[dict]:
     finally:
         await db.add_messages(channel, new)
         asyncio.create_task(_summarize(channel))
+        asyncio.create_task(memory.extract(channel, new))
 
 async def warmup():
     """Load the model and prefill the system prompt + tool schemas so

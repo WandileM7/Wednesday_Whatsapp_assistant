@@ -31,6 +31,11 @@ def system_prompt() -> str:
     try:
         index = root / "index.md"
         concepts = [root / rel for rel in _LINK.findall(index.read_text(encoding="utf-8"))]
+        # user.md is the living "who this user is" doc — personal, gitignored,
+        # human-editable; included automatically when present.
+        user_doc = root / "user.md"
+        if user_doc.exists() and user_doc not in concepts:
+            concepts.append(user_doc)
         stamp = tuple((str(p), p.stat().st_mtime) for p in concepts)
         if _cache is None or _cache[0] != stamp:
             prompt = "\n\n".join(_body(p) for p in concepts)

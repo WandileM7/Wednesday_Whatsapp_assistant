@@ -13,6 +13,9 @@ wednesday.db
 test_wednesday.db
 .claude/
 
+# Personal user-model doc (auto-included in the system prompt when present)
+okf/user.md
+
 # Node
 node_modules/
 
