@@ -4,9 +4,7 @@
   "description": "Lightweight WhatsApp service using Baileys - NO Chromium required!",
   "main": "server-baileys.js",
   "scripts": {
-    "start": "node server-baileys.js",
-    "start:baileys": "node server-baileys.js",
-    "start:legacy": "node server-production.js"
+    "start": "node server-baileys.js"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.16",

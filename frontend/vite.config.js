@@ -1,20 +1,10 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-
+﻿import { defineConfig } from "vite"
+import react from "@vitejs/plugin-react"
+const BACKEND = process.env.BACKEND_URL || "http://localhost:8000"
 export default defineConfig({
   plugins: [react()],
-  server: {
-    port: 3001,
-    proxy: {
-      '/health': 'http://localhost:3000',
-      '/send': 'http://localhost:3000',
-      '/whatsapp-status': 'http://localhost:3000',
-      '/whatsapp-qr': 'http://localhost:3000',
-      '/n8n-status': 'http://localhost:3000',
-    }
-  },
-  build: {
-    outDir: '../static/dashboard',
-    emptyOutDir: true,
-  }
+  clearScreen: false,
+  server: { port: 1420, strictPort: true,
+    proxy: { "/ws": { target: BACKEND, ws: true, changeOrigin: true }, "/health": BACKEND, "/voice": BACKEND, "/whatsapp": BACKEND } },
+  build: { outDir: "dist", emptyOutDir: true },
 })
