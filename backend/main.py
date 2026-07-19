@@ -1,7 +1,7 @@
 ﻿from __future__ import annotations
 import asyncio, base64, json, logging, re
 import httpx
-from fastapi import FastAPI, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from . import agent, db, markers, oauth, voice, whatsapp
@@ -51,14 +51,16 @@ async def health(): return {"status": "ok"}
 async def auth_google(): return RedirectResponse(oauth.google_authz_url())
 
 @app.get("/auth/google/callback")
-async def auth_google_callback(code: str):
+async def auth_google_callback(code: str, state: str = ""):
+    if not oauth.verify_state(state): raise HTTPException(400, "invalid OAuth state")
     await oauth.exchange_google_code(code); return {"status": "linked", "service": "google"}
 
 @app.get("/auth/spotify")
 async def auth_spotify(): return RedirectResponse(oauth.spotify_authz_url())
 
 @app.get("/auth/spotify/callback")
-async def auth_spotify_callback(code: str):
+async def auth_spotify_callback(code: str, state: str = ""):
+    if not oauth.verify_state(state): raise HTTPException(400, "invalid OAuth state")
     await oauth.exchange_spotify_code(code); return {"status": "linked", "service": "spotify"}
 
 @app.get("/auth/status")

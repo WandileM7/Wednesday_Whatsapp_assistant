@@ -1,10 +1,20 @@
 ﻿from __future__ import annotations
-import base64, datetime as _dt, logging
+import base64, datetime as _dt, logging, secrets
 import httpx
 from . import db
 from .config import settings
 
 log = logging.getLogger(__name__)
+_valid_states: set[str] = set()
+
+def _new_state() -> str:
+    state = secrets.token_urlsafe(24); _valid_states.add(state); return state
+
+def verify_state(state: str) -> bool:
+    """Consume and validate a state token (one-time use)."""
+    if state in _valid_states:
+        _valid_states.discard(state); return True
+    return False
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_AUTHZ_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
@@ -16,12 +26,14 @@ def google_authz_url():
     from urllib.parse import urlencode
     return GOOGLE_AUTHZ_URL + "?" + urlencode({"client_id": settings.google_client_id,
         "redirect_uri": _redirect("google"), "response_type": "code",
-        "scope": settings.google_scopes, "access_type": "offline", "prompt": "consent"})
+        "scope": settings.google_scopes, "access_type": "offline", "prompt": "consent",
+        "state": _new_state()})
 
 def spotify_authz_url():
     from urllib.parse import urlencode
     return SPOTIFY_AUTHZ_URL + "?" + urlencode({"client_id": settings.spotify_client_id,
-        "redirect_uri": _redirect("spotify"), "response_type": "code", "scope": settings.spotify_scopes})
+        "redirect_uri": _redirect("spotify"), "response_type": "code",
+        "scope": settings.spotify_scopes, "state": _new_state()})
 
 async def exchange_google_code(code):
     async with httpx.AsyncClient(timeout=20) as c:
