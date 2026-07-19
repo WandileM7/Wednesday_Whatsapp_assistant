@@ -63,6 +63,11 @@ class Job(Base):
     done: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[_dt.datetime] = mapped_column(DateTime, default=_dt.datetime.now)
 
+class ToolApproval(Base):
+    __tablename__ = "tool_approvals"
+    user_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tool_name: Mapped[str] = mapped_column(String(64), primary_key=True)
+
 class Summary(Base):
     __tablename__ = "summaries"
     user_key: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -182,6 +187,16 @@ async def cancel_job(user_key: str, job_id: int) -> bool:
         job = await s.get(Job, job_id)
         if job is None or job.user_key != user_key or job.done: return False
         job.done = True; await s.commit(); return True
+
+async def approve_tool(user_key: str, tool_name: str) -> None:
+    async with SessionLocal() as s:
+        if await s.get(ToolApproval, (user_key, tool_name)) is None:
+            s.add(ToolApproval(user_key=user_key, tool_name=tool_name))
+            await s.commit()
+
+async def is_tool_approved(user_key: str, tool_name: str) -> bool:
+    async with SessionLocal() as s:
+        return await s.get(ToolApproval, (user_key, tool_name)) is not None
 
 async def get_summary(user_key: str) -> str | None:
     async with SessionLocal() as s:

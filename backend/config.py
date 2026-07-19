@@ -25,6 +25,16 @@ class Settings(BaseSettings):
     # Model for background utility calls (summaries, fact extraction);
     # empty = use ollama_model
     ollama_model_utility: str = ""
+    # Tools that pause and ask before running (comma-separated)
+    approval_required_tools: str = "gmail_send,calendar_create_event,run_code"
+    # Email channel: polls IMAP, replies via SMTP. Off unless address+password set.
+    email_address: str = ""
+    email_password: str = ""          # app password, not your real one
+    email_imap_host: str = "imap.gmail.com"
+    email_smtp_host: str = "smtp.gmail.com"
+    email_poll_seconds: int = 60
+    # Only these senders are answered; the first one maps to default_user
+    email_allowed_senders: str = ""
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:3b"
     whisper_model: str = "base"          # faster-whisper size: tiny/base/small/medium

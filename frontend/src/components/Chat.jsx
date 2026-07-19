@@ -1,8 +1,8 @@
 ﻿import { useEffect, useRef, useState } from "react"
-import { Mic, Send, Square, Volume2, VolumeX, RotateCcw } from "lucide-react"
+import { Ear, Mic, Send, Square, Volume2, VolumeX, RotateCcw } from "lucide-react"
 import Orb from "./Orb"
 import { connect } from "../lib/ws"
-import { recordUntilStop, blobToBase64, playAudio, stopAudio, makeAnalyser } from "../lib/audio"
+import { recordUntilStop, listenContinuously, blobToBase64, playAudio, stopAudio, makeAnalyser } from "../lib/audio"
 
 // Long URLs wreck the bubble layout, so render them as short clickable
 // labels (domain + /… when there's a path) pointing at the full link.
@@ -31,6 +31,7 @@ export default function Chat() {
   const [messages,setMessages]=useState([]),[input,setInput]=useState(""),[voice,setVoice]=useState(true)
   const [recording,setRecording]=useState(false),[speaking,setSpeaking]=useState(false),[connected,setConnected]=useState(false)
   const [toolStatus,setToolStatus]=useState(null),[talking,setTalking]=useState(false)
+  const [handsFree,setHandsFree]=useState(false); const listenerRef=useRef(null)
   const audioQueueRef=useRef(Promise.resolve()),audioEpochRef=useRef(0)
   const [analyser]=useState(()=>makeAnalyser())
   const wsRef=useRef(null),recRef=useRef(null),pendingRef=useRef(""),scrollRef=useRef(null)
@@ -71,6 +72,19 @@ export default function Chat() {
 
   const reset=()=>{ wsRef.current?.reset(); setMessages([]); pendingRef.current="" }
 
+  // Hands-free: continuous VAD listening; speech onset barges in on playback,
+  // each utterance is sent as a voice turn. Wake word comes with the homelab.
+  useEffect(()=>{
+    if(!handsFree){ listenerRef.current?.stop(); listenerRef.current=null; return }
+    let cancelled=false
+    listenContinuously(
+      async blob=>{ const b64=await blobToBase64(blob); wsRef.current?.sendAudio(b64,true) },
+      { onSpeechStart:()=>{ audioEpochRef.current++; stopAudio(); setSpeaking(false) } },
+    ).then(l=>{ if(cancelled)l.stop(); else listenerRef.current=l })
+     .catch(()=>setHandsFree(false))
+    return ()=>{ cancelled=true; listenerRef.current?.stop(); listenerRef.current=null }
+  },[handsFree])
+
   const onGesture=action=>{
     if(action==="mic")toggleRecord()
     else if(action==="voice_on")setVoice(true)
@@ -86,6 +100,10 @@ export default function Chat() {
           <span className="text-sm tracking-widest text-white/60">WEDNESDAY</span>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={()=>setHandsFree(h=>!h)} title="Hands-free listening"
+            className={`rounded-md p-2 hover:bg-white/5 ${handsFree?"text-emerald-400":"text-white/60 hover:text-white"}`}>
+            <Ear size={16}/>
+          </button>
           <button onClick={()=>setVoice(v=>!v)} className="rounded-md p-2 text-white/60 hover:bg-white/5 hover:text-white">
             {voice?<Volume2 size={16}/>:<VolumeX size={16}/>}
           </button>

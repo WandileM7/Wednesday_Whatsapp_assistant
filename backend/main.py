@@ -4,7 +4,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
-from . import agent, db, live, markers, oauth, scheduler, voice, whatsapp
+from . import agent, db, email_channel, live, markers, oauth, scheduler, voice, whatsapp
 from .config import settings
 
 logging.basicConfig(level=logging.INFO)
@@ -31,6 +31,7 @@ async def _startup():
     asyncio.create_task(voice.preload())
     asyncio.create_task(agent.warmup())
     asyncio.create_task(scheduler.run())
+    asyncio.create_task(email_channel.run())
 
 _SENTENCE_END = re.compile(r"(?<=[.!?…])\s")
 _MIN_TTS_CHARS = 20       # first segment: speak as soon as possible

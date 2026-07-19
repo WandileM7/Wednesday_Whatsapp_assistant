@@ -20,6 +20,31 @@ export async function recordUntilStop(onStop) {
   mr.onstop=async()=>{ analyser.detach(); stream.getTracks().forEach(t=>t.stop()); await ctx.close(); onStop(new Blob(chunks,{type:"audio/webm"})) }
   mr.start(); return {stop:()=>mr.state!=="inactive"&&mr.stop(),analyser}
 }
+export async function listenContinuously(onUtterance,{threshold=0.06,hangoverMs=900,minMs=300,onSpeechStart}={}){
+  const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}})
+  const ctx=new AC(); const source=ctx.createMediaStreamSource(stream)
+  const analyser=ctx.createAnalyser(); analyser.fftSize=512; source.connect(analyser)
+  const data=new Uint8Array(analyser.frequencyBinCount)
+  let mr=null,chunks=[],speechStart=0,lastVoice=0,stopped=false
+  const level=()=>{ analyser.getByteTimeDomainData(data); let s=0
+    for(let i=0;i<data.length;i++){const v=(data[i]-128)/128;s+=v*v}
+    return Math.sqrt(s/data.length)*2.5 }
+  const loop=()=>{ if(stopped)return
+    const now=performance.now(), l=level()
+    if(l>threshold){ lastVoice=now
+      if(!mr){ speechStart=now; chunks=[]
+        mr=new MediaRecorder(stream,{mimeType:"audio/webm"})
+        mr.ondataavailable=e=>e.data.size&&chunks.push(e.data)
+        mr.onstop=()=>{ const dur=lastVoice-speechStart
+          if(dur>=minMs&&!stopped)onUtterance(new Blob(chunks,{type:"audio/webm"}))
+          mr=null }
+        mr.start(); onSpeechStart?.() } }
+    else if(mr&&now-lastVoice>hangoverMs)mr.stop()
+    requestAnimationFrame(loop) }
+  loop()
+  return {stop(){ stopped=true; if(mr&&mr.state!=="inactive")mr.stop()
+    stream.getTracks().forEach(t=>t.stop()); ctx.close() }}
+}
 let currentAudio=null
 export function playAudio(b64,analyser,mime="audio/wav"){
   return new Promise((resolve,reject)=>{

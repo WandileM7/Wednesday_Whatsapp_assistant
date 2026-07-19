@@ -1,5 +1,5 @@
 from __future__ import annotations
-import asyncio, json, logging
+import asyncio, json, logging, re
 from typing import AsyncIterator
 import httpx
 from . import db, memory, okf, skills
@@ -9,6 +9,7 @@ from .tools import CURRENT_USER, REGISTRY
 log = logging.getLogger(__name__)
 _transport: httpx.AsyncBaseTransport | None = None  # test seam: fake Ollama
 _HISTORIES: dict[str, list[dict]] = {}   # write-through cache over db.messages
+_PENDING: dict[str, list[dict]] = {}     # user -> tool calls awaiting approval
 _SUMMARIES: dict[str, str] = {}
 _summarizing: set[str] = set()
 _MAX_TOOL_HOPS = 6
@@ -25,6 +26,30 @@ async def _history(user: str) -> list[dict]:
         _HISTORIES[user] = await db.recent_messages(user, limit=_CACHE_LIMIT)
         _SUMMARIES[user] = await db.get_summary(user) or ""
     return _HISTORIES[user]
+
+def _gated(name: str) -> bool:
+    return name in {t.strip() for t in settings.approval_required_tools.split(",") if t.strip()}
+
+_APPROVE = {"yes", "y", "yes please", "approve", "approved", "ok", "okay",
+            "go ahead", "go for it", "do it", "sure", "yebo", "proceed"}
+_ALWAYS = {"always", "always allow", "yes always", "always approve", "allow always"}
+
+def _decision(text: str) -> str:
+    """approve | always | deny — anything unrecognised is a deny-with-feedback,
+    like declining a permission prompt with an explanation."""
+    norm = re.sub(r"[^\w\s]", "", text.lower()).strip()
+    if norm in _ALWAYS: return "always"
+    if norm in _APPROVE: return "approve"
+    return "deny"
+
+def _describe(call: dict) -> str:
+    args = call["function"].get("arguments") or {}
+    if isinstance(args, str):
+        try: args = json.loads(args)
+        except json.JSONDecodeError: pass
+    parts = ", ".join(f"{k}={str(v)[:80]!r}" for k, v in args.items()) \
+        if isinstance(args, dict) else str(args)[:160]
+    return f"{call['function']['name']}({parts})"
 
 def _est_tokens(m: dict) -> int:
     size = len(m.get("content") or "") + len(json.dumps(m.get("tool_calls") or []))
@@ -139,8 +164,25 @@ async def stream_reply(channel, user_text) -> AsyncIterator[dict]:
     CURRENT_USER.set(channel)
     history = await _history(channel)
     memories = await memory.relevant(channel, user_text)
-    new = [{"role": "user", "content": user_text}]
-    history.extend(new)
+    new: list[dict] = []
+    pending = _PENDING.pop(channel, None)
+    if pending is not None:
+        # The reply is a verdict on the paused tool calls, not conversation.
+        decision = _decision(user_text)
+        results = []
+        for call in pending:
+            name = call["function"]["name"]
+            if not _gated(name) or decision in ("approve", "always"):
+                if decision == "always" and _gated(name):
+                    await db.approve_tool(channel, name)
+                results.append(await _exec_tool(call))
+            else:
+                results.append({"role": "tool", "name": name, "content":
+                                f"User declined the {name} action, saying: {user_text!r}"})
+        history.extend(results); new.extend(results)
+    else:
+        new = [{"role": "user", "content": user_text}]
+        history.extend(new)
     convo = _slice(history)
     try:
         for _ in range(_MAX_TOOL_HOPS):
@@ -153,6 +195,16 @@ async def stream_reply(channel, user_text) -> AsyncIterator[dict]:
                 history.append(message); convo.append(message); new.append(message); return
             with_calls = {**message, "tool_calls": tool_calls}
             history.append(with_calls); convo.append(with_calls); new.append(with_calls)
+            needs_ok = [c for c in tool_calls if _gated(c["function"]["name"])
+                        and not await db.is_tool_approved(channel, c["function"]["name"])]
+            if needs_ok:
+                _PENDING[channel] = tool_calls
+                asks = "; ".join(_describe(c) for c in needs_ok)
+                yield {"type": "delta", "text":
+                       f"I need your go-ahead for: {asks}. "
+                       "Yes to approve, 'always' to stop me asking for this one, "
+                       "or tell me why not."}
+                return
             for call in tool_calls:
                 yield {"type": "tool", "name": call["function"]["name"]}
             results = await asyncio.gather(*(_exec_tool(c) for c in tool_calls))
