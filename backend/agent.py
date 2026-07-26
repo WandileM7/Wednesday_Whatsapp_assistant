@@ -121,9 +121,38 @@ async def _summarize(user: str) -> None:
     finally:
         _summarizing.discard(user)
 
-def _tool_specs():
-    return [{"type": "function", "function": {"name": n, "description": s["description"],
-             "parameters": s["schema"]}} for n, s in REGISTRY.items()]
+# Always offered, whatever the question: temporal grounding and the recall
+# tools the model needs to check itself before answering from thin air.
+_CORE_TOOLS = ("get_time", "search_conversations", "search_documents", "recall_person")
+
+def _spec(name: str, s: dict) -> dict:
+    return {"type": "function",
+            "function": {"name": name, "description": s["description"],
+                         "parameters": s["schema"]}}
+
+def _tool_specs(query: str = ""):
+    """The tools offered for this turn.
+
+    All of them by default. With MAX_TOOLS_PER_REQUEST set, offer the core few
+    plus those most relevant to the query — the full registry is ~3.6k tokens on
+    *every* request, which blows a rate-limited hosted tier in a single turn and
+    costs real prefill time locally. Capping trades a little tool recall for a
+    lot of headroom, so it stays opt-in.
+    """
+    cap = settings.max_tools_per_request
+    if cap <= 0 or len(REGISTRY) <= cap:
+        return [_spec(n, s) for n, s in REGISTRY.items()]
+    from .memory import _bm25, _terms
+    core = [n for n in _CORE_TOOLS if n in REGISTRY]
+    rest = [n for n in REGISTRY if n not in core]
+    docs = [(i, f"{n} {REGISTRY[n]['description']}") for i, n in enumerate(rest)]
+    # Fill the cap even when nothing scores: lexical matching against tool
+    # descriptions is a weak signal (a user says "will it rain", the weather
+    # tool's text says "conditions"), so a miss should mean "fewer relevant
+    # tools", never "only the core four".
+    ranked = [rest[i] for _, i, _ in _bm25(_terms(query), docs)]
+    chosen = core + ranked[:max(0, cap - len(core))]
+    return [_spec(n, REGISTRY[n]) for n in chosen]
 
 async def _stream_round(messages) -> AsyncIterator[dict]:
     """Stream one model turn. Yields {"type": "delta"} events for content tokens,
@@ -133,7 +162,10 @@ async def _stream_round(messages) -> AsyncIterator[dict]:
     the fake-model test seam and is threaded through to whichever path runs."""
     if not messages or messages[0].get("role") != "system":
         messages = [{"role": "system", "content": okf.system_prompt()}, *messages]
-    async for event in llm.stream_chat(messages, _tool_specs(), transport=_transport):
+    # Tool selection keys off the latest user turn (see _tool_specs).
+    query = next((m.get("content") or "" for m in reversed(messages)
+                  if m.get("role") == "user"), "")
+    async for event in llm.stream_chat(messages, _tool_specs(query), transport=_transport):
         yield event
 
 async def _exec_tool(call):
@@ -143,6 +175,10 @@ async def _exec_tool(call):
         try: args = json.loads(raw_args) if raw_args else {}
         except json.JSONDecodeError: args = {}
     else: args = raw_args or {}
+    # Hosted providers send "null" (not "{}") for a no-argument tool, which
+    # parses to None and makes fn(**args) raise. Anything that isn't a mapping
+    # means "no arguments".
+    if not isinstance(args, dict): args = {}
     fn = REGISTRY.get(name, {}).get("fn")
     if fn is None: content = f"Tool '{name}' not registered."
     else:

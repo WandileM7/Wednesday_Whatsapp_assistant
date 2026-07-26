@@ -7,6 +7,13 @@ import pytest
 # created at module load.
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test_wednesday.db"
 os.environ["API_TOKEN"] = ""
+# Pin the chat backend to local for the whole suite. Settings read the real
+# .env, so a developer with a hosted key configured would otherwise send the
+# Ollama-shaped fixtures down the OpenAI path and fail everywhere. Tests that
+# exercise the hosted backend opt in explicitly (see tests/test_llm_router.py).
+os.environ["LLM_BASE_URL"] = ""
+os.environ["LLM_API_KEY"] = ""
+os.environ["LLM_MODEL"] = ""
 
 
 @pytest.fixture(autouse=True, scope="session")

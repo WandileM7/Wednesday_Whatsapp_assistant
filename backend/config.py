@@ -77,6 +77,12 @@ class Settings(BaseSettings):
     llm_model: str = ""
     llm_temperature: float = 0.6
     llm_timeout: float = 120.0
+    # Cap how many tool schemas are offered per request; 0 = all of them.
+    # The full registry is ~3.6k tokens on every call, which exhausts a
+    # rate-limited hosted tier in one turn (Groq free is 12k tokens/min) and
+    # costs prefill time locally. Capping trades a little tool recall for a lot
+    # of headroom — core tools are always offered, the rest ranked by relevance.
+    max_tools_per_request: int = 0
     ollama_host: str = "http://localhost:11434"
     # Matches the README and .env.example. A capable tool-caller is needed:
     # the fixed prompt (persona + tool schemas) is ~2.2k tokens, so a small
