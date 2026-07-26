@@ -49,7 +49,10 @@ _WORD_CAP = 60
 # Same shape markers.py uses: a bracketed all-letters word/phrase, not followed
 # by "(" (so markdown links survive) and not starting on a digit (so numeric
 # citations like [1] survive — the [A-Za-z] first char handles that).
-_MARKER = re.compile(r"\[([A-Za-z][A-Za-z \-]{1,30})\](?!\()")
+# Kept in step with markers.py — any bracketed run starting with a letter, so
+# content-bearing pseudo-tags ("[it's seventeen seventeen]", "[time is 17:17]")
+# are flagged rather than slipping past a narrower character class.
+_MARKER = re.compile(r"\[([A-Za-z][^\]\n]{1,40})\](?!\()")
 
 # Clear emoji blocks: misc symbols & dingbats, misc symbols & arrows, the main
 # emoji planes, regional-indicator flags, plus the ZWJ and variation selector

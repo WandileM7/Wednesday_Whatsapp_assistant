@@ -57,6 +57,24 @@ def test_selection_follows_the_query(monkeypatch):
     assert lights != mail
 
 
+@pytest.mark.parametrize("query,expected", [
+    ("will it rain in Cape Town today", "get_weather"),
+    ("what am I doing tomorrow", "calendar_list_events"),
+    ("anything new in my inbox", "gmail_search"),
+    ("put some music on", "spotify_play"),
+    ("what is happening in the world", "news_digest"),
+    ("turn the kitchen lights off", "home_control"),
+    ("how much is 100 dollars in rand", "convert_currency"),
+    ("who is Thabo", "recall_person"),
+])
+def test_realistic_phrasings_reach_their_tool(monkeypatch, query, expected):
+    """The contract that matters: how people actually ask. Tool descriptions
+    carry the user's vocabulary ("rain", "inbox", "diary") precisely so this
+    holds -- and the same wording is what the model reads when choosing."""
+    monkeypatch.setattr(settings, "max_tools_per_request", 18)
+    assert expected in _names(agent._tool_specs(query))
+
+
 def test_cap_above_registry_size_is_a_no_op(monkeypatch):
     monkeypatch.setattr(settings, "max_tools_per_request", len(REGISTRY) + 50)
     assert len(agent._tool_specs("x")) == len(REGISTRY)

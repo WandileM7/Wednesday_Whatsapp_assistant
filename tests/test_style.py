@@ -135,3 +135,14 @@ def test_allowed_marker_set_matches_style_doc():
     # ten markers, as documented in okf/style.md — a drift here should be
     # deliberate
     assert len(style.ALLOWED_MARKERS) == 10
+
+
+def test_content_bearing_pseudo_marker_is_flagged():
+    # the model hiding data in a fake tag must not read as clean
+    assert "invalid_marker" in _rules("[it's seventeen seventeen] Five seventeen.")
+    assert "invalid_marker" in _rules("[time is 17:17] Five seventeen.")
+
+
+def test_wider_marker_pattern_still_ignores_links_and_citations():
+    assert style.is_clean("See [the docs](http://x) for that.")
+    assert "invalid_marker" not in _rules("Two sources agree [1] and [12].")

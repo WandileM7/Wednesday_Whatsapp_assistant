@@ -109,7 +109,9 @@ async def search_conversations(query: str, limit: int = 5):
     if not user: return "No active user context."
     return await memory.search_messages(user, query, limit)
 
-@register("get_time","Get current local date/time as ISO-8601.",
+@register("get_time",
+    "Current local date and time as ISO-8601. Use for the time now, today's date, "
+    "the day of the week, or to ground anything relative like 'tomorrow'.",
     {"type":"object","properties":{},"additionalProperties":False})
 async def get_time(): return _dt.datetime.now().isoformat(timespec="seconds")
 
@@ -128,7 +130,9 @@ _WMO = {
 
 @register("get_weather",
     "Current conditions and today's high/low for a place. `location` is a city or "
-    "'City, Country'; omit it to use the user's home location. Temperatures are °C.",
+    "'City, Country'; omit it to use the user's home location. Temperatures are °C. "
+    "Use for rain, forecast, sun, wind, how hot or cold it is, whether to take a "
+    "jacket or umbrella.",
     {"type":"object","properties":{"location":{"type":"string"}}})
 async def get_weather(location: str = ""):
     from ..config import settings
@@ -277,7 +281,8 @@ def _parse_feed(xml_text: str) -> tuple[str, list[dict]]:
     return feed_title, items
 
 @register("news_digest",
-    "Recent news headlines from the user's configured feeds. Optionally filter by "
+    "Recent news headlines from the user's configured feeds — what's happening, "
+    "current events, the latest on a topic. Optionally filter by "
     "topic. Summarise what matters in your own words — never read out links.",
     {"type":"object","properties":{"topic":{"type":"string"},"limit":{"type":"integer","default":8,"minimum":1,"maximum":20}}})
 async def news_digest(topic: str = "", limit: int = 8):

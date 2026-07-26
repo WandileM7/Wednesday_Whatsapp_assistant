@@ -39,7 +39,9 @@ def _plain_body(payload: dict) -> str:
         return re.sub(r"\s+", " ", stripped).strip()
     return ""
 
-@register("gmail_search","Search Gmail. Returns subject/from/snippet.",
+@register("gmail_search",
+    "Search Gmail — the inbox, unread or new mail, messages from someone, anything "
+    "waiting for a reply. Returns subject/from/snippet.",
     {"type":"object","properties":{"query":{"type":"string"},"limit":{"type":"integer","default":5,"minimum":1,"maximum":20}},"required":["query"]})
 async def gmail_search(query, limit=5):
     headers = await _gauth_headers()
@@ -101,7 +103,9 @@ async def gmail_create_draft(to, subject, body, thread_id=None):
         r.raise_for_status(); draft_id = r.json().get("id")
     return f"Draft saved (id {draft_id}) — review and send it in Gmail. Nothing sent yet."
 
-@register("calendar_list_events","List upcoming Google Calendar events.",
+@register("calendar_list_events",
+    "Upcoming calendar events — the schedule, diary, agenda, meetings, plans, "
+    "what today or tomorrow or the week looks like, whether a time is free.",
     {"type":"object","properties":{"limit":{"type":"integer","default":10},"days_ahead":{"type":"integer","default":7}}})
 async def calendar_list_events(limit=10, days_ahead=7):
     now = _dt.datetime.utcnow()

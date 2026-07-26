@@ -14,7 +14,13 @@ marker is a short all-letters bracketed word or phrase, so markdown links
 from __future__ import annotations
 import re
 
-_MARKER = re.compile(r"\[[A-Za-z][A-Za-z \-]{1,30}\](?!\() ?")
+# Any short bracketed run that starts with a letter and isn't a markdown link.
+# Deliberately not an allow-list of characters: the model invents
+# content-bearing pseudo-tags — real captures include "[it's seventeen
+# seventeen]" and "[time is 17:17]" — and each new punctuation mark would
+# otherwise be another leak into the chat and the TTS. Numeric citations ([1],
+# [12]) start with a digit and survive; links are guarded by the (?!\().
+_MARKER = re.compile(r"\[[A-Za-z][^\]\n]{1,40}\](?!\() ?")
 
 def strip(text: str) -> str:
     """Remove markers. No end-trimming, so streamed prefixes stay stable."""

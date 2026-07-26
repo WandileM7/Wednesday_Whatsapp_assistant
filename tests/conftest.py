@@ -14,6 +14,9 @@ os.environ["API_TOKEN"] = ""
 os.environ["LLM_BASE_URL"] = ""
 os.environ["LLM_API_KEY"] = ""
 os.environ["LLM_MODEL"] = ""
+# Same reasoning: a cap set in the developer's .env would silently change which
+# tools every agent test sees. Tests that exercise capping set it themselves.
+os.environ["MAX_TOOLS_PER_REQUEST"] = "0"
 
 
 @pytest.fixture(autouse=True, scope="session")

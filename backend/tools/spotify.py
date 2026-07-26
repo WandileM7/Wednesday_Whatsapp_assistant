@@ -14,7 +14,9 @@ async def spotify_search(query, kind="track", limit=5):
         r.raise_for_status(); items = r.json().get(f"{kind}s",{}).get("items",[])
     return [{"uri":it["uri"],"name":it.get("name"),"artists":", ".join(a["name"] for a in it.get("artists",[]))} for it in items]
 
-@register("spotify_play","Start/resume Spotify playback. Pass URI to play specific item.",
+@register("spotify_play",
+    "Start or resume Spotify — play music, put a song or album or playlist on. "
+    "Pass URI to play a specific item.",
     {"type":"object","properties":{"uri":{"type":"string"}}})
 async def spotify_play(uri=None):
     body = {}
