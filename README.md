@@ -38,8 +38,11 @@ cp .env.example .env        # defaults work out of the box
 
 docker compose up -d        # backend + ollama + whatsapp + postgres
 
-# Pull the model (first time only)
+# Pull the models (first time only): the main chat model + a small
+# utility model for background work (summaries, memory). Keeping them
+# separate stops background calls from evicting the chat model's cache.
 docker compose exec ollama ollama pull llama3.1:8b
+docker compose exec ollama ollama pull llama3.2:3b
 ```
 
 Then:
@@ -53,7 +56,7 @@ Then:
 ```bash
 pip install -r requirements.txt
 uvicorn backend.main:app --reload        # backend on :8000
-ollama serve && ollama pull llama3.1:8b  # in another shell
+ollama serve && ollama pull llama3.1:8b && ollama pull llama3.2:3b  # in another shell
 cd frontend && npm install && npm run dev
 ```
 

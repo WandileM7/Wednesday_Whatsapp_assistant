@@ -13,7 +13,13 @@ export function connect(handlers) {
   ws.onerror = err => handlers.error?.(err)
   return {
     sendText: (text, voice) => ws.send(JSON.stringify({ type: "text", text, voice })),
-    sendAudio: (audio_b64, voice) => ws.send(JSON.stringify({ type: "audio", audio_b64, voice })),
+    // hands_free marks ambient audio: the backend only acts on it when the
+    // wake word is present (see backend/wakeword.py).
+    sendAudio: (audio_b64, voice, hands_free = false) =>
+      ws.send(JSON.stringify({ type: "audio", audio_b64, voice, hands_free })),
+    // A camera frame for the `look` tool. Fire-and-forget: kept in RAM on the
+    // backend, expires in a minute, never persisted.
+    sendFrame: image_b64 => ws.send(JSON.stringify({ type: "frame", image_b64 })),
     reset: () => ws.send(JSON.stringify({ type: "reset" })),
     close: () => ws.close(), raw: ws,
   }

@@ -4,7 +4,8 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response
-from . import agent, db, email_channel, live, markers, oauth, scheduler, voice, whatsapp
+from . import (agent, db, email_channel, live, llm, markers, oauth, scheduler,
+               vision, voice, wakeword, whatsapp)
 from .config import settings
 
 logging.basicConfig(level=logging.INFO)
@@ -62,10 +63,38 @@ async def _send_audio(ws: WebSocket, wav: bytes):
 @app.get("/health")
 async def health(): return {"status": "ok"}
 
+_DEFAULT_SECRETS = {"", "change-me-in-production", "please-change-me"}
+
+
+def _config_warnings(pulled_models: list[str]) -> list[str]:
+    """Advisory config problems that work but bite you: the cache-eviction
+    trap, a missing utility model, and a default token-encryption secret."""
+    warns: list[str] = []
+    utility = settings.ollama_model_utility.strip()
+    if not utility:
+        warns.append(
+            "OLLAMA_MODEL_UTILITY is unset — background calls (summaries, memory) "
+            "reuse the chat model and evict its prompt cache, making every reply "
+            "re-evaluate the full prompt. Set a small, separate model.")
+    elif utility == settings.ollama_model:
+        warns.append(
+            "OLLAMA_MODEL_UTILITY equals OLLAMA_MODEL — same cache-eviction cost as "
+            "leaving it unset. Use a different (smaller) model.")
+    elif pulled_models and not any(utility in m for m in pulled_models):
+        warns.append(f"utility model {utility} not pulled — background calls will "
+                     f"fail. Run: ollama pull {utility}")
+    if settings.session_secret in _DEFAULT_SECRETS:
+        warns.append(
+            "SESSION_SECRET is the default — it's the key that encrypts stored OAuth "
+            "tokens at rest. Set a strong, unique value (existing tokens will need relinking).")
+    return warns
+
+
 @app.get("/doctor")
 async def doctor():
     """One-stop diagnosis of every moving part."""
     checks: dict[str, str] = {}
+    models: list[str] = []
     async with httpx.AsyncClient(timeout=5) as client:
         try:
             r = await client.get(f"{settings.ollama_host}/api/tags")
@@ -81,14 +110,18 @@ async def doctor():
     try:
         await db.get_token("google"); checks["database"] = "ok"
     except Exception as exc: checks["database"] = f"error: {exc}"
+    checks["chat_model"] = (f"hosted {settings.llm_model} at "
+                            f"{settings.llm_base_url} (ollama fallback)") if llm.hosted() \
+        else f"ollama {settings.ollama_model} (local)"
     checks["tts"] = "fish audio (piper fallback)" if settings.fish_api_key else "piper (local)"
     checks["auth"] = "token required" if settings.api_token else "OPEN — set API_TOKEN"
     checks["heartbeat"] = f"every {settings.heartbeat_minutes}m" if settings.heartbeat_minutes else "off"
     checks["code_execution"] = "enabled (docker sandbox)" if settings.enable_code_execution else "off"
     checks["google_linked"] = "yes" if await db.get_token("google") else "no — visit /auth/google"
     checks["spotify_linked"] = "yes" if await db.get_token("spotify") else "no — visit /auth/spotify"
+    warnings = _config_warnings(models)
     ok = all(not v.startswith(("unreachable", "error")) for v in checks.values())
-    return {"status": "ok" if ok else "degraded", "checks": checks}
+    return {"status": "ok" if ok else "degraded", "checks": checks, "warnings": warnings}
 
 @app.get("/auth/google")
 async def auth_google(): return RedirectResponse(oauth.google_authz_url())
@@ -111,53 +144,87 @@ async def auth_status():
     return {"google": (await db.get_token("google")) is not None,
             "spotify": (await db.get_token("spotify")) is not None}
 
+def _ws_token(ws: WebSocket) -> str:
+    """Prefer the token in the Sec-WebSocket-Protocol header ("bearer.<token>")
+    — it stays out of the URL and access logs — falling back to ?token= for
+    older clients."""
+    for proto in ws.scope.get("subprotocols", []):
+        if proto.startswith("bearer."):
+            return proto[len("bearer."):]
+    return ws.query_params.get("token", "")
+
+
 @app.websocket("/ws")
 async def chat_ws(ws: WebSocket):
-    if settings.api_token and ws.query_params.get("token", "") != settings.api_token:
+    protocols = ws.scope.get("subprotocols", [])
+    if settings.api_token and _ws_token(ws) != settings.api_token:
         await ws.close(code=4401); return
-    await ws.accept(); channel = settings.default_user
+    # Echo the non-secret marker protocol so a browser that offered one gets a
+    # valid negotiated subprotocol back (never echo the bearer token itself).
+    accept_kw = {"subprotocol": "wednesday"} if "wednesday" in protocols else {}
+    await ws.accept(**accept_kw); channel = settings.default_user
     live.register(channel, ws)
     try:
         while True:
             raw = await ws.receive_text(); msg = json.loads(raw); kind = msg.get("type")
             if kind == "reset": await agent.reset(channel); continue
-            if kind == "audio":
-                audio_bytes = base64.b64decode(msg["audio_b64"])
-                user_text = await voice.transcribe(audio_bytes)
-                await ws.send_json({"type": "transcript", "text": user_text})
-            elif kind == "text": user_text = msg.get("text", "")
-            else: continue
-            if not user_text.strip(): await ws.send_json({"type": "done"}); continue
-            want_voice = bool(msg.get("voice"))
-            chunks, tts_tasks, spoken, shown = [], [], 0, 0
-            async for event in agent.stream_reply(channel, user_text):
-                if event["type"] == "delta":
-                    chunks.append(event["text"])
-                    text = "".join(chunks)
-                    if want_voice:
-                        end = _speakable(text, spoken)
-                        if end > spoken:
-                            segment, spoken = _tts_clean(text[spoken:end]), end
-                            if segment:
-                                tts_tasks.append(asyncio.create_task(voice.synthesize(segment)))
-                    # display text: markers are spoken, never shown
-                    visible = markers.strip(text[:markers.safe_len(text)])
-                    if len(visible) > shown:
-                        await ws.send_json({"type": "delta", "text": visible[shown:]})
-                        shown = len(visible)
-                else:
-                    await ws.send_json(event)
-                while tts_tasks and tts_tasks[0].done():
-                    await _send_audio(ws, tts_tasks.pop(0).result())
-            full = "".join(chunks)
-            visible = markers.strip(full)
-            if len(visible) > shown:
-                await ws.send_json({"type": "delta", "text": visible[shown:]})
-            if want_voice:
-                tail = _tts_clean(full[spoken:])
-                if tail: tts_tasks.append(asyncio.create_task(voice.synthesize(tail)))
-                for task in tts_tasks: await _send_audio(ws, await task)
-            await ws.send_json({"type": "done"})
+            # A camera frame, not a turn: stash it for the `look` tool and wait
+            # for the next message. Frames are RAM-only and expire (vision.py).
+            if kind == "frame":
+                vision.set_frame(channel, msg.get("image_b64", "")); continue
+            # One turn failing (a model timeout, a tool blowing up) shouldn't
+            # drop the socket and force a page reload — report it and keep going.
+            try:
+                if kind == "audio":
+                    audio_bytes = base64.b64decode(msg["audio_b64"])
+                    user_text = await voice.transcribe(audio_bytes)
+                    # Ambient audio: ignore anything not addressed to her, so
+                    # hands-free doesn't answer the room. Silent by design —
+                    # an "I wasn't spoken to" reply defeats the purpose.
+                    addressed, user_text = wakeword.gate(
+                        user_text, hands_free=bool(msg.get("hands_free")))
+                    if not addressed:
+                        continue
+                    await ws.send_json({"type": "transcript", "text": user_text})
+                elif kind == "text": user_text = msg.get("text", "")
+                else: continue
+                if not user_text.strip(): await ws.send_json({"type": "done"}); continue
+                want_voice = bool(msg.get("voice"))
+                chunks, tts_tasks, spoken, shown = [], [], 0, 0
+                async for event in agent.stream_reply(channel, user_text):
+                    if event["type"] == "delta":
+                        chunks.append(event["text"])
+                        text = "".join(chunks)
+                        if want_voice:
+                            end = _speakable(text, spoken)
+                            if end > spoken:
+                                segment, spoken = _tts_clean(text[spoken:end]), end
+                                if segment:
+                                    tts_tasks.append(asyncio.create_task(voice.synthesize(segment)))
+                        # display text: markers are spoken, never shown
+                        visible = markers.strip(text[:markers.safe_len(text)])
+                        if len(visible) > shown:
+                            await ws.send_json({"type": "delta", "text": visible[shown:]})
+                            shown = len(visible)
+                    else:
+                        await ws.send_json(event)
+                    while tts_tasks and tts_tasks[0].done():
+                        await _send_audio(ws, tts_tasks.pop(0).result())
+                full = "".join(chunks)
+                visible = markers.strip(full)
+                if len(visible) > shown:
+                    await ws.send_json({"type": "delta", "text": visible[shown:]})
+                if want_voice:
+                    tail = _tts_clean(full[spoken:])
+                    if tail: tts_tasks.append(asyncio.create_task(voice.synthesize(tail)))
+                    for task in tts_tasks: await _send_audio(ws, await task)
+                await ws.send_json({"type": "done"})
+            except WebSocketDisconnect: raise  # client's gone — let the outer handler clean up
+            except Exception:
+                logging.exception("turn failed")  # details stay server-side
+                await ws.send_json({"type": "error",
+                    "message": "That one tripped me up — the rest of our chat is intact, try again."})
+                await ws.send_json({"type": "done"})
     except WebSocketDisconnect: pass  # history persists; nothing to clean up
     except Exception:
         logging.exception("ws error")  # details stay server-side

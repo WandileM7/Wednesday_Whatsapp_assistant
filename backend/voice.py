@@ -128,6 +128,30 @@ def _fish() -> httpx.AsyncClient:
     return _fish_client
 
 
+def _fix_wav_sizes(wav: bytes) -> bytes:
+    """Correct RIFF/data chunk sizes to the actual byte count.
+
+    Fish streams the WAV with placeholder 0xFFFFFFFF size fields, so the header
+    declares a ~48,000-second duration for a two-second clip. Playback copes,
+    but anything that trusts the header (a seek bar, a duration readout) shows
+    nonsense. `data` is the final chunk, so rewriting both size fields to the
+    real length is safe; if the layout isn't the expected RIFF/WAVE, leave it.
+    """
+    import struct
+    if len(wav) < 44 or wav[:4] != b"RIFF" or wav[8:12] != b"WAVE":
+        return wav
+    data = wav.find(b"data", 12)
+    if data == -1 or data + 8 > len(wav):
+        return wav
+    actual = len(wav) - (data + 8)
+    if struct.unpack_from("<I", wav, data + 4)[0] == actual:
+        return wav                               # already correct
+    b = bytearray(wav)
+    struct.pack_into("<I", b, 4, len(wav) - 8)   # RIFF ChunkSize
+    struct.pack_into("<I", b, data + 4, actual)  # data Subchunk2Size
+    return bytes(b)
+
+
 async def _synthesize_fish(text: str) -> bytes:
     """Returns WAV bytes from the Fish Audio TTS API."""
     r = await _fish().post(
@@ -142,7 +166,7 @@ async def _synthesize_fish(text: str) -> bytes:
         },
     )
     r.raise_for_status()
-    return r.content
+    return _fix_wav_sizes(r.content)
 
 
 def _wav_to_opus_ogg(wav: bytes) -> bytes:

@@ -39,7 +39,8 @@ export default function Chat() {
   const wsRef=useRef(null),recRef=useRef(null),pendingRef=useRef(""),scrollRef=useRef(null)
 
   useEffect(()=>{
-    const ws=connect({
+    let closedByUs=false, retry=0, timer=null
+    const handlers={
       transcript:m=>setMessages(xs=>[...xs,{role:"user",text:m.text}]),
       notice:m=>setMessages(xs=>[...xs,{role:"assistant",text:m.text}]),
       delta:m=>{ setToolStatus(null); setTalking(true); pendingRef.current+=m.text; setMessages(xs=>{ const last=xs[xs.length-1]
@@ -51,10 +52,21 @@ export default function Chat() {
           if(epoch!==audioEpochRef.current)return
           setSpeaking(true); try{await playAudio(m.audio_b64,analyser)}catch{}finally{setSpeaking(false)} }) },
       done:()=>{ setToolStatus(null); setTalking(false); pendingRef.current=""; setMessages(xs=>xs.map(m=>({...m,streaming:false}))) },
-      error:m=>{ setTalking(false); setToolStatus(null); setMessages(xs=>[...xs,{role:"system",text:m.message??"connection lost — is the backend running?"}]) },
-      close:()=>setConnected(false),
-    })
-    ws.raw.onopen=()=>setConnected(true); wsRef.current=ws; return()=>ws.close()
+      // Only a server-sent {type:"error"} event carries a message string; a raw
+      // socket error (backend momentarily down) has none — the status dot shows
+      // that, so don't spam the transcript, especially across reconnect attempts.
+      error:m=>{ setTalking(false); setToolStatus(null)
+        if(typeof m?.message==="string")setMessages(xs=>[...xs,{role:"system",text:m.message}]) },
+      // A dropped connection (one slow turn, a backend blip) should heal on its
+      // own rather than stranding the page. Reconnect with capped backoff; the
+      // channel is server-side per user, so history resumes seamlessly.
+      close:()=>{ setConnected(false); if(closedByUs)return
+        const delay=Math.min(1000*2**retry,15000); retry++; timer=setTimeout(open,delay) },
+    }
+    const open=()=>{ const ws=connect(handlers)
+      ws.raw.onopen=()=>{ setConnected(true); retry=0 }; wsRef.current=ws }
+    open()
+    return()=>{ closedByUs=true; clearTimeout(timer); wsRef.current?.close() }
   },[analyser])
 
   useEffect(()=>{ scrollRef.current?.scrollTo({top:scrollRef.current.scrollHeight,behavior:"smooth"}) },[messages])
@@ -75,12 +87,13 @@ export default function Chat() {
   const reset=()=>{ wsRef.current?.reset(); setMessages([]); pendingRef.current="" }
 
   // Hands-free: continuous VAD listening; speech onset barges in on playback,
-  // each utterance is sent as a voice turn. Wake word comes with the homelab.
+  // each utterance is sent as a voice turn flagged as ambient — the backend
+  // then answers only what's addressed to her (WAKE_WORD_REQUIRED).
   useEffect(()=>{
     if(!handsFree){ listenerRef.current?.stop(); listenerRef.current=null; return }
     let cancelled=false
     listenContinuously(
-      async blob=>{ const b64=await blobToBase64(blob); wsRef.current?.sendAudio(b64,true) },
+      async blob=>{ const b64=await blobToBase64(blob); wsRef.current?.sendAudio(b64,true,true) },
       { onSpeechStart:()=>{ audioEpochRef.current++; stopAudio(); setSpeaking(false) } },
     ).then(l=>{ if(cancelled)l.stop(); else listenerRef.current=l })
      .catch(()=>setHandsFree(false))

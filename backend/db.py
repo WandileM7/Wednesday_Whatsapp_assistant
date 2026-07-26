@@ -52,6 +52,17 @@ class Memory(Base):
     content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[_dt.datetime] = mapped_column(DateTime, default=_dt.datetime.utcnow)
 
+class Person(Base):
+    """Someone in the user's world. name_key is the lowercased name so recall is
+    case-insensitive; notes accumulate one fact per line."""
+    __tablename__ = "people"
+    user_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name_key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    notes: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[_dt.datetime] = mapped_column(DateTime, default=_dt.datetime.utcnow,
+                                                     onupdate=_dt.datetime.utcnow)
+
 class Job(Base):
     __tablename__ = "jobs"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -154,6 +165,37 @@ async def search_messages(user_key: str, terms: list[str], limit: int = 200) -> 
                                 .order_by(Message.id.desc()).limit(limit))).scalars().all()
     return [{"when": r.created_at.isoformat(timespec="minutes"), "role": r.role,
              "text": r.content} for r in rows]
+
+async def upsert_person(user_key: str, name: str, note: str) -> str:
+    """Add a person or append a fact to one. Returns "added" or "updated"; an
+    identical note is not duplicated."""
+    key = name.strip().lower()
+    async with SessionLocal() as s:
+        row = await s.get(Person, (user_key, key))
+        if row is None:
+            s.add(Person(user_key=user_key, name_key=key, name=name.strip(), notes=note.strip()))
+            await s.commit(); return "added"
+        lines = [ln for ln in row.notes.splitlines() if ln.strip()]
+        if note.strip() and note.strip() not in lines:
+            lines.append(note.strip())
+            row.notes = "\n".join(lines)
+            await s.commit()
+        return "updated"
+
+async def get_person(user_key: str, name: str) -> Person | None:
+    async with SessionLocal() as s:
+        return await s.get(Person, (user_key, name.strip().lower()))
+
+async def list_people(user_key: str) -> list[Person]:
+    async with SessionLocal() as s:
+        return list((await s.execute(select(Person).where(Person.user_key == user_key)
+                                     .order_by(Person.name))).scalars().all())
+
+async def forget_person(user_key: str, name: str) -> bool:
+    async with SessionLocal() as s:
+        row = await s.get(Person, (user_key, name.strip().lower()))
+        if row is None: return False
+        await s.delete(row); await s.commit(); return True
 
 async def add_job(user_key: str, text: str, due_at: _dt.datetime,
                   recur_minutes: int | None = None, kind: str = "reminder") -> int:

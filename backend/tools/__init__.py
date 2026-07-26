@@ -18,4 +18,4 @@ def register(name, description, schema):
         return fn
     return decorator
 
-from . import builtin, google, spotify  # noqa
+from . import builtin, google, homeassistant, spotify  # noqa

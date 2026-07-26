@@ -2,11 +2,17 @@
 
 After each exchange a background pass asks the model for durable facts
 (preferences, people, projects, commitments) and stores them one per row.
-Retrieval is a lexical rank over the user's facts — personal scale, a few
-hundred rows, so no index needed yet (FTS5/embeddings are the upgrade path).
+
+Retrieval is a BM25-lite rank in Python over the user's facts. At personal
+scale (a few hundred short rows) retrieval already loads-all-then-ranks, so an
+index buys nothing structurally — the win over plain term-overlap is *relevance*:
+BM25's idf weighting lets a rare, discriminating word ("passport", "falcon")
+outrank a common one ("user", "project"). It stays deliberately db-agnostic —
+compose runs Postgres, dev runs sqlite — so it behaves identically on both, and
+FTS5 (sqlite-only) would fork that. Embeddings via Ollama are the next step.
 """
 from __future__ import annotations
-import json, logging, re
+import json, logging, math, re
 
 import httpx
 from . import db
@@ -38,25 +44,51 @@ def _parse_facts(text: str) -> list[str]:
     return [str(f).strip() for f in data if isinstance(f, str) and f.strip()]
 
 
+def _bm25(query: set[str], docs: list[tuple[int, str]],
+          k1: float = 1.5, b: float = 0.75) -> list[tuple[float, int, str]]:
+    """Rank (id, content) docs against the query terms with a BM25-lite score,
+    best first (id breaks ties, so a tie keeps newest-first order). Idf is
+    computed over `docs`, so rarer terms in this set weigh more. Pure Python,
+    db-agnostic — the whole point (see module docstring)."""
+    doc_terms = [(mid, content, _terms(content)) for mid, content in docs]
+    n = len(doc_terms) or 1
+    avgdl = (sum(len(t) for _, _, t in doc_terms) / n) or 1.0
+    df = {t: sum(1 for _, _, td in doc_terms if t in td) for t in query}
+    idf = {t: max(0.0, math.log(1 + (n - d + 0.5) / (d + 0.5)))
+           for t, d in df.items() if d}
+    scored = []
+    for mid, content, td in doc_terms:
+        dl = len(td) or 1
+        # short facts ⇒ term frequency is effectively binary (present or not)
+        score = sum(idf[t] * (k1 + 1) / (1 + k1 * (1 - b + b * dl / avgdl))
+                    for t in query if t in td and t in idf)
+        scored.append((score, mid, content))
+    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    return scored
+
+
 async def relevant(user: str, query: str, k: int = 6) -> list[str]:
-    """Top-k memories for this query: term overlap first, recency as tiebreak
-    and filler."""
+    """Top-k memories for this query: BM25 relevance first, recency as tiebreak
+    and filler for the remaining slots."""
     rows = await db.all_memories(user)
     if not rows: return []
-    q = _terms(query)
-    scored = sorted(((len(q & _terms(content)), mid, content) for mid, content in rows),
-                    key=lambda t: (t[0], t[1]), reverse=True)
-    hits = [c for s, _, c in scored if s > 0][:k]
+    hits = [c for s, _, c in _bm25(_terms(query), rows) if s > 0][:k]
     fresh = [c for _, c in rows if c not in hits]
     return (hits + fresh)[:k]
 
 
 async def search_messages(user: str, query: str, limit: int = 5) -> list[dict]:
-    """Past conversation lines matching the query, best first."""
+    """Past conversation lines matching the query, best first (BM25 over the
+    candidate rows the db returned for any query term)."""
     q = _terms(query)
     rows = await db.search_messages(user, sorted(q))
-    ranked = sorted(rows, key=lambda r: len(q & _terms(r["text"])), reverse=True)
-    return ranked[:limit] or [{"note": "nothing found in past conversations"}]
+    if not rows: return [{"note": "nothing found in past conversations"}]
+    # rows are newest-first; give newer rows the higher id so a BM25 score tie
+    # keeps newest-first (the id tiebreak sorts descending).
+    by_id = {len(rows) - i: r for i, r in enumerate(rows)}
+    ranked = [by_id[i] for s, i, _ in _bm25(q, [(i, r["text"]) for i, r in by_id.items()])
+              if s > 0][:limit]
+    return ranked or [{"note": "nothing found in past conversations"}]
 
 
 async def extract(user: str, msgs: list[dict]) -> None:
@@ -78,7 +110,9 @@ async def extract(user: str, msgs: list[dict]) -> None:
                    "keep_alive": "2h",
                    "messages": [{"role": "user", "content": prompt}],
                    "options": {"temperature": 0.1, "num_predict": 300}}
-        async with httpx.AsyncClient(timeout=httpx.Timeout(300, connect=30)) as client:
+        # Background call — a slow extraction never blocks a reply, so give it
+        # a generous read budget rather than dropping facts on a timeout.
+        async with httpx.AsyncClient(timeout=httpx.Timeout(600, connect=30)) as client:
             r = await client.post(f"{settings.ollama_host}/api/chat", json=payload)
             r.raise_for_status()
         facts = _parse_facts(r.json().get("message", {}).get("content", ""))

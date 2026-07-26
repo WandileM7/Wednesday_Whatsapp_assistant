@@ -1,0 +1,41 @@
+"""Speech-marker stripping — the model emits capitalised and invented tags
+that must never reach the chat or the TTS, while markdown links and numeric
+citations must survive. Regression guard for the [Hiss]/[Sighing] leak."""
+from backend import markers
+
+
+def test_strips_lowercase_allowed_tag():
+    assert markers.strip("[sighing] Fine.") == "Fine."
+    assert markers.strip("[break] pause") == "pause"
+
+
+def test_strips_capitalised_tag():
+    # the model doesn't honour the lowercase rule
+    assert markers.strip("[Sighing] Fine.") == "Fine."
+
+
+def test_strips_invented_tag():
+    assert markers.strip("[Hiss] Contracts befit a lawyer.") == "Contracts befit a lawyer."
+
+
+def test_keeps_markdown_link():
+    # a marker never precedes "(", so links survive
+    assert markers.strip("See [the docs](http://x)") == "See [the docs](http://x)"
+
+
+def test_keeps_numeric_citations():
+    # citations start with a digit, so they aren't markers
+    assert markers.strip("Per source [1] and [12].") == "Per source [1] and [12]."
+
+
+def test_strip_is_idempotent_and_leaves_plain_text():
+    assert markers.strip("nothing to strip here") == "nothing to strip here"
+    assert markers.strip(markers.strip("[calm] ok")) == "ok"
+
+
+def test_safe_len_holds_back_a_half_received_marker():
+    # while streaming, don't split mid-marker
+    assert markers.safe_len("Hello [sigh") == len("Hello ")
+    # a complete marker (or no bracket) streams fully
+    assert markers.safe_len("Hello [sighing] there") == len("Hello [sighing] there")
+    assert markers.safe_len("no brackets at all") == len("no brackets at all")
