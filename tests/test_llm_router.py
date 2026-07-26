@@ -235,3 +235,63 @@ async def test_agent_turn_runs_over_the_hosted_backend(as_hosted, monkeypatch):
     finally:
         agent._transport = None
     assert "".join(e["text"] for e in out if e["type"] == "delta") == "[calm] Fine."
+
+
+# ---- Ollama normalisation (the fallback's mirror of _sanitize) --------------
+
+def test_for_ollama_parses_string_arguments():
+    """Groq emits arguments as a JSON string; Ollama 400s on it. Once a hosted
+    turn puts one in the history, the local fallback breaks exactly when it is
+    needed most."""
+    msgs = [{"role": "assistant", "content": "",
+             "tool_calls": [{"id": "c1", "type": "function",
+                             "function": {"name": "get_weather",
+                                          "arguments": '{"location":"Oslo"}'}}]}]
+    out = llm._for_ollama(msgs)
+    assert out[0]["tool_calls"][0]["function"]["arguments"] == {"location": "Oslo"}
+    assert out[0]["tool_calls"][0]["id"] == "c1"
+
+
+def test_for_ollama_handles_null_and_garbage_arguments():
+    for raw in ("null", "", "   ", "not json"):
+        msgs = [{"role": "assistant", "content": "",
+                 "tool_calls": [{"function": {"name": "get_time", "arguments": raw}}]}]
+        assert llm._for_ollama(msgs)[0]["tool_calls"][0]["function"]["arguments"] == {}, raw
+
+
+def test_for_ollama_leaves_native_dict_arguments_alone():
+    msgs = [{"role": "assistant", "content": "",
+             "tool_calls": [{"function": {"name": "f", "arguments": {"a": 1}}}]}]
+    assert llm._for_ollama(msgs)[0]["tool_calls"][0]["function"]["arguments"] == {"a": 1}
+
+
+def test_for_ollama_passes_other_messages_through():
+    msgs = [{"role": "user", "content": "hi"},
+            {"role": "tool", "name": "get_time", "content": "17:26"}]
+    assert llm._for_ollama(msgs) == msgs
+
+
+async def test_fallback_after_a_hosted_tool_call_reaches_ollama_cleanly(as_hosted):
+    """End to end: hosted 429s, and the Ollama request it falls back to must
+    carry object-shaped arguments."""
+    sent = {}
+
+    def handler(request):
+        if "chat/completions" in str(request.url):
+            return httpx.Response(429, json={"error": "rate limited"})
+        sent.update(json.loads(request.content))
+        return httpx.Response(200, content=_ndjson({"message": {"content": "local"}}))
+
+    history = [
+        {"role": "user", "content": "weather?"},
+        {"role": "assistant", "content": "",
+         "tool_calls": [{"id": "c1", "type": "function",
+                         "function": {"name": "get_weather",
+                                      "arguments": '{"location":"Oslo"}'}}]},
+        {"role": "tool", "name": "get_weather", "tool_call_id": "c1", "content": "3C"},
+        {"role": "user", "content": "and tomorrow?"},
+    ]
+    events = await _drain(history, transport=httpx.MockTransport(handler))
+    assert events[-1]["message"]["content"] == "local"
+    args = sent["messages"][1]["tool_calls"][0]["function"]["arguments"]
+    assert args == {"location": "Oslo"}, "string arguments would 400 on Ollama"

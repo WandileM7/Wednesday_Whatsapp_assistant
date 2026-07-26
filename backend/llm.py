@@ -151,8 +151,39 @@ async def _stream_openai(messages, tools, transport) -> AsyncIterator[dict]:
 
 # --- Ollama (unchanged wire format) ------------------------------------------
 
+def _for_ollama(messages: list[dict]) -> list[dict]:
+    """The mirror of _sanitize.
+
+    Ollama wants tool-call arguments as an object; OpenAI-compatible backends
+    emit them as a JSON *string*. Once a hosted turn has put one in the history,
+    every later Ollama request 400s with "Value looks like object, but can't
+    find closing '}' symbol" — which silently breaks the local fallback exactly
+    when it's needed, since a hosted failure mid-conversation is the whole
+    reason the fallback exists.
+    """
+    out: list[dict] = []
+    for m in messages:
+        if m.get("role") == "assistant" and m.get("tool_calls"):
+            calls = []
+            for c in m["tool_calls"]:
+                fn = dict(c.get("function") or {})
+                args = fn.get("arguments")
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args) if args.strip() else {}
+                    except json.JSONDecodeError:
+                        args = {}
+                fn["arguments"] = args if isinstance(args, dict) else {}
+                calls.append({**{k: v for k, v in c.items() if k != "function"},
+                              "function": fn})
+            out.append({**m, "tool_calls": calls})
+        else:
+            out.append(m)
+    return out
+
+
 async def _stream_ollama(messages, tools, transport) -> AsyncIterator[dict]:
-    payload = {"model": settings.ollama_model, "messages": messages,
+    payload = {"model": settings.ollama_model, "messages": _for_ollama(messages),
                "tools": tools, "stream": True, "keep_alive": "2h",
                "options": {"temperature": 0.6, "num_ctx": settings.num_ctx}}
     content, tool_calls = [], []
