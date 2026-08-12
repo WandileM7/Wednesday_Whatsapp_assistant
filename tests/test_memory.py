@@ -62,3 +62,38 @@ async def test_search_conversations_tool_uses_context_user():
     CURRENT_USER.set("")
     assert await REGISTRY["search_conversations"]["fn"](query="x") == "No active user context."
     await db.clear_messages("m4")
+
+
+# ---- grounding guard --------------------------------------------------------
+# llama3.2:1b, asked to extract from "What reminders do I have?", returned
+# "Enjoys hiking on weekends", "Has a pet dog" and "Lives in New York City".
+# Fabrications are the one error a memory store must never accept, since they
+# persist into every later prompt. These tests need no model.
+
+_SRC = "I'm allergic to shellfish, by the way. And I prefer tea to coffee."
+
+
+def test_paraphrase_of_what_the_user_said_is_grounded():
+    assert memory._grounded("Allergic to shellfish", _SRC)
+    assert memory._grounded("Prefers tea to coffee", _SRC)
+
+
+def test_stemming_lets_inflections_match():
+    assert memory._grounded("Prefers tea", "I prefer tea")
+
+
+def test_invented_facts_are_rejected():
+    for fabricated in ("Not a fan of spicy food", "Lives in New York City",
+                       "Has a pet dog", "Enjoys hiking on weekends",
+                       "Is 30 years old"):
+        assert not memory._grounded(fabricated, _SRC), fabricated
+
+
+def test_an_empty_or_stopword_only_fact_is_not_grounded():
+    assert not memory._grounded("", _SRC)
+    assert not memory._grounded("the and of", _SRC)
+
+
+def test_partially_supported_facts_are_rejected():
+    """Half-invented is still invented: shellfish is real, Thailand isn't."""
+    assert not memory._grounded("Ate shellfish in Thailand last summer", _SRC)

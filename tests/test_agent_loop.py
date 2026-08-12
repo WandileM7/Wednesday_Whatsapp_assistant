@@ -98,3 +98,79 @@ async def test_tool_loop_bails_after_max_hops():
     events = await _run("e4", "loop forever")
     assert len(calls) == agent._MAX_TOOL_HOPS
     assert any("stuck in a tool loop" in e.get("text", "") for e in events)
+
+
+# ---- argument coercion ------------------------------------------------------
+# Small local models emit JSON scalars as strings. llama3.2:3b answered "remind
+# me in 45 minutes" with in_minutes="45", timedelta raised TypeError, and the
+# model then told the user the reminder was set. Silent wrongness, so these
+# guard the coercion that prevents it.
+
+_SCHEMA = {"type": "object", "properties": {
+    "n": {"type": "integer"}, "x": {"type": "number"},
+    "flag": {"type": "boolean"}, "text": {"type": "string"}}}
+
+
+def test_stringified_integers_are_coerced():
+    assert agent._coerce({"n": "45"}, _SCHEMA) == {"n": 45}
+
+
+def test_integers_written_with_a_decimal_point_still_work():
+    assert agent._coerce({"n": "45.0"}, _SCHEMA) == {"n": 45}
+
+
+def test_negative_integers_survive():
+    assert agent._coerce({"n": "-3"}, _SCHEMA) == {"n": -3}
+
+
+def test_numbers_and_booleans_are_coerced():
+    out = agent._coerce({"x": "1.5", "flag": "true"}, _SCHEMA)
+    assert out == {"x": 1.5, "flag": True}
+
+
+def test_falsey_boolean_spellings():
+    assert agent._coerce({"flag": "false"}, _SCHEMA)["flag"] is False
+    assert agent._coerce({"flag": "no"}, _SCHEMA)["flag"] is False
+
+
+def test_strings_are_left_alone():
+    assert agent._coerce({"text": "45"}, _SCHEMA) == {"text": "45"}
+
+
+def test_correct_types_pass_through_untouched():
+    assert agent._coerce({"n": 45, "flag": True}, _SCHEMA) == {"n": 45, "flag": True}
+
+
+def test_ungarbled_nonsense_is_left_for_the_tool_to_complain_about():
+    """Better a clear error from the tool than a silent wrong cast."""
+    assert agent._coerce({"n": "soon"}, _SCHEMA) == {"n": "soon"}
+
+
+def test_unknown_and_schemaless_args_are_passed_through():
+    assert agent._coerce({"other": "1"}, _SCHEMA) == {"other": "1"}
+    assert agent._coerce({"n": "1"}, None) == {"n": "1"}
+
+
+async def test_set_reminder_accepts_a_stringified_in_minutes():
+    """End to end through _exec_tool, the way the model actually calls it."""
+    from backend.tools import CURRENT_USER
+    CURRENT_USER.set("coerce-test")
+    await db.init()
+    result = await agent._exec_tool({"function": {
+        "name": "set_reminder",
+        "arguments": {"text": "call the landlord", "in_minutes": "45"}}})
+    assert "Error" not in result["content"]
+    jobs = await db.pending_jobs("coerce-test")
+    assert any(j.text == "call the landlord" for j in jobs)
+
+
+def test_the_history_budget_is_actually_applied():
+    """_slice enforces history_budget_tokens and nothing called it — the budget
+    was dead code, so the entire 100-message cache went into every prompt."""
+    from backend import agent
+    long_history = [{"role": "user" if i % 2 == 0 else "assistant",
+                     "content": "x" * 400} for i in range(60)]
+    sent = agent._context("u", long_history + [{"role": "user", "content": "now this"}], [])
+    convo = [m for m in sent if m["role"] != "system"]
+    assert len(convo) < len(long_history)
+    assert convo[-1]["content"] == "now this"      # the live turn always survives

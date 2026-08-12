@@ -4,7 +4,7 @@ import datetime as _dt
 import hashlib as _hl
 import json
 from typing import AsyncIterator
-from sqlalchemy import DateTime, String, Text, delete, or_, select
+from sqlalchemy import DateTime, String, Text, delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from .config import settings
@@ -75,12 +75,39 @@ class Summary(Base):
     updated_at: Mapped[_dt.datetime] = mapped_column(DateTime, default=_dt.datetime.utcnow,
                                                      onupdate=_dt.datetime.utcnow)
 
+class Pref(Base):
+    """Per-user settings Wednesday can change about herself, at the user's ask.
+
+    Distinct from `memories`, which are facts about the user: these are knobs.
+    "Stop sending voice notes" has to survive a restart, and it is not a fact
+    worth recalling in a prompt.
+    """
+    __tablename__ = "prefs"
+    user_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+
+
 engine = create_async_engine(settings.database_url, future=True)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 async def init() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+async def get_pref(user_key: str, name: str) -> str | None:
+    async with SessionLocal() as s:
+        row = await s.get(Pref, (user_key, name))
+    return row.value if row else None
+
+
+async def set_pref(user_key: str, name: str, value: str) -> None:
+    async with SessionLocal() as s:
+        row = await s.get(Pref, (user_key, name))
+        if row: row.value = value
+        else: s.add(Pref(user_key=user_key, name=name, value=value))
+        await s.commit()
+
 
 async def save_token(service, access_token, refresh_token, expires_at, scope=None):
     access_token, refresh_token = _enc(access_token), _enc(refresh_token)
@@ -125,17 +152,60 @@ async def recent_messages(user_key: str, limit: int = 100) -> list[dict]:
         out.append(m)
     return out
 
+async def raw_messages(user_key: str) -> list[dict]:
+    """Every stored message with its id, oldest first — for the hygiene sweep,
+    which needs to identify individual rows rather than build a prompt."""
+    async with SessionLocal() as s:
+        rows = (await s.execute(select(Message).where(Message.user_key == user_key)
+                                .order_by(Message.id))).scalars().all()
+    return [{"id": m.id, "role": m.role, "content": m.content,
+             "tool_calls": m.tool_calls, "name": m.name} for m in rows]
+
+
+async def rewrite_messages(edits: dict[int, str]) -> int:
+    """Replace the content of specific messages, leaving role and ordering alone.
+
+    The hygiene sweep deletes messages that are false. A learned verbal tic is
+    not false — the reply around it is worth keeping — but left in place it is
+    still the example the next turn copies, so it needs cutting out rather than
+    the whole row dropping.
+    """
+    if not edits: return 0
+    async with SessionLocal() as s:
+        for mid, content in edits.items():
+            await s.execute(update(Message).where(Message.id == mid)
+                            .values(content=content))
+        await s.commit()
+    return len(edits)
+
+
+async def delete_messages(ids: list[int]) -> int:
+    if not ids: return 0
+    async with SessionLocal() as s:
+        await s.execute(delete(Message).where(Message.id.in_(ids)))
+        await s.commit()
+    return len(ids)
+
+
+async def all_user_keys() -> list[str]:
+    async with SessionLocal() as s:
+        rows = (await s.execute(select(Message.user_key).distinct())).scalars().all()
+    return list(rows)
+
+
 async def clear_messages(user_key: str) -> None:
     async with SessionLocal() as s:
         await s.execute(delete(Message).where(Message.user_key == user_key))
         await s.execute(delete(Summary).where(Summary.user_key == user_key))
         await s.commit()
 
-async def add_memories(user_key: str, facts: list[str]) -> None:
+async def add_memories(user_key: str, facts: list[str]) -> list[int]:
+    """Returns the new rows' ids so they can be fed to the hybrid index."""
+    rows = [Memory(user_key=user_key, content=f) for f in facts]
     async with SessionLocal() as s:
-        for f in facts:
-            s.add(Memory(user_key=user_key, content=f))
-        await s.commit()
+        s.add_all(rows)
+        await s.commit()          # expire_on_commit=False, so .id survives
+    return [r.id for r in rows]
 
 async def all_memories(user_key: str, limit: int = 500) -> list[tuple[int, str]]:
     """(id, content) pairs, newest first."""

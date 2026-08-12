@@ -16,3 +16,4 @@ order. Edit a file and the next reply picks it up — no restart needed.
 1. [Persona](persona.md) — who Wednesday is
 2. [Delivery](style.md) — how she writes and speaks, URL rules
 3. [Routing](routing.md) — when and how tools get used
+4. [Trust](trust.md) — where instructions may come from, and where they may not

@@ -1,22 +1,31 @@
-import { useEffect, useRef, useState } from "react"
-import { Hand } from "lucide-react"
+import { useEffect, useRef } from "react"
 import { createOrbScene } from "../lib/orbScene"
 
-// Holographic orb centerpiece. Visuals + gesture control adapted from ULTRON
-// (github.com/SAGAR-TAMANG/ultron-by-sagar-builds, MIT © Sagar Tamang).
-// Continuous: pinch-drag spins, two pinches zoom, open palm swats/push-pulls,
-// fist drags. Held: fist hushes, victory resets, pointing up = mic, thumbs
-// up/down = voice, ILoveYou = flare. Toggle tracking with the hand button or "g".
-export default function Orb({ analyser, active, talking, onGesture }) {
+/**
+ * Holographic orb centrepiece. Visuals + gesture control adapted from ULTRON
+ * (github.com/SAGAR-TAMANG/ultron-by-sagar-builds, MIT © Sagar Tamang).
+ * Continuous: pinch-drag spins, two pinches zoom, open palm swats/push-pulls,
+ * fist drags. Held: fist hushes, victory resets, pointing up = mic, thumbs
+ * up/down = voice, ILoveYou = flare.
+ *
+ * Tracking state and the camera preview are owned by OrbStage: this component
+ * sits inside a transformed, scaled box, and anything rendered here would be
+ * scaled with it — a 160px preview becomes 51px on the Systems screen. It takes
+ * the preview nodes as refs and drives the tracker into them instead.
+ */
+export default function Orb({
+  analyser, active, talking, onGesture,
+  gestures, videoRef, overlayRef, onStatus, onUnavailable,
+}) {
   const containerRef = useRef(null)
   const sceneRef = useRef(null)
-  const videoRef = useRef(null)
-  const overlayRef = useRef(null)
   const trackerRef = useRef(null)
   const onGestureRef = useRef(onGesture)
   onGestureRef.current = onGesture
-  const [gestures, setGestures] = useState(false)
-  const [gStatus, setGStatus] = useState({ hands: 0, mode: "idle", gesture: null, fps: 0 })
+  const onStatusRef = useRef(onStatus)
+  onStatusRef.current = onStatus
+  const onUnavailableRef = useRef(onUnavailable)
+  onUnavailableRef.current = onUnavailable
 
   useEffect(() => {
     const scene = createOrbScene(containerRef.current)
@@ -31,7 +40,8 @@ export default function Orb({ analyser, active, talking, onGesture }) {
 
   useEffect(() => { sceneRef.current?.setEnergy(active ? 0.3 : 0) }, [active])
 
-  // Pulse while Wednesday is streaming a reply (no audio level to follow)
+  // Pulse while Wednesday is streaming a reply (there's no audio level to
+  // follow until the first TTS chunk lands).
   useEffect(() => {
     if (!talking) return
     let raf
@@ -67,23 +77,26 @@ export default function Orb({ analyser, active, talking, onGesture }) {
           }
           else onGestureRef.current?.(action)
         },
-        onStatus: setGStatus,
+        onStatus: s => onStatusRef.current?.(s),
       })
       trackerRef.current = tracker
       try { await tracker.start() }
-      catch (err) { console.error("hand tracking unavailable", err); if (!cancelled) setGestures(false) }
+      catch (err) {
+        console.error("hand tracking unavailable", err)
+        if (!cancelled) onUnavailableRef.current?.(err)
+      }
     })()
     return () => { cancelled = true; trackerRef.current?.stop(); trackerRef.current = null }
-  }, [gestures])
+  }, [gestures, videoRef, overlayRef])
 
+  // "r" recentres the camera. "+"/"−" used to dolly it, which changed the
+  // framing inside a fixed box but never the orb's size — OrbStage owns those
+  // keys now and scales the orb itself.
   useEffect(() => {
     const onKey = e => {
       const s = sceneRef.current
       if (!s || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-      if (e.key === "+" || e.key === "=") s.zoomIn()
-      else if (e.key === "-" || e.key === "_") s.zoomOut()
-      else if (e.key === "r" || e.key === "R") s.resetView()
-      else if (e.key === "g" || e.key === "G") setGestures(v => !v)
+      if (e.key === "r" || e.key === "R") s.resetView()
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
@@ -92,26 +105,6 @@ export default function Orb({ analyser, active, talking, onGesture }) {
   return (
     <div className="orb-wrap">
       <div ref={containerRef} className="orb-root" />
-      <div className="orb-vignette" />
-      <div className="orb-scanlines" />
-      <button onClick={() => setGestures(v => !v)} title="Hand gestures (g)"
-        className={`absolute right-3 top-3 z-10 rounded-md p-2 transition ${
-          gestures ? "bg-amber-500/20 text-amber-300" : "text-white/40 hover:bg-white/5 hover:text-white"}`}>
-        <Hand size={16}/>
-      </button>
-      {gestures && (
-        <div className="absolute bottom-3 right-3 z-10 overflow-hidden rounded-lg border border-amber-500/20">
-          <video ref={videoRef} muted playsInline
-            className="h-[120px] w-[160px] object-cover [transform:scaleX(-1)] opacity-70"/>
-          <canvas ref={overlayRef} width={160} height={120} className="absolute inset-0"/>
-          <div className="absolute bottom-0 left-0 right-0 bg-black/50 px-2 py-0.5 text-[10px] text-amber-300/80">
-            {(gStatus.gesture ? gStatus.gesture.replace("_", " ").toLowerCase()
-              : gStatus.hands ? `${gStatus.hands} hand${gStatus.hands > 1 ? "s" : ""} · ${gStatus.mode}`
-              : "✋swat ✊grab·hush ✌reset ☝mic 👍👎 🤟")
-              + (gStatus.fps ? ` · ${gStatus.fps}fps` : "")}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

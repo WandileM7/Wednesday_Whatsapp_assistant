@@ -25,6 +25,39 @@ def _bundle_dir() -> Path:
 def _body(path: Path) -> str:
     return _FRONT.sub("", path.read_text(encoding="utf-8")).strip()
 
+_EXAMPLE = re.compile(r"^User:\s*(.+?)\n^You:\s*(.+?)(?=\n\s*\n|\n^User:|\Z)",
+                      re.M | re.S)
+_examples_cache: tuple[float, list[tuple[str, str]]] | None = None
+
+
+def examples() -> list[tuple[str, str]]:
+    """The (user, reply) register examples from persona.md, as pairs.
+
+    Read from the bundle rather than copied into the code, so persona.md stays
+    the single place the character is defined — editing it changes what she
+    imitates on the next reply, with no restart and no second copy to drift.
+
+    Only the plain conversational pairs. The "once a tool has actually run"
+    examples below them are deliberately excluded: they describe what to say
+    *after* a tool returned a value, and lifting one into a prompt where no tool
+    ran is how she learns to announce things she never did.
+    """
+    global _examples_cache
+    path = _bundle_dir() / "persona.md"
+    try:
+        stamp = path.stat().st_mtime
+        if _examples_cache is None or _examples_cache[0] != stamp:
+            body = path.read_text(encoding="utf-8")
+            body = body.split("## The voice, once a tool has actually run")[0]
+            pairs = [(u.strip(), r.strip().replace("\n", " "))
+                     for u, r in _EXAMPLE.findall(body)]
+            _examples_cache = (stamp, pairs)
+        return _examples_cache[1]
+    except Exception:
+        log.exception("could not read register examples from %s", path)
+        return []
+
+
 def system_prompt() -> str:
     global _cache, _warned
     root = _bundle_dir()

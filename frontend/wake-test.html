@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8"><title>wake word harness</title><pre id="out">starting…</pre>
+<script type="module">
+  const out = document.getElementById("out"), lines = []
+  const say = m => { lines.push(m); out.textContent = lines.join("\n")
+    fetch("http://127.0.0.1:8899/log?" + encodeURIComponent(m), {mode:"no-cors"}).catch(()=>{}) }
+  window.onerror = e => say("PAGE ERROR: " + e)
+  const realWarn = console.warn.bind(console)
+  console.warn = (...a) => { say("WARN: " + a.map(String).join(" ")); realWarn(...a) }
+  try {
+    const { attachWakeWord } = await import("/src/lib/wakeWord.js")
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    let scores = 0, top = 0, fired = 0
+    const t0 = performance.now()
+    const wake = await attachWakeWord(stream, { model: "hey_jarvis_v0.1",
+      threshold: 0, refractoryMs: 0,
+      onWake: s => { scores++; top = Math.max(top, s)
+        if (s >= 0.5) { fired++; say(`WAKE score=${s.toFixed(3)} at ${((performance.now()-t0)/1000).toFixed(1)}s`) } } })
+    say(`sessions ready in ${(performance.now()-t0).toFixed(0)}ms`)
+    const WINDOW = 14000
+    await new Promise(r => setTimeout(r, WINDOW))
+    const possible = WINDOW / 80
+    say(`worklet delivered: ${wake.received} of ~${possible} possible chunks (${(100*wake.received/possible).toFixed(0)}% of real time)`)
+    say(`inferences run: ${wake.inferred}   avg ${wake.avgInferMs.toFixed(1)}ms/chunk`)
+    say(`chunks dropped to stay current: ${wake.dropped}`)
+    say(`max score: ${top.toFixed(4)}   detections over 0.5: ${fired}`)
+    say(top >= 0.5 ? "RESULT: wake word DETECTED" : scores > 0 ? "RESULT: runs, no detection" : "RESULT: no scores")
+    wake.stop()
+  } catch (err) { say("FAILED: " + (err && err.stack || err)) }
+</script>

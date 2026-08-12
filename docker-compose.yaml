@@ -7,8 +7,10 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://wednesday:wednesday@db:5432/wednesday
       WAHA_URL: http://whatsapp-service:3000
+      IMESSAGE_SERVICE_URL: http://imessage-service:3100
       OLLAMA_HOST: http://ollama:11434
       VOICE_CACHE_DIR: /data/voices
+      SEARXNG_URL: http://searxng:8080
     volumes:
       - voice-models:/data/voices
     depends_on:
@@ -59,6 +61,43 @@ services:
       - whatsapp-auth:/app/auth_info_baileys
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/health', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  # iMessage via Photon Spectrum. Unlike every other service here this one talks
+  # to a hosted relay, so it stays off until IMESSAGE_ENABLED=true and Photon
+  # credentials exist. No inbound port is published: Spectrum dials out over
+  # gRPC, and only the backend needs to reach :3100 on the compose network.
+  imessage-service:
+    build: ./imessage-service
+    environment:
+      IMESSAGE_HOOK_URL: http://backend:8000/imessage/webhook
+      PHOTON_PROJECT_ID: ${PHOTON_PROJECT_ID:-}
+      PHOTON_PROJECT_SECRET: ${PHOTON_PROJECT_SECRET:-}
+      API_TOKEN: ${API_TOKEN:-}
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3100/health', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+    profiles: ["imessage"]
+
+  # Keyless, self-hosted metasearch — the default web_search backend.
+  searxng:
+    image: searxng/searxng:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./searxng:/etc/searxng:ro
+    environment:
+      SEARXNG_BASE_URL: http://localhost:8080/
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

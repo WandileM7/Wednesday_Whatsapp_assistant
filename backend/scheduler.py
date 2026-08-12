@@ -62,6 +62,14 @@ async def tick(now: _dt.datetime | None = None) -> list[int]:
             from . import skills
             report = skills.curator_report()
             ok = await deliver(job.user_key, report) if report else True
+        elif job.kind == "hygiene":
+            # Silent by design: a daily "I found nothing" message is noise, and
+            # what it does find is already in the log stream and the HUD.
+            from . import hygiene
+            found = await hygiene.sweep_all()
+            total = sum(len(v) for v in found.values())
+            if total: log.info("hygiene: dropped %d poisoned message(s)", total)
+            ok = True
         else:
             ok = await deliver(job.user_key, f"⏰ Reminder: {job.text}")
         next_due = (job.due_at + _dt.timedelta(minutes=job.recur_minutes)
@@ -83,6 +91,21 @@ async def ensure_curator() -> None:
                      recur_minutes=7 * 24 * 60, kind="curator")
 
 
+async def ensure_hygiene() -> None:
+    """One daily history sweep; created on first boot.
+
+    Daily rather than weekly because a poisoned message is contagious — it
+    becomes the pattern the next reply copies, so a week of it is a week of
+    compounding, not a week of one bad line.
+    """
+    if any(j.kind == "hygiene" for j in await db.pending_jobs(settings.default_user)):
+        return
+    now = _dt.datetime.now()
+    due = (now + _dt.timedelta(days=1)).replace(hour=4, minute=30, second=0, microsecond=0)
+    await db.add_job(settings.default_user, "daily history sweep", due,
+                     recur_minutes=24 * 60, kind="hygiene")
+
+
 async def _heartbeat() -> None:
     global _pings_today
     now = _dt.datetime.now()
@@ -99,6 +122,7 @@ async def _heartbeat() -> None:
 async def run() -> None:
     """Forever-loop started at app startup."""
     await ensure_curator()
+    await ensure_hygiene()
     last_beat = _dt.datetime.now()
     log.info("scheduler running (heartbeat: %s)",
              f"every {settings.heartbeat_minutes}m" if settings.heartbeat_minutes else "off")
