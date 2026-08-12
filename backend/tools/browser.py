@@ -49,6 +49,8 @@ _SCHEMA = {"type":"object","properties":{
 
 
 async def browse_web(task: str, start_url: str = "", max_steps: int = 12):
+    if not settings.enable_browser_use:
+        return "Browser use is disabled. Set ENABLE_BROWSER_USE=true to allow it."
     try:
         from browser_use import Agent
     except ImportError:
@@ -99,7 +101,8 @@ def _result_text(history) -> str:
     return text[:2000] + ("\n[truncated]" if len(text) > 2000 else "")
 
 
-# Registered only when enabled: an unusable tool's schema would still ride in
-# every prompt, and the context window is the scarce resource here.
-if settings.enable_browser_use:
-    register("browse_web", _DESCRIPTION, _SCHEMA)(browse_web)
+# Registered always, advertised only when enabled — agent._disabled() decides.
+# An unusable tool's schema would otherwise ride in every prompt, and the
+# context window is the scarce resource here; but staying registered means a
+# call that arrives anyway gets the reason back instead of "no such tool".
+register("browse_web", _DESCRIPTION, _SCHEMA)(browse_web)

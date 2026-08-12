@@ -80,9 +80,9 @@ def test_music_request_gets_music_tools_and_not_the_rest():
 def test_routing_actually_shrinks_the_schema_block():
     """Measured saving is 47% on a music turn (the worst case — music is the
     biggest group, seven Spotify schemas) and ~78% on plain conversation."""
-    full = len(json.dumps(agent._tool_specs(None)))
-    worst = len(json.dumps(agent._tool_specs(toolrouter.select("play some jazz", []))))
-    plain = len(json.dumps(agent._tool_specs(toolrouter.select("tell me a joke", []))))
+    full = len(json.dumps(agent._tool_specs("", None)))
+    worst = len(json.dumps(agent._tool_specs("", toolrouter.select("play some jazz", []))))
+    plain = len(json.dumps(agent._tool_specs("", toolrouter.select("tell me a joke", []))))
     assert worst < full * 0.65
     assert plain < full * 0.35
 

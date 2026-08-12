@@ -16,6 +16,17 @@ _TICK_SECONDS = 15
 _NOTHING = "NOTHING"
 _pings_today: tuple[_dt.date, int] = (_dt.date.min, 0)
 
+# The daily briefing is a *user-created* recurring job (set_daily_briefing), not
+# an ambient behaviour: nothing creates one on boot, so it stays off until asked
+# for — unlike the curator, and deliberately unlike the heartbeat.
+_BRIEFING_PROMPT = (
+    "Deliver the user's daily briefing. Follow your morning-briefing skill: "
+    "today's calendar, any genuinely important unread email, reminders due "
+    "today, and the weather where they live. A few spoken sentences, in "
+    "character. They are not at the keyboard, so don't ask questions and don't "
+    "offer to do anything — just tell them how the day looks."
+)
+
 _HEARTBEAT_PROMPT = (
     "Silent periodic check-in — the user did not send a message. Using your "
     "tools, check for anything urgent: unread important email, calendar events "
@@ -62,6 +73,12 @@ async def tick(now: _dt.datetime | None = None) -> list[int]:
             from . import skills
             report = skills.curator_report()
             ok = await deliver(job.user_key, report) if report else True
+        elif job.kind == "briefing":
+            # A real agent turn, so it can be slow on CPU — same trade-off the
+            # heartbeat already makes, and it holds up the tick loop the same way.
+            from . import agent, markers
+            text = markers.strip(await agent.reply(job.user_key, _BRIEFING_PROMPT)).strip()
+            ok = await deliver(job.user_key, text) if text else True
         elif job.kind == "hygiene":
             # Silent by design: a daily "I found nothing" message is noise, and
             # what it does find is already in the log stream and the HUD.

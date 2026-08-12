@@ -74,7 +74,9 @@ class Settings(BaseSettings):
     # Empty = reuse ollama_model (simpler, but pays the re-eval cost).
     ollama_model_utility: str = ""
     # Tools that pause and ask before running (comma-separated)
-    approval_required_tools: str = "gmail_send,calendar_create_event,run_code,browse_web"
+    approval_required_tools: str = ("gmail_send,calendar_create_event,"
+                                    "calendar_update_event,calendar_delete_event,"
+                                    "run_code,browse_web")
     # MCP servers (Claude-Desktop-shaped JSON). Missing file = feature off.
     mcp_config: str = "mcp.json"
     # Every registered tool's schema rides in every prompt, so cap the total an
@@ -84,6 +86,29 @@ class Settings(BaseSettings):
     # MCP tools are third-party code with side effects: gate them behind the
     # same approval prompt as run_code. "always" still applies per tool.
     mcp_require_approval: bool = True
+    # Fallback for get_weather when the model doesn't pass a location — the
+    # user's home city, so "what's the weather?" answers without asking. Set to
+    # "" to force Wednesday to ask instead.
+    default_location: str = "Cape Town"
+    # Ambient listening: when hands-free is on and this is true, Wednesday only
+    # answers utterances addressed to her by name (see backend/wakeword.py).
+    wake_word: str = "wednesday"
+    wake_word_required: bool = False
+    # Vision: images sent on WhatsApp (and the see_image/look tools) are
+    # described by a VLM, and the description enters the text conversation.
+    enable_vision: bool = True
+    # Empty = the hosted chat model when one is configured (most are
+    # multimodal), else local moondream — see vision._model().
+    vision_model: str = ""
+    # Home Assistant: smart-home control. Off unless both are set.
+    # HA_URL=http://homeassistant.local:8123, token from your HA profile page.
+    ha_url: str = ""
+    ha_token: str = ""
+    # Folder of .md/.txt notes Wednesday can quote from (search_documents).
+    documents_dir: str = "documents"
+    # RSS/Atom feeds for news_digest, comma-separated.
+    news_feeds: str = ("https://feeds.bbci.co.uk/news/world/rss.xml,"
+                       "https://www.aljazeera.com/xml/rss/all.xml")
     # Email channel: polls IMAP, replies via SMTP. Off unless address+password set.
     email_address: str = ""
     email_password: str = ""          # app password, not your real one
@@ -99,15 +124,29 @@ class Settings(BaseSettings):
     wyoming_uri: str = "tcp://0.0.0.0:10700"
     wyoming_language: str = "en"
     wyoming_user: str = ""               # empty = share default_user's brain
+    # Hosted OpenAI-compatible chat backend (Groq, Cerebras, OpenRouter, vLLM…).
+    # Set base_url + api_key to make replies fast; leave unset and everything
+    # stays local on Ollama. Local is always the fallback — see backend/llm.py.
+    # e.g. LLM_BASE_URL=https://api.groq.com/openai/v1
+    #      LLM_MODEL=llama-3.3-70b-versatile
+    llm_base_url: str = ""
+    llm_api_key: str = ""
+    llm_model: str = ""
+    llm_temperature: float = 0.6
+    llm_timeout: float = 120.0
+    # Cap how many tool schemas are offered per request; 0 = all of them.
+    # The full registry is ~3.6k tokens on every call, which exhausts a
+    # rate-limited hosted tier in one turn (Groq free is 12k tokens/min) and
+    # costs prefill time locally. Capping trades a little tool recall for a lot
+    # of headroom — core tools are always offered, the rest ranked by relevance.
+    # Applied after route_tools has already narrowed the set by intent: routing
+    # picks *which* groups are relevant, this caps how many survive regardless.
+    max_tools_per_request: int = 0
     ollama_host: str = "http://localhost:11434"
     # Matches the README and .env.example. A capable tool-caller is needed:
     # the fixed prompt (persona + tool schemas) is ~2.2k tokens, so a small
     # model both reasons poorly and crowds its own context window.
     ollama_model: str = "llama3.1:8b"
-    # Vision: images sent on WhatsApp (and the see_image tool) are described by
-    # a small local VLM, and the description enters the text conversation.
-    enable_vision: bool = True
-    vision_model: str = "moondream"      # ollama pull moondream (<4GB VRAM)
     whisper_model: str = "base"          # faster-whisper size: tiny/base/small/medium
     piper_voice: str = "en_GB-alba-medium"
     # Fish Audio hosted TTS — used when a key is set, otherwise Piper (local, free)

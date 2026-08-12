@@ -4,9 +4,9 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
-from . import (agent, db, email_channel, guard, imessage, live, logstream, markers,
-               mcp_client, oauth, scheduler, vecstore, voice, voice_commands, whatsapp,
-               wyoming_server)
+from . import (agent, db, email_channel, guard, imessage, live, llm, logstream,
+               markers, mcp_client, oauth, scheduler, vecstore, vision, voice,
+               voice_commands, wakeword, whatsapp, wyoming_server)
 from .config import settings
 
 logging.basicConfig(level=logging.INFO)
@@ -233,6 +233,9 @@ async def doctor():
         await db.get_token("google"); checks["database"] = "ok"
     except Exception as exc: checks["database"] = f"error: {exc}"
     checks["tts"] = " → ".join(voice._engines())
+    checks["chat_model"] = (f"hosted {settings.llm_model} at "
+                            f"{settings.llm_base_url} (ollama fallback)") if llm.hosted() \
+        else f"ollama {settings.ollama_model} (local)"
     checks["auth"] = "token required" if settings.api_token else "OPEN — set API_TOKEN"
     checks["heartbeat"] = f"every {settings.heartbeat_minutes}m" if settings.heartbeat_minutes else "off"
     checks["code_execution"] = "enabled (docker sandbox)" if settings.enable_code_execution else "off"
@@ -304,12 +307,23 @@ async def chat_ws(ws: WebSocket):
         while True:
             raw = await ws.receive_text(); msg = json.loads(raw); kind = msg.get("type")
             if kind == "reset": await agent.reset(channel); continue
+            # A camera frame, not a turn: stash it for the `look` tool and wait
+            # for the next message. Frames are RAM-only and expire (vision.py).
+            if kind == "frame":
+                vision.set_frame(channel, msg.get("image_b64", "")); continue
             # One turn failing (a model timeout, a tool blowing up) shouldn't
             # drop the socket and force a page reload — report it and keep going.
             try:
                 if kind == "audio":
                     audio_bytes = base64.b64decode(msg["audio_b64"])
                     user_text = await voice.transcribe(audio_bytes)
+                    # Ambient audio: ignore anything not addressed to her, so
+                    # hands-free doesn't answer the room. Silent by design —
+                    # an "I wasn't spoken to" reply defeats the purpose.
+                    addressed, user_text = wakeword.gate(
+                        user_text, hands_free=bool(msg.get("hands_free")))
+                    if not addressed:
+                        continue
                     await ws.send_json({"type": "transcript", "text": user_text})
                 elif kind == "text": user_text = msg.get("text", "")
                 else: continue

@@ -6,11 +6,17 @@ After each exchange a background pass asks the model for durable facts
 Retrieval prefers the hybrid index in `vecstore` (FTS5 keyword + sqlite-vec
 semantic, fused by rank), which catches "what did I say about the flat?" →
 "Wandile is moving to Cape Town in March" where term overlap finds nothing.
-The lexical scan below stays as the fallback for a cold index, a missing
-embedding model, or embeddings switched off.
+
+The BM25-lite rank below is the fallback for a cold index, a missing embedding
+model, or embeddings switched off. It beats plain term-overlap on *relevance*:
+idf weighting lets a rare, discriminating word ("passport", "falcon") outrank a
+common one ("user", "project"). It is also deliberately db-agnostic — compose
+runs Postgres, dev runs sqlite — so the fallback behaves identically on both
+where FTS5 (sqlite-only) would fork. It earns its keep twice over: agent.py
+ranks *tool descriptions* with the same function when capping the schema block.
 """
 from __future__ import annotations
-import asyncio, json, logging, re
+import asyncio, json, logging, math, re
 
 import httpx
 from . import db, vecstore
@@ -115,17 +121,32 @@ def _parse_facts(text: str) -> list[str]:
     return [str(f).strip() for f in data if isinstance(f, str) and f.strip()]
 
 
-def _lexical(rows: list[tuple[int, str]], query: str, k: int) -> list[str]:
-    """Term-overlap rank, newest first within a tie."""
-    q = _terms(query)
-    scored = sorted(((len(q & _terms(content)), mid, content) for mid, content in rows),
-                    key=lambda t: (t[0], t[1]), reverse=True)
-    return [c for s, _, c in scored if s > 0][:k]
+def _bm25(query: set[str], docs: list[tuple[int, str]],
+          k1: float = 1.5, b: float = 0.75) -> list[tuple[float, int, str]]:
+    """Rank (id, content) docs against the query terms with a BM25-lite score,
+    best first (id breaks ties, so a tie keeps newest-first order). Idf is
+    computed over `docs`, so rarer terms in this set weigh more. Pure Python,
+    db-agnostic — the whole point (see module docstring)."""
+    doc_terms = [(mid, content, _terms(content)) for mid, content in docs]
+    n = len(doc_terms) or 1
+    avgdl = (sum(len(t) for _, _, t in doc_terms) / n) or 1.0
+    df = {t: sum(1 for _, _, td in doc_terms if t in td) for t in query}
+    idf = {t: max(0.0, math.log(1 + (n - d + 0.5) / (d + 0.5)))
+           for t, d in df.items() if d}
+    scored = []
+    for mid, content, td in doc_terms:
+        dl = len(td) or 1
+        # short facts ⇒ term frequency is effectively binary (present or not)
+        score = sum(idf[t] * (k1 + 1) / (1 + k1 * (1 - b + b * dl / avgdl))
+                    for t in query if t in td and t in idf)
+        scored.append((score, mid, content))
+    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    return scored
 
 
 async def relevant(user: str, query: str, k: int = 6) -> list[str]:
     """Top-k memories for this query: hybrid retrieval when the index is warm,
-    lexical overlap otherwise, topped up with recent facts either way."""
+    BM25 otherwise, topped up with recent facts either way."""
     rows = await db.all_memories(user)
     if not rows: return []
     hits: list[str] = []
@@ -136,17 +157,23 @@ async def relevant(user: str, query: str, k: int = 6) -> list[str]:
         _kick(user, vecstore.sync(user, rows))
         hits = await vecstore.search(user, query, k)
     if not hits:
-        hits = _lexical(rows, query, k)
+        hits = [c for s, _, c in _bm25(_terms(query), rows) if s > 0][:k]
     fresh = [c for _, c in rows if c not in hits]
     return (hits + fresh)[:k]
 
 
 async def search_messages(user: str, query: str, limit: int = 5) -> list[dict]:
-    """Past conversation lines matching the query, best first."""
+    """Past conversation lines matching the query, best first (BM25 over the
+    candidate rows the db returned for any query term)."""
     q = _terms(query)
     rows = await db.search_messages(user, sorted(q))
-    ranked = sorted(rows, key=lambda r: len(q & _terms(r["text"])), reverse=True)
-    return ranked[:limit] or [{"note": "nothing found in past conversations"}]
+    if not rows: return [{"note": "nothing found in past conversations"}]
+    # rows are newest-first; give newer rows the higher id so a BM25 score tie
+    # keeps newest-first (the id tiebreak sorts descending).
+    by_id = {len(rows) - i: r for i, r in enumerate(rows)}
+    ranked = [by_id[i] for s, i, _ in _bm25(q, [(i, r["text"]) for i, r in by_id.items()])
+              if s > 0][:limit]
+    return ranked or [{"note": "nothing found in past conversations"}]
 
 
 async def extract(user: str, msgs: list[dict]) -> None:

@@ -79,3 +79,19 @@ def test_asks_for_voice(text):
 ])
 def test_leaves_ordinary_turns_alone(text):
     assert reply_mode_request(text) is None
+
+
+def test_strips_content_bearing_pseudo_marker():
+    """Real capture: the model hid the answer in a fake tag. An apostrophe used
+    to dodge the letters-only pattern, so it leaked into chat and the TTS."""
+    assert markers.strip("[it's seventeen seventeen] Eleven minutes past five.") \
+        == "Eleven minutes past five."
+    assert markers.strip("[time is 17:17] Five seventeen.") == "Five seventeen."
+
+
+def test_still_keeps_links_and_citations_with_the_wider_pattern():
+    assert markers.strip("See [the docs](http://x)") == "See [the docs](http://x)"
+    assert markers.strip("Per [1] and [12].") == "Per [1] and [12]."
+def test_still_keeps_links_and_citations_with_the_wider_pattern():
+    assert markers.strip("See [the docs](http://x)") == "See [the docs](http://x)"
+    assert markers.strip("Per [1] and [12].") == "Per [1] and [12]."

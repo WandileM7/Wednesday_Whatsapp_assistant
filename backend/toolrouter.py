@@ -46,12 +46,13 @@ _GROUPS: dict[str, tuple[set[str], re.Pattern]] = {
                    r"shuffle|listen|put on|now playing|vibe)\b", re.I),
     ),
     "mail": (
-        {"gmail_search", "gmail_send"},
+        {"gmail_search", "gmail_send", "gmail_create_draft", "gmail_get_thread"},
         re.compile(r"\b(mail|email|e-mail|gmail|inbox|unread|draft|cc|bcc|"
                    r"subject|reply to|forward|sender|newsletter)\b", re.I),
     ),
     "calendar": (
-        {"calendar_list_events", "calendar_create_event"},
+        {"calendar_list_events", "calendar_create_event",
+         "calendar_update_event", "calendar_delete_event"},
         re.compile(r"\b(calendar|diary|meeting|appointment|schedule|event|"
                    r"invite|booking|free|busy|agenda)\b", re.I),
     ),
@@ -71,14 +72,48 @@ _GROUPS: dict[str, tuple[set[str], re.Pattern]] = {
                    r"how much|price)\b", re.I),
     ),
     "vision": (
-        {"see_image"},
+        {"see_image", "look"},
         re.compile(r"\b(image|photo|picture|screenshot|camera|look at|"
-                   r"see this|what.s this)\b", re.I),
+                   r"see this|what.s this|holding|reading|wearing)\b", re.I),
     ),
     "skills": (
         {"use_skill", "propose_skill"},
-        re.compile(r"\b(skill|skills|briefing|brief me|routine|workflow|"
-                   r"procedure)\b", re.I),
+        re.compile(r"\b(skill|skills|routine|workflow|procedure)\b", re.I),
+    ),
+    "briefing": (
+        {"set_daily_briefing", "cancel_daily_briefing"},
+        re.compile(r"\b(briefing|brief me|morning report|daily (?:report|rundown|"
+                   r"summary)|every morning|each morning)\b", re.I),
+    ),
+    "news": (
+        {"news_digest"},
+        re.compile(r"\b(news|headline|headlines|current events|what.s happening|"
+                   r"going on in the world)\b", re.I),
+    ),
+    "convert": (
+        {"convert_units", "convert_currency", "world_time"},
+        re.compile(r"\b(convert|conversion|how many|how much is|in (?:celsius|"
+                   r"fahrenheit|kg|lbs|pounds|miles|km|metres|meters|feet)|"
+                   r"exchange rate|currency|dollars?|euros?|rands?|pounds?|"
+                   r"time in|timezone|time zone)\b", re.I),
+    ),
+    "people": (
+        {"remember_person", "recall_person", "list_people", "forget_person"},
+        re.compile(r"\b(who is|who.s|remember that|note that|colleague|friend|"
+                   r"my (?:boss|manager|brother|sister|mum|mom|dad|partner|wife|"
+                   r"husband)|people|contacts?)\b", re.I),
+    ),
+    "docs": (
+        {"search_documents"},
+        re.compile(r"\b(document|documents|notes?|my files?|wrote down|"
+                   r"in my notes)\b", re.I),
+    ),
+    "home": (
+        {"home_control", "home_list_devices", "home_get_state",
+         "home_set_light", "home_set_temperature", "home_activate_scene"},
+        re.compile(r"\b(lights?|lamp|thermostat|heating|aircon|air con|"
+                   r"temperature in|switch (?:on|off)|turn (?:on|off)|scene|"
+                   r"home assistant|smart home|blinds?|curtains?)\b", re.I),
     ),
 }
 

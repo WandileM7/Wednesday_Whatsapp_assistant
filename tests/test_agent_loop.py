@@ -174,3 +174,45 @@ def test_the_history_budget_is_actually_applied():
     convo = [m for m in sent if m["role"] != "system"]
     assert len(convo) < len(long_history)
     assert convo[-1]["content"] == "now this"      # the live turn always survives
+
+async def test_tool_loop_bails_after_max_hops():
+    await db.init(); await db.clear_messages("e4")
+    agent._HISTORIES.pop("e4", None)
+    transport, calls = _fake_ollama([
+        _ndjson({"message": {"tool_calls": [
+            {"function": {"name": "get_time", "arguments": {}}}]}}),
+    ])  # same tool-call response forever
+    agent._transport = transport
+    events = await _run("e4", "loop forever")
+    assert len(calls) == agent._MAX_TOOL_HOPS
+    assert any("stuck in a tool loop" in e.get("text", "") for e in events)
+
+
+async def test_null_arguments_from_a_hosted_provider(monkeypatch):
+    """Hosted OpenAI-compatible backends send "null" rather than "{}" for a
+    no-argument tool. json.loads gives None, and fn(**None) raises -- so every
+    no-arg tool would silently fail. Anything non-mapping means "no args"."""
+    seen = {}
+
+    async def fake_get_time():
+        seen["called"] = True
+        return "2026-07-26T13:27:00"
+
+    monkeypatch.setitem(agent.REGISTRY, "get_time",
+                        {"description": "d", "schema": {}, "fn": fake_get_time})
+    out = await agent._exec_tool(
+        {"id": "c1", "function": {"name": "get_time", "arguments": "null"}})
+    assert seen.get("called") is True
+    assert "2026-07-26" in out["content"]
+    assert "Error from" not in out["content"]
+    assert out["tool_call_id"] == "c1"
+
+
+async def test_non_mapping_arguments_are_treated_as_empty(monkeypatch):
+    async def fake():
+        return "ok"
+    monkeypatch.setitem(agent.REGISTRY, "get_time",
+                        {"description": "d", "schema": {}, "fn": fake})
+    for raw in ("null", "[1,2]", "", "not json"):
+        out = await agent._exec_tool({"function": {"name": "get_time", "arguments": raw}})
+        assert "Error from" not in out["content"], raw

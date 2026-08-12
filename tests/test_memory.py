@@ -97,3 +97,62 @@ def test_an_empty_or_stopword_only_fact_is_not_grounded():
 def test_partially_supported_facts_are_rejected():
     """Half-invented is still invented: shellfish is real, Thailand isn't."""
     assert not memory._grounded("Ate shellfish in Thailand last summer", _SRC)
+
+async def test_relevant_prefers_rare_term_over_recency():
+    # A rare, discriminating term must outrank a common one even when the
+    # common-term match is newer — the whole point of BM25 idf over plain
+    # overlap-count (which would tie at 1 and let recency win the wrong doc).
+    await db.init()
+    await db.add_memories("bm25", [
+        "The vault code is 4471",     # oldest; 'vault' is rare (df 1)
+        "User enjoys hiking",         # 'hiking' is common in this set (df 3)
+        "User enjoys hiking trails",
+        "User enjoys hiking daily",   # newest common-term match
+    ])
+    top = await memory.relevant("bm25", "hiking vault", k=1)
+    assert top[0] == "The vault code is 4471"
+
+
+async def test_search_messages_scopes_to_user_and_ranks():
+    await db.init()
+    await db.clear_messages("m2")
+    await db.add_messages("m2", [
+        {"role": "user", "content": "let's discuss the visa application for Portugal"},
+        {"role": "assistant", "content": "Portugal visa needs form D7"},
+        {"role": "user", "content": "unrelated grocery list"},
+    ])
+    await db.add_messages("m3", [{"role": "user", "content": "visa visa visa"}])
+    hits = await memory.search_messages("m2", "portugal visa", limit=2)
+    assert len(hits) == 2
+    assert all("visa" in h["text"].lower() for h in hits)
+
+    nothing = await memory.search_messages("m2", "spaceship")
+    assert nothing == [{"note": "nothing found in past conversations"}]
+    await db.clear_messages("m2"); await db.clear_messages("m3")
+
+
+async def test_search_messages_ties_resolve_newest_first():
+    # equal score + equal length ⇒ a true tie; it must resolve to the newer
+    # message (guards the id-polarity of the BM25 tiebreak).
+    await db.init()
+    await db.clear_messages("mtie")
+    await db.add_messages("mtie", [
+        {"role": "user", "content": "alpha beta"},    # older
+        {"role": "user", "content": "alpha gamma"},   # newer
+    ])
+    hits = await memory.search_messages("mtie", "alpha", limit=2)
+    assert hits[0]["text"] == "alpha gamma"
+    await db.clear_messages("mtie")
+
+
+async def test_search_conversations_tool_uses_context_user():
+    from backend.tools import CURRENT_USER, REGISTRY
+    await db.init()
+    await db.clear_messages("m4")
+    await db.add_messages("m4", [{"role": "user", "content": "the wifi password is hunter2"}])
+    CURRENT_USER.set("m4")
+    result = await REGISTRY["search_conversations"]["fn"](query="wifi password")
+    assert "hunter2" in str(result)
+    CURRENT_USER.set("")
+    assert await REGISTRY["search_conversations"]["fn"](query="x") == "No active user context."
+    await db.clear_messages("m4")
