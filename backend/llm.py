@@ -185,7 +185,11 @@ def _for_ollama(messages: list[dict]) -> list[dict]:
 async def _stream_ollama(messages, tools, transport) -> AsyncIterator[dict]:
     payload = {"model": settings.ollama_model, "messages": _for_ollama(messages),
                "tools": tools, "stream": True, "keep_alive": "2h",
-               "options": {"temperature": 0.6, "num_ctx": settings.num_ctx}}
+               "options": {"temperature": settings.temperature,
+                           "min_p": settings.min_p,
+                           "repeat_penalty": settings.repeat_penalty,
+                           "repeat_last_n": settings.repeat_last_n,
+                           "num_ctx": settings.num_ctx}}
     content, tool_calls = [], []
     async with httpx.AsyncClient(timeout=httpx.Timeout(300, connect=30),
                                  transport=transport) as client:

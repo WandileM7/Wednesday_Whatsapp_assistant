@@ -18,6 +18,26 @@ class Settings(BaseSettings):
     # prompt (dropping tool schemas / system prompt). 8192 leaves room for the
     # prompt plus the reply. Raise for longer memory, lower to save RAM/CPU.
     num_ctx: int = 8192
+    # Sampling for the interactive reply. Not Ollama's defaults, and the reason
+    # is the persona: at temperature 0.6 with no probability floor she is safe,
+    # flat and repetitive — the highest-probability continuation of a
+    # gothic-deadpan prompt is a mild one, every time.
+    #
+    # min_p is what makes a higher temperature usable. It keeps only tokens
+    # within a fraction of the top token's probability, so the tail is cut
+    # *relative* to how confident the model is: near-deterministic where it
+    # matters (a tool name, a number) and wide where it doesn't (an aside).
+    # Measured here on qwen2.5:7b, same seed at temperature 3.0 — with no floor
+    # the reply degenerates; with a floor it stays a sentence. That property is
+    # what buys the temperature headroom below, and it is why min_p, not top_p,
+    # is the truncation used (see arXiv 2407.01082).
+    #
+    # repeat_penalty is deliberately mild: she is *supposed* to reuse "boss" and
+    # her own idiom. It is here for token-level loops, not for style.
+    temperature: float = 1.0
+    min_p: float = 0.08
+    repeat_penalty: float = 1.12
+    repeat_last_n: int = 256
     # Prompt slice of the context window left for history (≈4 chars/token)
     history_budget_tokens: int = 2500
     # Offer only the tools this turn implicates (see toolrouter) instead of all
@@ -132,7 +152,11 @@ class Settings(BaseSettings):
     llm_base_url: str = ""
     llm_api_key: str = ""
     llm_model: str = ""
-    llm_temperature: float = 0.6
+    # Hosted temperature is its own knob: OpenAI-compatible endpoints have no
+    # min_p, so the local trick of "hot with a floor" isn't available and this
+    # has to stay nearer the middle. Bigger hosted models also carry a persona
+    # without needing the push.
+    llm_temperature: float = 0.85
     llm_timeout: float = 120.0
     # Cap how many tool schemas are offered per request; 0 = all of them.
     # The full registry is ~3.6k tokens on every call, which exhausts a
