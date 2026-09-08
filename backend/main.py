@@ -5,8 +5,8 @@ from fastapi import FastAPI, HTTPException, Request, UploadFile, WebSocket, WebS
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
 from . import (agent, db, email_channel, guard, imessage, live, llm, logstream,
-               markers, mcp_client, oauth, scheduler, vecstore, vision, voice,
-               voice_commands, wakeword, whatsapp, wyoming_server)
+               markers, mcp_client, oauth, phone, scheduler, turncost, vecstore,
+               vision, voice, voice_commands, wakeword, whatsapp, wyoming_server)
 from .config import settings
 
 logging.basicConfig(level=logging.INFO)
@@ -44,33 +44,19 @@ async def _startup():
     asyncio.create_task(scheduler.run())
     asyncio.create_task(email_channel.run())
     asyncio.create_task(wyoming_server.run())
+    asyncio.create_task(phone.run())
 
 @app.on_event("shutdown")
 async def _shutdown():
     await mcp_client.shutdown()
+    # Closes the index connection, which is what truncates its WAL — see
+    # vecstore.close(). Nothing downstream depends on it, so it goes last.
+    await vecstore.close()
 
-_SENTENCE_END = re.compile(r"(?<=[.!?…])\s")
-_MIN_TTS_CHARS = 20       # first segment: speak as soon as possible
-_MIN_TTS_CHARS_NEXT = 80  # later segments: batch sentences so prosody flows
-_MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
-_BARE_URL = re.compile(r"https?://\S+")
-_MD_MARKS = re.compile(r"[*_#`~]+")
-_BULLET = re.compile(r"^\s*(?:[-•+]|\d+[.)])\s+", re.MULTILINE)
-
-def _tts_clean(text: str) -> str:
-    """Make text speakable: keep link labels, drop URLs and markdown syntax."""
-    text = _MD_LINK.sub(r"\1", text)
-    text = _BARE_URL.sub("", text)
-    text = _MD_MARKS.sub("", text)
-    text = _BULLET.sub("", text)
-    return re.sub(r"\s+", " ", text).strip()
-
-def _speakable(text: str, spoken: int) -> int:
-    """Index just past the last complete sentence after `spoken`, or `spoken`."""
-    min_chars = _MIN_TTS_CHARS if spoken == 0 else _MIN_TTS_CHARS_NEXT
-    matches = list(_SENTENCE_END.finditer(text, spoken))
-    if not matches or matches[-1].end() - spoken < min_chars: return spoken
-    return matches[-1].end()
+# Both live in voice.py now — phone.py cuts segments the same way and main
+# imports phone, so a shared home beat a copy. Re-exported because this is
+# where they were first written and where the tests still look for them.
+_speakable, _tts_clean = voice._speakable, voice._tts_clean
 
 async def _send_audio(ws: WebSocket, wav: bytes):
     await ws.send_json({"type": "audio", "audio_b64": base64.b64encode(wav).decode()})
@@ -236,11 +222,36 @@ async def doctor():
     checks["chat_model"] = (f"hosted {settings.llm_model} at "
                             f"{settings.llm_base_url} (ollama fallback)") if llm.hosted() \
         else f"ollama {settings.ollama_model} (local)"
+    if llm.hosted():
+        # The measured local rate, which is the one thing that says whether the
+        # GPU backend actually loaded — `ollama ps` reports "100% CPU" either
+        # way, so this is the check to read. ~70 tok/s prefill is the iGPU; ~6
+        # is the CPU fallback. Shown whether or not routing is acting on it.
+        prefill, decode, miss = turncost.rates()
+        checks["local_speed"] = (
+            f"{prefill:.0f} tok/s prefill, {decode:.0f} tok/s decode, "
+            f"{miss:.0%} cache miss "
+            f"({'measured' if turncost.measured() else 'assumed — no local turn yet'})")
+        checks["backend_routing"] = (
+            f"on, hosted above {settings.route_latency_budget:g}s"
+            if settings.route_backend else "off (estimate logged only)")
     checks["auth"] = "token required" if settings.api_token else "OPEN — set API_TOKEN"
     checks["heartbeat"] = f"every {settings.heartbeat_minutes}m" if settings.heartbeat_minutes else "off"
     checks["code_execution"] = "enabled (docker sandbox)" if settings.enable_code_execution else "off"
     checks["browser"] = "enabled (browser-use)" if settings.enable_browser_use else "off"
     checks["wyoming"] = settings.wyoming_uri if settings.enable_wyoming else "off"
+    if not settings.enable_phone:
+        checks["phone"] = "off"
+    else:
+        # First-audio latency is the only number that says whether a call is
+        # usable, and it cannot be predicted from the prefill rate — the reply
+        # starts speaking at the first sentence, not the last token. Read this
+        # after a dozen real calls, then set the budget.
+        stats = phone.latency_stats()
+        where = f"audiosocket on {settings.phone_host}:{settings.phone_port}"
+        checks["phone"] = where if not stats["turns"] else (
+            f"{where} · first audio {stats['median']:.1f}s median, "
+            f"{stats['worst']:.1f}s worst over {stats['turns']} turns")
     if settings.enable_memory_embeddings and models and \
             not any(settings.embed_model in m for m in models):
         checks["memory_index"] = (f"embed model {settings.embed_model} not pulled — "

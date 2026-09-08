@@ -6,7 +6,7 @@ salmon`, despite a system note saying no markdown and no lists. That is not a
 capability gap either model can be talked out of — asked for a list, a model
 writes a list, and the format prior beats the instruction.
 
-So stop asking. `main._tts_clean` already does this for speech; this is the
+So stop asking. `voice._tts_clean` already does this for speech; this is the
 same idea for message bubbles, with one difference: speech drops URLs because
 they are unreadable aloud, and a bubble should keep them because they are
 tappable.

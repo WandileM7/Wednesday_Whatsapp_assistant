@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio, json, logging, re
 from typing import AsyncIterator
 import httpx
-from . import db, guard, llm, memory, okf, plaintext, skills, style, toolrouter
+from . import db, guard, llm, memory, okf, plaintext, skills, style, toolrouter, turncost
 from .config import settings
 from .tools import CURRENT_USER, REGISTRY
 
@@ -19,6 +19,7 @@ _SUMMARIZE_BATCH = 8      # summarize once this many messages fall off the slice
 async def reset(user: str) -> None:
     """Forget this user's conversation, in RAM and on disk."""
     _HISTORIES.pop(user, None); _SUMMARIES.pop(user, None)
+    turncost.forget(user)
     await db.clear_messages(user)
 
 async def _history(user: str) -> list[dict]:
@@ -109,6 +110,7 @@ _SURFACES = {
     "whatsapp": "WhatsApp, on their phone",
     "email": "email",
     "wyoming": "a Home Assistant voice satellite, spoken aloud",
+    "phone": "a phone call, live and spoken aloud",
 }
 
 _REGISTER_TURN: dict[str, int] = {}   # rotation cursor, one per user
@@ -193,8 +195,15 @@ def _context(user: str, convo: list[dict], memories: list[str],
             # message bubble, and markdown renders as literal asterisks.
             note += (" Keep it to a couple of sentences, plain text — no markdown, "
                      "no lists, no headings. They are on a phone and cannot see the HUD.")
-        elif surface == "wyoming":
+        elif surface in ("wyoming", "phone"):
             note += " Your reply will be read aloud, so write it to be heard, not read."
+        if surface == "phone":
+            # A voice satellite answers a question. A call is a conversation,
+            # and on a call the other person starts talking over anything
+            # longer than a couple of sentences — so length is not a style
+            # preference here, it is what keeps the turns from colliding.
+            note += (" They are on the line right now: one or two sentences, then "
+                     "stop and let them answer. No lists, no spelling things out.")
         msgs.append({"role": "system", "content": note})
     # okf/persona.md bans "How can I assist" and okf/user.md says to call him
     # boss. Both were being ignored: three replies in a row ended "How can I
@@ -440,19 +449,22 @@ def _tool_specs(query: str = "", allowed: set[str] | None = None):
     chosen = core + ranked[:max(0, cap - len(core))]
     return [_spec(n, offered[n]) for n in chosen]
 
-async def _stream_round(messages, allowed: set[str] | None = None) -> AsyncIterator[dict]:
+async def _stream_round(messages, allowed: set[str] | None = None,
+                        channel: str = "") -> AsyncIterator[dict]:
     """Stream one model turn. Yields {"type": "delta"} events for content tokens,
     then a final {"type": "round_end", "message": ...} with the assembled message.
 
     The backend (hosted or Ollama) is chosen by llm.stream_chat; _transport stays
-    the fake-model test seam and is threaded through to whichever path runs."""
+    the fake-model test seam and is threaded through to whichever path runs.
+    ``channel`` goes with it because that choice is sticky per conversation —
+    see turncost.prefer_hosted."""
     if not messages or messages[0].get("role") != "system":
         messages = [{"role": "system", "content": okf.system_prompt()}, *messages]
     # Tool selection keys off the latest user turn (see _tool_specs).
     query = next((m.get("content") or "" for m in reversed(messages)
                   if m.get("role") == "user"), "")
     async for event in llm.stream_chat(messages, _tool_specs(query, allowed),
-                                       transport=_transport):
+                                       transport=_transport, channel=channel):
         yield event
 
 def _coerce(args: dict, schema: dict) -> dict:
@@ -564,7 +576,7 @@ async def stream_reply(channel, user_text, surface=None) -> AsyncIterator[dict]:
         for _ in range(_MAX_TOOL_HOPS):
             message = None
             async for event in _stream_round(
-                    _context(channel, convo, memories, surface, rotation), allowed):
+                    _context(channel, convo, memories, surface, rotation), allowed, channel):
                 if event["type"] == "round_end": message = event["message"]; continue
                 yield event
             tool_calls = message.pop("tool_calls")

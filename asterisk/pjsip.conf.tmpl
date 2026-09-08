@@ -1,0 +1,52 @@
+; Minimal PJSIP config: one softphone extension, no trunk, no PSTN.
+;
+; This exists so a call can be tested end to end for nothing — Linphone (free,
+; open source, desktop or mobile) registers here over the LAN and dials 100.
+; That puts real SIP signalling, real RTP and real jitter in front of
+; backend/phone.py, which is everything the loopback tester in
+; scripts/callsim.py cannot reach.
+;
+; What it deliberately does not have is a trunk. Adding a number later — a SIP
+; provider, or a SIM in a USB LTE modem via chan_quectel — is another section in
+; this file and one line in extensions.conf. The part being tested here does not
+; change when that arrives, which is the point of testing it first.
+;
+; This is a .tmpl because Asterisk does not expand environment variables in its
+; config: @PLACEHOLDER@ is substituted by the entrypoint in docker-compose.yaml.
+; Editing the generated file inside the container is not persistent; edit here.
+
+[transport-udp]
+type = transport
+protocol = udp
+bind = 0.0.0.0:5060
+; Softphones live on the LAN while Asterisk is inside a container, so the
+; address it advertises in SDP must be the host's, not the bridge's. Wrong here
+; and the call connects, both ends ring, and neither hears anything — the
+; classic one-way-audio symptom, and the first thing to check when it happens.
+external_media_address = @HOST_LAN_IP@
+external_signaling_address = @HOST_LAN_IP@
+local_net = 192.168.0.0/16
+local_net = 10.0.0.0/8
+local_net = 172.16.0.0/12
+
+[softphone]
+type = endpoint
+context = wednesday
+disallow = all
+; ulaw only. AudioSocket speaks 8kHz signed linear, so a wideband codec would
+; just make Asterisk transcode down to the same thing.
+allow = ulaw
+auth = softphone-auth
+aors = softphone
+direct_media = no          ; keep media through Asterisk so it can bridge it
+
+[softphone-auth]
+type = auth
+auth_type = userpass
+username = softphone
+password = @SIP_PASSWORD@
+
+[softphone]
+type = aor
+max_contacts = 3           ; desktop + phone + one spare, registered at once
+remove_existing = yes

@@ -1,0 +1,55 @@
+; Telnyx credentials trunk — this is the leg that reaches a real phone.
+;
+; Rendered only when TELNYX_SIP_USER is set, so the softphone-only test rig in
+; pjsip.conf keeps working with no Telnyx account at all. Credentials rather
+; than IP auth because a home box has no static address to authorise.
+;
+; The registration is what makes inbound work: Telnyx needs somewhere to send a
+; call, and a box behind NAT has to go and tell it where that is, repeatedly.
+
+[telnyx-auth]
+type = auth
+auth_type = userpass
+username = @TELNYX_USER@
+password = @TELNYX_PASSWORD@
+
+[telnyx-reg]
+type = registration
+transport = transport-udp
+outbound_auth = telnyx-auth
+server_uri = sip:sip.telnyx.com
+client_uri = sip:@TELNYX_USER@@sip.telnyx.com
+retry_interval = 60
+expiration = 600
+
+[telnyx]
+type = aor
+contact = sip:sip.telnyx.com:5060
+; Qualify so `pjsip show aors` tells you the trunk is actually up, rather than
+; finding out when a call fails.
+qualify_frequency = 60
+
+[telnyx]
+type = endpoint
+transport = transport-udp
+context = from-telnyx
+disallow = all
+; ulaw/alaw only. AudioSocket is 8kHz signed linear either way, so a wideband
+; codec buys nothing but a transcode.
+allow = ulaw,alaw
+outbound_auth = telnyx-auth
+aors = telnyx
+from_domain = sip.telnyx.com
+rewrite_contact = yes
+force_rport = yes
+direct_media = no
+dtmf_mode = rfc4733
+
+[telnyx-identify]
+type = identify
+endpoint = telnyx
+; Matching on the hostname is the simple form and is usually enough. If inbound
+; calls arrive and Asterisk answers them with 401/403, it is because they came
+; from a media IP this does not resolve to — replace with Telnyx's published
+; SIP IP ranges.
+match = sip.telnyx.com

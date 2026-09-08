@@ -1,11 +1,16 @@
 """Fish Audio streams WAV with placeholder 0xFFFFFFFF size fields, so the
 header claims a ~48,000-second duration. _fix_wav_sizes rewrites the RIFF and
-data chunk sizes to the real byte count without touching the audio payload."""
+data chunk sizes to the real byte count without touching the audio payload.
+
+Plus the hosted-STT fallback, which is the same shape of contract: a hosted
+leg is an optimisation, and the local one has to keep working when it fails.
+"""
 import io
 import struct
 import wave
 
 from backend import voice
+from backend.config import settings
 
 
 def _wav(n_frames: int) -> bytes:
@@ -46,3 +51,54 @@ def test_leaves_a_correct_wav_unchanged():
 def test_ignores_non_riff_bytes():
     junk = b"not a wav at all, just bytes"
     assert voice._fix_wav_sizes(junk) == junk
+
+
+# --- hosted STT --------------------------------------------------------------
+# Groq exists for the call surface, where STT latency is paid before the model
+# even starts. The contract that matters is the fallback: a bad key, a rate
+# limit or a dead network must cost latency, never the transcript.
+
+async def test_groq_is_used_when_keyed(monkeypatch):
+    monkeypatch.setattr(settings, "groq_api_key", "gsk_test")
+    called = {}
+
+    async def fake_groq(audio, filename):
+        called["filename"] = filename
+        return "half four, boss"
+
+    monkeypatch.setattr(voice, "_transcribe_groq", fake_groq)
+    assert await voice.transcribe(b"audio", filename="call.wav") == "half four, boss"
+    assert called["filename"] == "call.wav"
+
+
+async def test_groq_failure_falls_back_to_local_whisper(monkeypatch):
+    monkeypatch.setattr(settings, "groq_api_key", "gsk_test")
+
+    async def boom(audio, filename): raise RuntimeError("429 rate limited")
+
+    class _Local:
+        def transcribe(self, path, vad_filter=False):
+            return [type("S", (), {"text": " local heard it "})()], None
+
+    async def fake_ensure(): return _Local()
+
+    monkeypatch.setattr(voice, "_transcribe_groq", boom)
+    monkeypatch.setattr(voice, "_ensure_whisper", fake_ensure)
+    assert await voice.transcribe(b"audio") == "local heard it"
+
+
+async def test_no_key_never_touches_the_network(monkeypatch):
+    monkeypatch.setattr(settings, "groq_api_key", "")
+
+    async def boom(audio, filename):
+        raise AssertionError("groq called without a key")
+
+    class _Local:
+        def transcribe(self, path, vad_filter=False):
+            return [type("S", (), {"text": "local"})()], None
+
+    async def fake_ensure(): return _Local()
+
+    monkeypatch.setattr(voice, "_transcribe_groq", boom)
+    monkeypatch.setattr(voice, "_ensure_whisper", fake_ensure)
+    assert await voice.transcribe(b"audio") == "local"

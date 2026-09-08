@@ -87,6 +87,85 @@ services:
     restart: unless-stopped
     profiles: ["imessage"]
 
+  # Asterisk, for testing phone calls without buying anything: register a free
+  # softphone (Linphone) against it from the LAN and dial 100. Real SIP, real
+  # RTP, no number, no carrier, no hardware — everything scripts/callsim.py
+  # cannot exercise, which is Asterisk's own opinion of the 20ms pacing.
+  #
+  # Published ports rather than host networking. Host networking is the usual
+  # advice for Asterisk — SIP negotiates media on a second, random UDP range —
+  # but it only works when "host" is the machine your phone can reach. Under
+  # Rancher Desktop or Docker Desktop it is the VM's network namespace instead,
+  # so the ports never appear on the LAN and a softphone cannot register. The
+  # fix is a narrow RTP range (asterisk/rtp.conf) that is small enough to
+  # publish explicitly.
+  #
+  #   HOST_LAN_IP=192.168.x.x SIP_PASSWORD=... docker compose --profile phone up asterisk
+  #
+  # HOST_LAN_IP must be the address the *phone* can reach — on WSL2 that is the
+  # Windows machine's LAN address, not the WSL distro's 172.x NAT address.
+  asterisk:
+    # :full is the tag that ships app_audiosocket.so. The slimmer mlan tags
+    # and the andrius images do not have it, and the failure mode is a
+    # dialplan that loads fine and then says "no such application" on the
+    # call. Checked, not assumed.
+    image: mlan/asterisk:full-1.1.13
+    ports:
+      - "5060:5060/udp"
+      - "10000-10099:10000-10099/udp"
+    environment:
+      HOST_LAN_IP: ${HOST_LAN_IP:-127.0.0.1}
+      SIP_PASSWORD: ${SIP_PASSWORD:-wednesday}
+      # Where Asterisk finds the backend. On a bridge network 127.0.0.1 is the
+      # container itself, so this has to name the host: host.docker.internal
+      # resolves on Docker Desktop and Rancher Desktop, and `backend:8090` is
+      # the answer when the backend runs under compose too.
+      WEDNESDAY_ADDR: ${WEDNESDAY_ADDR:-host.docker.internal:8090}
+      # Telnyx credentials trunk. Unset = softphone-only rig, no trunk loaded.
+      TELNYX_SIP_USER: ${TELNYX_SIP_USER:-}
+      TELNYX_SIP_PASSWORD: ${TELNYX_SIP_PASSWORD:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./asterisk:/srv/wednesday:ro
+    # sed, not envsubst: gettext is not in every asterisk image and this needs
+    # to work on whichever one you end up pinning.
+    # One line per command on purpose: a YAML folded scalar keeps the newline on
+    # any more-indented line, which would end the sed invocation halfway through
+    # its own arguments.
+    # The image's own entrypoint runs a process supervisor and seeds config from
+    # /usr/share/asterisk/config. Bypassed here: this is a test rig, so it seeds
+    # the stock config itself, drops ours over the top and runs asterisk in the
+    # foreground where `docker compose logs -f asterisk` can see it.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        mkdir -p /etc/asterisk
+        cp -n /usr/share/asterisk/config/*.conf /etc/asterisk/ 2>/dev/null || true
+        # The stock config ships a sample "john.doe" endpoint with a sample
+        # password. Harmless as documentation, not harmless as a live account on
+        # a SIP port bound to 0.0.0.0 under host networking — that is precisely
+        # what gets found and dialled through. Ours is the only endpoint file.
+        rm -f /etc/asterisk/pjsip_endpoint.conf /etc/asterisk/pjsip_wizard.conf
+        cp /srv/wednesday/asterisk.conf /etc/asterisk/asterisk.conf
+        cp /srv/wednesday/logger.conf /etc/asterisk/logger.conf
+        cp /srv/wednesday/rtp.conf /etc/asterisk/rtp.conf
+        sed -e "s|@HOST_LAN_IP@|$$HOST_LAN_IP|g" -e "s|@SIP_PASSWORD@|$$SIP_PASSWORD|g" /srv/wednesday/pjsip.conf.tmpl > /etc/asterisk/pjsip.conf
+        sed -e "s|@WEDNESDAY_ADDR@|$$WEDNESDAY_ADDR|g" /srv/wednesday/extensions.conf.tmpl > /etc/asterisk/extensions.conf
+        # The trunk is rendered only when there are credentials for it. An
+        # unrendered @TELNYX_USER@ would register as the literal string and
+        # retry forever, which looks like a password problem and is not.
+        if [ -n "$$TELNYX_SIP_USER" ]; then
+          sed -e "s|@TELNYX_USER@|$$TELNYX_SIP_USER|g" -e "s|@TELNYX_PASSWORD@|$$TELNYX_SIP_PASSWORD|g" /srv/wednesday/pjsip_telnyx.conf.tmpl >> /etc/asterisk/pjsip.conf
+          echo "telnyx trunk configured for $$TELNYX_SIP_USER"
+        else
+          echo "no TELNYX_SIP_USER — softphone-only, no trunk"
+        fi
+        exec asterisk -f -vvv
+    restart: unless-stopped
+    profiles: ["phone"]
+
   # Keyless, self-hosted metasearch — the default web_search backend.
   searxng:
     image: searxng/searxng:latest

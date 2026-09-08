@@ -13,7 +13,7 @@ Every engine falls through to the next on error, so a flaky network or a
 half-downloaded model degrades the voice instead of losing it.
 """
 from __future__ import annotations
-import asyncio, io, logging, tempfile, wave
+import asyncio, io, logging, re, tempfile, wave
 from pathlib import Path
 
 import httpx
@@ -168,7 +168,45 @@ async def preload():
         log.exception("voice preload failed; will retry lazily on first use")
 
 
+_groq_client: httpx.AsyncClient | None = None
+
+
+def _groq() -> httpx.AsyncClient:
+    """Keep-alive client, for the reason `_fish` has one: a TLS handshake per
+    utterance is a tenth of a second spent on nothing, and on a call that is
+    the difference between an answer and a pause."""
+    global _groq_client
+    if _groq_client is None:
+        _groq_client = httpx.AsyncClient(
+            base_url="https://api.groq.com/openai/v1",
+            headers={"Authorization": f"Bearer {settings.groq_api_key}"},
+            timeout=httpx.Timeout(30, connect=5),
+            limits=httpx.Limits(max_keepalive_connections=5, keepalive_expiry=120),
+            transport=httpx.AsyncHTTPTransport(retries=1),
+        )
+    return _groq_client
+
+
+async def _transcribe_groq(audio: bytes, filename: str) -> str:
+    r = await _groq().post(
+        "/audio/transcriptions",
+        files={"file": (filename, audio)},
+        data={"model": settings.groq_stt_model, "response_format": "json"},
+    )
+    r.raise_for_status()
+    return (r.json().get("text") or "").strip()
+
+
 async def transcribe(audio: bytes, filename: str = "audio.webm") -> str:
+    if settings.groq_api_key:
+        try:
+            return await _transcribe_groq(audio, filename)
+        except Exception:
+            # Deliberately not fatal, and deliberately noisy: falling back is
+            # correct, but silently doing it on every turn means paying a
+            # network round trip before the local model runs anyway.
+            log.exception("groq STT failed; falling back to faster-whisper")
+
     model = await _ensure_whisper()
 
     def _run() -> str:
@@ -285,6 +323,36 @@ async def _synthesize_piper(text: str) -> bytes:
         return buf.getvalue()
 
     return await asyncio.to_thread(_run)
+
+
+# ── Streaming segmentation ────────────────────────────────────────────────────
+# These lived in main.py while the web socket was the only surface that streamed
+# TTS. backend/phone.py needs the identical cuts and main.py imports phone, so
+# they moved here rather than being duplicated or imported through a cycle.
+# main.py still re-exports them; tests/test_phase0.py imports them from there.
+
+_SENTENCE_END = re.compile(r"(?<=[.!?…])\s")
+_MIN_TTS_CHARS = 20       # first segment: speak as soon as possible
+_MIN_TTS_CHARS_NEXT = 80  # later segments: batch sentences so prosody flows
+_MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+_BARE_URL = re.compile(r"https?://\S+")
+_MD_MARKS = re.compile(r"[*_#`~]+")
+_BULLET = re.compile(r"^\s*(?:[-•+]|\d+[.)])\s+", re.MULTILINE)
+
+def _tts_clean(text: str) -> str:
+    """Make text speakable: keep link labels, drop URLs and markdown syntax."""
+    text = _MD_LINK.sub(r"\1", text)
+    text = _BARE_URL.sub("", text)
+    text = _MD_MARKS.sub("", text)
+    text = _BULLET.sub("", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+def _speakable(text: str, spoken: int) -> int:
+    """Index just past the last complete sentence after `spoken`, or `spoken`."""
+    min_chars = _MIN_TTS_CHARS if spoken == 0 else _MIN_TTS_CHARS_NEXT
+    matches = list(_SENTENCE_END.finditer(text, spoken))
+    if not matches or matches[-1].end() - spoken < min_chars: return spoken
+    return matches[-1].end()
 
 
 def _engines() -> list[str]:
