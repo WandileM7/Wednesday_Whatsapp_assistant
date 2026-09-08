@@ -84,7 +84,7 @@ async def _handle(msg: email.message.Message) -> None:
     body = extract_text(msg).strip()
     if not body: return
     text = f"[Email from {sender}] Subject: {subject}\n\n{body[:4000]}"
-    reply_text = markers.strip(await agent.reply(user, text)).strip()
+    reply_text = markers.strip(await agent.reply(user, text, surface="email")).strip()
     if reply_text:
         await asyncio.to_thread(_send_reply, sender, subject, reply_text,
                                 msg.get("Message-ID"))

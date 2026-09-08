@@ -11,3 +11,8 @@ aiosqlite>=0.20.0
 itsdangerous>=2.2.0
 cryptography>=42.0
 trafilatura>=1.9
+mcp>=1.9
+sqlite-vec>=0.1.6
+# kokoro-onnx>=0.4.9   # optional: ENABLE_KOKORO=true (local Kokoro TTS)
+wyoming>=1.5   # Home Assistant voice (ENABLE_WYOMING=true)
+av>=12.0       # resampling: WhatsApp voice notes, and 8kHz for ENABLE_PHONE

@@ -85,9 +85,9 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
         vec4 cr = texture2D(tDiffuse, vUv + dir * offset);
         vec4 cg = texture2D(tDiffuse, vUv);
         vec4 cb = texture2D(tDiffuse, vUv - dir * offset * 0.5);
-        gl_FragColor = vec4(cr.r, cg.g * 1.05, cb.b * 0.6, 1.0) * flicker;
-        // Push towards amber/orange tone
-        gl_FragColor.rgb = mix(gl_FragColor.rgb, gl_FragColor.rgb * vec3(1.15, 0.85, 0.55), 0.3);
+        gl_FragColor = vec4(cr.r * 1.05, cg.g * 0.72, cb.b * 1.15, 1.0) * flicker;
+        // Push towards violet/purple tone
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, gl_FragColor.rgb * vec3(1.1, 0.7, 1.25), 0.3);
       }
     `,
   };
@@ -104,11 +104,11 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
   controls.enablePan = false;
 
   // ——— COLORS ———
-  const C_BRIGHT = 0xffaa30;
-  const C_MID = 0xdd7700;
-  const C_DIM = 0x884400;
-  const C_FAINT = 0x553300;
-  const C_HOT = 0xffcc66;
+  const C_BRIGHT = 0xc084fc;
+  const C_MID = 0x9333ea;
+  const C_DIM = 0x6b21a8;
+  const C_FAINT = 0x4c1d95;
+  const C_HOT = 0xe9d5ff;
 
   // ——— ORB ROOT ———
   // Every part of the orb (shells, core, orbiting debris, text, dust, rings)
@@ -443,7 +443,7 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
     const ctx = c.getContext("2d")!;
     ctx.font = "bold 14px Courier New";
     const alpha = 0.35 + Math.random() * 0.55;
-    ctx.fillStyle = `rgba(255, ${(130 + Math.random() * 80) | 0}, ${(20 + Math.random() * 30) | 0}, ${alpha})`;
+    ctx.fillStyle = `rgba(${(150 + Math.random() * 60) | 0}, ${(60 + Math.random() * 40) | 0}, ${(220 + Math.random() * 35) | 0}, ${alpha})`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(text, 128, 16);
@@ -599,10 +599,10 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
   dotC.width = dotC.height = 64;
   const dCtx = dotC.getContext("2d")!;
   const g = dCtx.createRadialGradient(32, 32, 0, 32, 32, 32);
-  g.addColorStop(0, "rgba(255,170,48,1)");
-  g.addColorStop(0.2, "rgba(255,120,20,0.6)");
-  g.addColorStop(0.5, "rgba(200,80,0,0.15)");
-  g.addColorStop(1, "rgba(100,40,0,0)");
+  g.addColorStop(0, "rgba(192,132,252,1)");
+  g.addColorStop(0.2, "rgba(147,51,234,0.6)");
+  g.addColorStop(0.5, "rgba(107,33,168,0.15)");
+  g.addColorStop(1, "rgba(76,29,149,0)");
   dCtx.fillStyle = g;
   dCtx.fillRect(0, 0, 64, 64);
 

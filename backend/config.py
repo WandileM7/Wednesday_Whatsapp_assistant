@@ -12,8 +12,66 @@ class Settings(BaseSettings):
     whatsapp_owner_jid: str = ""
     # Comma-separated JIDs allowed to talk to Wednesday; empty = anyone
     whatsapp_allowed_jids: str = ""
+    # Ollama context window for the chat model. The fixed prompt (persona +
+    # tool schemas) is ~2.6k tokens and history adds up to history_budget_tokens,
+    # so the default 4096 over-subscribes and Ollama silently truncates the
+    # prompt (dropping tool schemas / system prompt). 8192 leaves room for the
+    # prompt plus the reply. Raise for longer memory, lower to save RAM/CPU.
+    num_ctx: int = 8192
+    # Sampling for the interactive reply. Not Ollama's defaults, and the reason
+    # is the persona: at temperature 0.6 with no probability floor she is safe,
+    # flat and repetitive — the highest-probability continuation of a
+    # gothic-deadpan prompt is a mild one, every time.
+    #
+    # min_p is what makes a higher temperature usable. It keeps only tokens
+    # within a fraction of the top token's probability, so the tail is cut
+    # *relative* to how confident the model is: near-deterministic where it
+    # matters (a tool name, a number) and wide where it doesn't (an aside).
+    # Measured here on qwen2.5:7b, same seed at temperature 3.0 — with no floor
+    # the reply degenerates; with a floor it stays a sentence. That property is
+    # what buys the temperature headroom below, and it is why min_p, not top_p,
+    # is the truncation used (see arXiv 2407.01082).
+    #
+    # repeat_penalty is deliberately mild: she is *supposed* to reuse "boss" and
+    # her own idiom. It is here for token-level loops, not for style.
+    temperature: float = 1.0
+    min_p: float = 0.08
+    repeat_penalty: float = 1.12
+    repeat_last_n: int = 256
     # Prompt slice of the context window left for history (≈4 chars/token)
     history_budget_tokens: int = 2500
+    # Offer only the tools this turn implicates (see toolrouter) instead of all
+    # 26 every time: 47-78% off the schema block, and far better tool selection
+    # on a small model, which is the whole point.
+    #
+    # The cost to weigh is that tool schemas live in the prompt *prefix*, so
+    # changing the offered set changes the prefix and Ollama re-evaluates from
+    # the first differing token. Whether that matters is entirely a question of
+    # prefill speed, measured 2026-08-11 on the same prompt:
+    #     ipex-llm SYCL on the Arc iGPU   71-86 tok/s   <- what we actually run
+    #     stock ollama, CPU-only           6.2 tok/s    <- the fallback
+    # At 71 tok/s a worst-case re-prefill of the whole ~5k-token prompt is about
+    # a minute, well inside ollama_timeout, and routing pays for itself by
+    # shrinking every cold prompt. So: on.
+    #
+    # If the SYCL backend ever fails to load, Ollama falls back to CPU silently
+    # — note `ollama ps` reports "100% CPU" even when all 29 layers ARE on the
+    # GPU, so that column cannot be used to tell. Check the server log for
+    # "offloaded 29/29 layers to GPU" instead. On the CPU fallback the trade
+    # inverts (a re-prefill becomes ~13 minutes against a 300s timeout) and this
+    # should go back to False.
+    route_tools: bool = True
+    # Hard cap on one tool result once it is serialised into the prompt.
+    # Individual tools truncate their own text, but web_search returns a *list*
+    # of rows at 2000 chars each, and the JSON of five of them outgrew the whole
+    # history budget — evicting the conversation the result was meant to inform.
+    # Half the budget, so a result and the thread it belongs to always coexist.
+    tool_result_chars: int = 4800
+    # Read timeout for one interactive model round. Ample on the iGPU (71-86
+    # tok/s prefill, so even a cold ~5k-token prompt lands in ~70s). Kept
+    # generous because the CPU fallback is 6.2 tok/s, and because a turn with
+    # two or three tool hops re-evaluates a growing prompt each time.
+    ollama_timeout: float = 300.0
     # Proactive check-ins every N minutes; 0 = off (default until trusted)
     heartbeat_minutes: int = 0
     # No proactive pings between these hours (24h clock, "start-end", wraps midnight)
@@ -22,11 +80,65 @@ class Settings(BaseSettings):
     heartbeat_daily_cap: int = 8
     # Sandboxed run_code tool (docker, no network); off until explicitly enabled
     enable_code_execution: bool = False
-    # Model for background utility calls (summaries, fact extraction);
-    # empty = use ollama_model
-    ollama_model_utility: str = ""
+    # browse_web: browser-use driving a headless Chromium with the local model.
+    # Off by default — it needs Chromium installed and a model strong enough to
+    # not wander. Empty browser_model reuses ollama_model.
+    enable_browser_use: bool = False
+    browser_model: str = ""
+    browser_timeout: float = 180.0
+    # Model for background utility calls (summaries, fact extraction). A
+    # *different*, smaller model than ollama_model: sharing one model makes each
+    # background call evict the interactive prompt's KV cache, so the next reply
+    # re-evaluates the whole ~2.2k-token prefix from scratch. A distinct utility
+    # model runs on its own Ollama runner and avoids that.
+    #
+    # Populated rather than empty, because empty is not a neutral default — it
+    # is the single most expensive misconfiguration in the project. E2E_REPORT
+    # §3.4 measured it as ~170s of re-evaluation on *every* interactive turn,
+    # the highest-impact finding in the report, and fixed it by setting this in
+    # .env. The code default stayed empty, so the bug was still one `cp`-less
+    # install away — and silent, since the only symptom is being slow.
+    #
+    # The failure mode if this model is not pulled is much kinder: background
+    # calls 404, extraction and summaries log and skip, and replies are
+    # unaffected. The README's first-run block pulls it.
+    ollama_model_utility: str = "llama3.2:3b"
     # Tools that pause and ask before running (comma-separated)
-    approval_required_tools: str = "gmail_send,calendar_create_event,run_code"
+    approval_required_tools: str = ("gmail_send,calendar_create_event,"
+                                    "calendar_update_event,calendar_delete_event,"
+                                    "run_code,browse_web")
+    # MCP servers (Claude-Desktop-shaped JSON). Missing file = feature off.
+    mcp_config: str = "mcp.json"
+    # Every registered tool's schema rides in every prompt, so cap the total an
+    # over-eager server can add before it crowds out history.
+    mcp_max_tools: int = 24
+    mcp_connect_timeout: float = 20.0
+    # MCP tools are third-party code with side effects: gate them behind the
+    # same approval prompt as run_code. "always" still applies per tool.
+    mcp_require_approval: bool = True
+    # Fallback for get_weather when the model doesn't pass a location — the
+    # user's home city, so "what's the weather?" answers without asking. Set to
+    # "" to force Wednesday to ask instead.
+    default_location: str = "Cape Town"
+    # Ambient listening: when hands-free is on and this is true, Wednesday only
+    # answers utterances addressed to her by name (see backend/wakeword.py).
+    wake_word: str = "wednesday"
+    wake_word_required: bool = False
+    # Vision: images sent on WhatsApp (and the see_image/look tools) are
+    # described by a VLM, and the description enters the text conversation.
+    enable_vision: bool = True
+    # Empty = the hosted chat model when one is configured (most are
+    # multimodal), else local moondream — see vision._model().
+    vision_model: str = ""
+    # Home Assistant: smart-home control. Off unless both are set.
+    # HA_URL=http://homeassistant.local:8123, token from your HA profile page.
+    ha_url: str = ""
+    ha_token: str = ""
+    # Folder of .md/.txt notes Wednesday can quote from (search_documents).
+    documents_dir: str = "documents"
+    # RSS/Atom feeds for news_digest, comma-separated.
+    news_feeds: str = ("https://feeds.bbci.co.uk/news/world/rss.xml,"
+                       "https://www.aljazeera.com/xml/rss/all.xml")
     # Email channel: polls IMAP, replies via SMTP. Off unless address+password set.
     email_address: str = ""
     email_password: str = ""          # app password, not your real one
@@ -35,19 +147,152 @@ class Settings(BaseSettings):
     email_poll_seconds: int = 60
     # Only these senders are answered; the first one maps to default_user
     email_allowed_senders: str = ""
+    # Wyoming server: makes Wednesday a Home Assistant voice assistant (STT +
+    # conversation + TTS). The protocol has no auth, so this is trusted-LAN
+    # only — keep the port off the internet.
+    enable_wyoming: bool = False
+    wyoming_uri: str = "tcp://0.0.0.0:10700"
+    wyoming_language: str = "en"
+    wyoming_user: str = ""               # empty = share default_user's brain
+    # Phone calls, via Asterisk's AudioSocket. Asterisk owns SIP, RTP, NAT and
+    # the modem; this is a plain TCP socket carrying 8kHz PCM, so the backend
+    # never learns telephony. Unauthenticated like Wyoming — LAN only.
+    enable_phone: bool = False
+    phone_host: str = "0.0.0.0"
+    phone_port: int = 8090
+    phone_user: str = ""                 # empty = share default_user's brain
+    # Turn-taking. Silence this long ends the caller's turn; the endpointer only
+    # has to be roughly right because faster-whisper re-trims the edges with its
+    # own VAD (voice.transcribe passes vad_filter=True).
+    phone_silence_seconds: float = 0.8
+    # Frames under this RMS count as silence. 8kHz telephony carries real line
+    # noise, so zero would never trigger; this is calibrated against the first
+    # 300ms of the call and this value is only the floor.
+    phone_noise_floor: int = 500
+    # Barge-in: the caller talking over her stops playback mid-sentence. Off
+    # makes her uninterruptible, which on a phone call is unbearable.
+    phone_barge_in: bool = True
+    # Hard cap on one caller turn, so a hot mic or a held line can't stream
+    # into RAM forever.
+    phone_max_utterance_seconds: int = 30
+    # Spoken the moment the call connects. Something has to land in the first
+    # second or the caller says "hello?" into silence and both of them talk at
+    # once. Fixed text rather than a generated turn: it has to be instant, and
+    # a model asked to greet someone invents a reason for the call.
+    phone_greeting: str = "Wednesday."
+    # Hosted OpenAI-compatible chat backend (Groq, Cerebras, OpenRouter, vLLM…).
+    # Set base_url + api_key to make replies fast; leave unset and everything
+    # stays local on Ollama. Local is always the fallback — see backend/llm.py.
+    # e.g. LLM_BASE_URL=https://api.groq.com/openai/v1
+    #      LLM_MODEL=llama-3.3-70b-versatile
+    llm_base_url: str = ""
+    llm_api_key: str = ""
+    llm_model: str = ""
+    # Hosted temperature is its own knob: OpenAI-compatible endpoints have no
+    # min_p, so the local trick of "hot with a floor" isn't available and this
+    # has to stay nearer the middle. Bigger hosted models also carry a persona
+    # without needing the push.
+    llm_temperature: float = 0.85
+    llm_timeout: float = 120.0
+    # Send a turn hosted only when the local box would be slow at it, instead of
+    # sending every turn hosted the moment a key is set. Strictly narrows what
+    # leaves the machine — "thanks" and "night" stay on Ollama — and stops a
+    # rate-limited tier being spent on messages an 8B model answers instantly.
+    #
+    # Off by default even though it only ever routes *less* traffic out, because
+    # it changes which backend answers and the two do not sound the same: hosted
+    # has no min_p, so the local trick of "hot with a floor" isn't available and
+    # llm_temperature has to sit nearer the middle. Her voice shifting between
+    # messages is a worse failure than a slow reply, so this is a decision to
+    # make deliberately, not a default to inherit.
+    #
+    # The estimate is logged either way (backend/turncost.py) — leave this off,
+    # watch a day of "would route hosted" lines, then decide.
+    route_backend: bool = False
+    # Seconds. A turn estimated to take longer than this locally goes hosted;
+    # coming back to local needs half of it, which is the hysteresis that stops
+    # her flipping backend every other message. Raise it to keep more on-box.
+    route_latency_budget: float = 8.0
+    # Cap how many tool schemas are offered per request; 0 = all of them.
+    # The full registry is ~3.6k tokens on every call, which exhausts a
+    # rate-limited hosted tier in one turn (Groq free is 12k tokens/min) and
+    # costs prefill time locally. Capping trades a little tool recall for a lot
+    # of headroom — core tools are always offered, the rest ranked by relevance.
+    # Applied after route_tools has already narrowed the set by intent: routing
+    # picks *which* groups are relevant, this caps how many survive regardless.
+    max_tools_per_request: int = 0
     ollama_host: str = "http://localhost:11434"
-    ollama_model: str = "qwen2.5:3b"
+    # Matches the README and .env.example. A capable tool-caller is needed:
+    # the fixed prompt (persona + tool schemas) is ~2.2k tokens, so a small
+    # model both reasons poorly and crowds its own context window.
+    #
+    # qwen2.5:7b rather than llama3.1:8b, and the reason is everything above and
+    # around it: the sampling floor was measured on qwen2.5:7b (see min_p), the
+    # fabrication patterns in guard.py were written against qwen2.5 output, and
+    # evals/ reports its numbers on the same family. Defaulting to llama3.1:8b
+    # shipped a model and a sampling profile that had never been validated
+    # together — the knobs said one thing and the model another. Either is a
+    # fine assistant; only one of them is the one this repo is tuned for.
+    ollama_model: str = "qwen2.5:7b"
     whisper_model: str = "base"          # faster-whisper size: tiny/base/small/medium
+    # Groq hosted Whisper. Same relationship as Fish has to Piper: used when the
+    # key is set, and faster-whisper still runs on every failure, so a dead
+    # network costs latency and never the transcript.
+    #
+    # It exists for one surface. On the orb a slow transcript is a slow answer;
+    # on a *call* it is the caller listening to nothing, and STT sits in front
+    # of the model, so its latency is paid before the first token even starts.
+    # Groq's free tier is 28,800 audio seconds a day, which is eight hours of
+    # talking, so calls do not realistically leave it.
+    groq_api_key: str = ""
+    groq_stt_model: str = "whisper-large-v3-turbo"
     piper_voice: str = "en_GB-alba-medium"
     # Fish Audio hosted TTS — used when a key is set, otherwise Piper (local, free)
     fish_api_key: str = ""
     fish_voice_id: str = "bf6b1cbc1a394928adfb6927726d8b17"
     fish_tts_model: str = "s2.1-pro-free"
     fish_speed: float = 1.0
+    # Kokoro: local 82M ONNX voice, far more natural than Piper. Opt-in
+    # because the model is a ~310MB first-run download (pip install kokoro-onnx).
+    enable_kokoro: bool = False
+    kokoro_voice: str = "bf_emma"        # b=British f=female; af_heart, bm_george…
+    kokoro_lang: str = "en-gb"
+    kokoro_speed: float = 1.0
+    # Force one engine ("fish"/"kokoro"/"piper"); empty picks automatically.
+    # Piper stays the last-resort fallback either way.
+    tts_engine: str = ""
     voice_cache_dir: str = "~/.cache/wednesday/voices"
+    # Web search: a hosted provider is used when its key is set, otherwise the
+    # free DuckDuckGo scrape (always the fallback). Tavily is LLM-tuned and can
+    # return page content directly; Brave is a general web index.
+    # SearXNG is preferred over both when set: self-hosted, keyless, no quota.
+    # The shipped docker-compose brings one up at http://searxng:8080.
+    searxng_url: str = ""
+    tavily_api_key: str = ""
+    brave_api_key: str = ""
     database_url: str = "sqlite+aiosqlite:///./wednesday.db"
+    # Hybrid memory retrieval (FTS5 + sqlite-vec). The index is a sidecar
+    # SQLite file — safe to delete, rebuilt from the memories table on demand —
+    # so it works even when database_url points at Postgres.
+    enable_memory_embeddings: bool = True
+    embed_model: str = "nomic-embed-text"     # ollama pull nomic-embed-text
+    vector_db_path: str = "./wednesday-vectors.db"
     waha_url: str = "http://whatsapp-service:3000"
     whatsapp_enabled: bool = True
+    # iMessage via Photon Spectrum (imessage-service/). Off by default and
+    # deliberately not self-starting: it is the only channel that routes your
+    # conversations through a third-party hosted relay, so turning it on has to
+    # be a decision. An empty allowlist blocks everyone — the free tier sends
+    # from a shared number pool, so an open door is one stranger away.
+    imessage_enabled: bool = False
+    imessage_service_url: str = "http://imessage-service:3100"
+    imessage_owner_handle: str = ""      # shares default_user's identity
+    imessage_allowed_handles: str = ""   # comma-separated E.164 numbers / emails
+    # auto = voice in, voice out (the WhatsApp contract) · always = speak every
+    # reply · never = text only. Voice notes need ffmpeg in imessage-service to
+    # transcode to the M4A that Messages accepts; without it this degrades to
+    # text rather than failing the reply.
+    imessage_voice_replies: str = "auto"
     google_client_id: str = ""
     google_client_secret: str = ""
     google_scopes: str = (
@@ -62,7 +307,11 @@ class Settings(BaseSettings):
         "user-read-playback-state user-modify-playback-state "
         "user-read-currently-playing user-read-private streaming"
     )
-    cors_origins: list[str] = ["*"]
+    # Comma-separated allowed browser origins; "*" = any. Fine for local use —
+    # set explicit origins (e.g. http://localhost:1420) before exposing the API
+    # to a network. Auth is bearer-token, not cookies, so "*" isn't a credential
+    # leak, but narrowing it is good hygiene.
+    cors_allow_origins: str = "*"
     okf_dir: str = "okf"                 # OKF bundle: persona, style, routing
     # Fallback only — the live prompt is assembled from the OKF bundle above
     system_prompt: str = (
@@ -70,5 +319,9 @@ class Settings(BaseSettings):
         "funny, effortlessly competent. Answer first, attitude second. One "
         "to three spoken-style sentences, no markdown, never read out URLs."
     )
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()] or ["*"]
 
 settings = Settings()

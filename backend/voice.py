@@ -1,12 +1,19 @@
 """Voice pipeline.
 
 STT: faster-whisper (models auto-download from Hugging Face on first use).
-TTS: Fish Audio hosted voice when FISH_API_KEY is set, otherwise Piper
-(local, free, auto-downloads from Hugging Face on first use). Piper also
-serves as the fallback if a Fish request fails.
+
+TTS engines, tried in order (see `_engines`):
+
+    fish    hosted, used when FISH_API_KEY is set
+    kokoro  local, 82M params, ONNX — natural prosody, no key, no torch.
+            Opt-in (ENABLE_KOKORO) because the model is a ~310MB download.
+    piper   local, tiny, always the last resort so voice never hard-fails
+
+Every engine falls through to the next on error, so a flaky network or a
+half-downloaded model degrades the voice instead of losing it.
 """
 from __future__ import annotations
-import asyncio, io, logging, tempfile, wave
+import asyncio, io, logging, re, tempfile, wave
 from pathlib import Path
 
 import httpx
@@ -17,9 +24,12 @@ log = logging.getLogger(__name__)
 
 _whisper = None
 _piper = None
+_kokoro = None
 _lock = asyncio.Lock()
 
 PIPER_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
+KOKORO_BASE = ("https://github.com/thewh1teagle/kokoro-onnx/releases/download/"
+               "model-files-v1.0")
 
 
 def _voice_files() -> tuple[Path, Path, str]:
@@ -34,11 +44,19 @@ def _voice_files() -> tuple[Path, Path, str]:
 
 
 async def _download(url: str, dest: Path):
+    """Stream to a temp file, then rename: Kokoro's model is ~310MB, too big to
+    hold in memory, and an interrupted download must not leave a corrupt file
+    that looks cached."""
     log.info("downloading %s", url)
-    async with httpx.AsyncClient(timeout=httpx.Timeout(300, connect=15), follow_redirects=True) as client:
-        r = await client.get(url)
-        r.raise_for_status()
-        dest.write_bytes(r.content)
+    tmp = dest.with_suffix(dest.suffix + ".part")
+    async with httpx.AsyncClient(timeout=httpx.Timeout(1800, connect=15),
+                                 follow_redirects=True) as client:
+        async with client.stream("GET", url) as r:
+            r.raise_for_status()
+            with tmp.open("wb") as fh:
+                async for chunk in r.aiter_bytes(1 << 20):
+                    fh.write(chunk)
+    tmp.replace(dest)
 
 
 async def _ensure_piper():
@@ -60,6 +78,61 @@ async def _ensure_piper():
             await _download(f"{PIPER_BASE}/{subdir}/{name}.onnx.json", config)
         _piper = await asyncio.to_thread(PiperVoice.load, str(model), str(config))
         return _piper
+
+
+async def _ensure_kokoro():
+    """Load kokoro-onnx, fetching the model + voice pack on first use.
+
+    kokoro-onnx (not the torch `kokoro` package) keeps this in the same shape
+    as Piper: an ONNX file on disk, onnxruntime — which piper-tts already
+    pulls in — doing the inference, and no GPU or API key involved.
+    """
+    global _kokoro
+    if _kokoro is not None:
+        return _kokoro
+    async with _lock:
+        if _kokoro is not None:
+            return _kokoro
+        from kokoro_onnx import Kokoro
+        cache = Path(settings.voice_cache_dir).expanduser()
+        cache.mkdir(parents=True, exist_ok=True)
+        model, voices = cache / "kokoro-v1.0.onnx", cache / "voices-v1.0.bin"
+        if not model.exists():
+            await _download(f"{KOKORO_BASE}/kokoro-v1.0.onnx", model)
+        if not voices.exists():
+            await _download(f"{KOKORO_BASE}/voices-v1.0.bin", voices)
+        _kokoro = await asyncio.to_thread(Kokoro, str(model), str(voices))
+        log.info("kokoro loaded: voice=%s lang=%s", settings.kokoro_voice, settings.kokoro_lang)
+        return _kokoro
+
+
+def _pcm_wav(samples, rate: int) -> bytes:
+    """Float samples in [-1, 1] → a 16-bit mono WAV, the format the WS channel
+    and the opus encoder both already expect."""
+    try:
+        import numpy as np
+        pcm = (np.clip(np.asarray(samples, dtype="float32"), -1.0, 1.0)
+               * 32767).astype("<i2").tobytes()
+    except ImportError:
+        import array
+        pcm = array.array("h", (max(-32768, min(32767, int(s * 32767)))
+                                for s in samples)).tobytes()
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wav:
+        wav.setnchannels(1); wav.setsampwidth(2); wav.setframerate(int(rate))
+        wav.writeframes(pcm)
+    return buf.getvalue()
+
+
+async def _synthesize_kokoro(text: str) -> bytes:
+    kokoro = await _ensure_kokoro()
+
+    def _run() -> bytes:
+        samples, rate = kokoro.create(text, voice=settings.kokoro_voice,
+                                      speed=settings.kokoro_speed, lang=settings.kokoro_lang)
+        return _pcm_wav(samples, rate)
+
+    return await asyncio.to_thread(_run)
 
 
 async def _ensure_whisper():
@@ -84,13 +157,56 @@ async def preload():
             log.warning("Fish Audio warm-up connect failed: %s", exc)
     try:
         await _ensure_whisper()
-        await _ensure_piper()
+        await _ensure_piper()      # the fallback, so always warm
+        if settings.enable_kokoro:
+            try:  # first call pulls ~310MB; better now than mid-sentence
+                await _ensure_kokoro()
+            except Exception:
+                log.exception("kokoro preload failed; Piper will cover for it")
         log.info("voice models preloaded")
     except Exception:
         log.exception("voice preload failed; will retry lazily on first use")
 
 
+_groq_client: httpx.AsyncClient | None = None
+
+
+def _groq() -> httpx.AsyncClient:
+    """Keep-alive client, for the reason `_fish` has one: a TLS handshake per
+    utterance is a tenth of a second spent on nothing, and on a call that is
+    the difference between an answer and a pause."""
+    global _groq_client
+    if _groq_client is None:
+        _groq_client = httpx.AsyncClient(
+            base_url="https://api.groq.com/openai/v1",
+            headers={"Authorization": f"Bearer {settings.groq_api_key}"},
+            timeout=httpx.Timeout(30, connect=5),
+            limits=httpx.Limits(max_keepalive_connections=5, keepalive_expiry=120),
+            transport=httpx.AsyncHTTPTransport(retries=1),
+        )
+    return _groq_client
+
+
+async def _transcribe_groq(audio: bytes, filename: str) -> str:
+    r = await _groq().post(
+        "/audio/transcriptions",
+        files={"file": (filename, audio)},
+        data={"model": settings.groq_stt_model, "response_format": "json"},
+    )
+    r.raise_for_status()
+    return (r.json().get("text") or "").strip()
+
+
 async def transcribe(audio: bytes, filename: str = "audio.webm") -> str:
+    if settings.groq_api_key:
+        try:
+            return await _transcribe_groq(audio, filename)
+        except Exception:
+            # Deliberately not fatal, and deliberately noisy: falling back is
+            # correct, but silently doing it on every turn means paying a
+            # network round trip before the local model runs anyway.
+            log.exception("groq STT failed; falling back to faster-whisper")
+
     model = await _ensure_whisper()
 
     def _run() -> str:
@@ -128,6 +244,30 @@ def _fish() -> httpx.AsyncClient:
     return _fish_client
 
 
+def _fix_wav_sizes(wav: bytes) -> bytes:
+    """Correct RIFF/data chunk sizes to the actual byte count.
+
+    Fish streams the WAV with placeholder 0xFFFFFFFF size fields, so the header
+    declares a ~48,000-second duration for a two-second clip. Playback copes,
+    but anything that trusts the header (a seek bar, a duration readout) shows
+    nonsense. `data` is the final chunk, so rewriting both size fields to the
+    real length is safe; if the layout isn't the expected RIFF/WAVE, leave it.
+    """
+    import struct
+    if len(wav) < 44 or wav[:4] != b"RIFF" or wav[8:12] != b"WAVE":
+        return wav
+    data = wav.find(b"data", 12)
+    if data == -1 or data + 8 > len(wav):
+        return wav
+    actual = len(wav) - (data + 8)
+    if struct.unpack_from("<I", wav, data + 4)[0] == actual:
+        return wav                               # already correct
+    b = bytearray(wav)
+    struct.pack_into("<I", b, 4, len(wav) - 8)   # RIFF ChunkSize
+    struct.pack_into("<I", b, data + 4, actual)  # data Subchunk2Size
+    return bytes(b)
+
+
 async def _synthesize_fish(text: str) -> bytes:
     """Returns WAV bytes from the Fish Audio TTS API."""
     r = await _fish().post(
@@ -142,7 +282,7 @@ async def _synthesize_fish(text: str) -> bytes:
         },
     )
     r.raise_for_status()
-    return r.content
+    return _fix_wav_sizes(r.content)
 
 
 def _wav_to_opus_ogg(wav: bytes) -> bytes:
@@ -170,14 +310,7 @@ async def synthesize_voice_note(text: str) -> bytes:
     return await asyncio.to_thread(_wav_to_opus_ogg, wav)
 
 
-async def synthesize(text: str) -> bytes:
-    """Returns WAV bytes."""
-    if settings.fish_api_key:
-        try:
-            return await _synthesize_fish(text)
-        except Exception:
-            log.exception("Fish Audio TTS failed; falling back to Piper")
-    text = markers.strip(text).strip()  # Piper would read "[sighing]" out loud
+async def _synthesize_piper(text: str) -> bytes:
     voice = await _ensure_piper()
 
     def _run() -> bytes:
@@ -190,3 +323,67 @@ async def synthesize(text: str) -> bytes:
         return buf.getvalue()
 
     return await asyncio.to_thread(_run)
+
+
+# ── Streaming segmentation ────────────────────────────────────────────────────
+# These lived in main.py while the web socket was the only surface that streamed
+# TTS. backend/phone.py needs the identical cuts and main.py imports phone, so
+# they moved here rather than being duplicated or imported through a cycle.
+# main.py still re-exports them; tests/test_phase0.py imports them from there.
+
+_SENTENCE_END = re.compile(r"(?<=[.!?…])\s")
+_MIN_TTS_CHARS = 20       # first segment: speak as soon as possible
+_MIN_TTS_CHARS_NEXT = 80  # later segments: batch sentences so prosody flows
+_MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+_BARE_URL = re.compile(r"https?://\S+")
+_MD_MARKS = re.compile(r"[*_#`~]+")
+_BULLET = re.compile(r"^\s*(?:[-•+]|\d+[.)])\s+", re.MULTILINE)
+
+def _tts_clean(text: str) -> str:
+    """Make text speakable: keep link labels, drop URLs and markdown syntax."""
+    text = _MD_LINK.sub(r"\1", text)
+    text = _BARE_URL.sub("", text)
+    text = _MD_MARKS.sub("", text)
+    text = _BULLET.sub("", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+def _speakable(text: str, spoken: int) -> int:
+    """Index just past the last complete sentence after `spoken`, or `spoken`."""
+    min_chars = _MIN_TTS_CHARS if spoken == 0 else _MIN_TTS_CHARS_NEXT
+    matches = list(_SENTENCE_END.finditer(text, spoken))
+    if not matches or matches[-1].end() - spoken < min_chars: return spoken
+    return matches[-1].end()
+
+
+def _engines() -> list[str]:
+    """Engines to try, best first. Piper is always appended: it's local, tiny
+    and already on disk, so there's always something left to speak with."""
+    if forced := settings.tts_engine.strip().lower():
+        return [forced] if forced == "piper" else [forced, "piper"]
+    order = []
+    if settings.fish_api_key: order.append("fish")
+    if settings.enable_kokoro: order.append("kokoro")
+    return order + ["piper"]
+
+
+async def synthesize(text: str) -> bytes:
+    """Returns WAV bytes."""
+    # Fish interprets emotion markers like "[sighing]"; the local engines would
+    # read them out loud, so they get the stripped text.
+    clean = markers.strip(text).strip()
+    last: Exception | None = None
+    for engine in _engines():
+        try:
+            if engine == "fish":
+                return await _synthesize_fish(text)
+            if engine == "kokoro":
+                return await _synthesize_kokoro(clean)
+            return await _synthesize_piper(clean)
+        except ImportError as exc:  # engine enabled but its package isn't installed
+            last = exc
+            log.warning("%s TTS unavailable (%s) — falling back. Install it with: "
+                        "pip install kokoro-onnx", engine, exc)
+        except Exception as exc:  # noqa: BLE001 — try the next engine
+            last = exc
+            log.exception("%s TTS failed; falling back", engine)
+    raise last or RuntimeError("no TTS engine configured")

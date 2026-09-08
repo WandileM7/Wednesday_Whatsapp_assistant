@@ -119,3 +119,50 @@ then pass — them. Ordered by phase; each item is scoped to this codebase.
 - No third-party skill marketplace until there's a sandbox + scanner story; ClawHub's
   supply-chain surface is OpenClaw's biggest liability. Local-authored, human-reviewed
   skills only.
+
+---
+
+## Phase 6 — landed 2026-08 (beyond the original gap analysis)
+
+The items above closed the gap with OpenClaw and Hermes. These go past it, and
+are all in-tree now:
+
+| # | What | Where |
+|---|---|---|
+| 27 | **MCP client** — every tool on every server in `mcp.json` becomes a Wednesday tool at boot, namespaced and approval-gated, with a cap so schemas can't eat the context window | `backend/mcp_client.py` |
+| 28 | **Hybrid memory retrieval** — FTS5 keyword + sqlite-vec semantic search fused by RRF, embeddings from local `nomic-embed-text`; degrades to keyword, then to the old lexical scan | `backend/vecstore.py` |
+| 29 | **SearXNG search** — self-hosted metasearch over ~70 engines, keyless and unthrottled, now the preferred `web_search` backend ahead of the paid providers | `backend/tools/builtin.py`, `searxng/` |
+| 30 | **Kokoro TTS** — 82M-param ONNX voice, local and free, slotted into a Fish → Kokoro → Piper fallback chain | `backend/voice.py` |
+| 31 | **Vision** — photos sent on WhatsApp are described by a local VLM (moondream) and enter the conversation as text; `see_image` does the same for URLs | `backend/vision.py` |
+| 32 | **Wake word** (roadmap item 23) — openWakeWord's three-model pipeline running on onnxruntime-web, gating the VAD that was already there | `frontend/src/lib/wakeWord.js` |
+| 33 | **Browser control** — `browse_web` drives headless Chromium with the local model for pages `fetch_page` can't read | `backend/tools/browser.py` |
+| 34 | **Home Assistant** (extends item 18) — a Wyoming server exposing STT, conversation and TTS, so HA voice satellites share Wednesday's memory and tools | `backend/wyoming_server.py` |
+| 35 | **Phone calls** (extends item 18 again) — an Asterisk AudioSocket server: 8kHz PCM over TCP, server-side endpointing, 20ms-paced playback and barge-in. Asterisk owns SIP and the modem, so the backend never learns telephony | `backend/phone.py` |
+
+Everything new is off or degrading-by-default: a missing model, package or
+server costs a log line and a fallback, never a broken assistant.
+
+### Still open
+
+- Telegram and Signal channel adapters (item 18's remaining half). Home
+  Assistant arrived first, via Wyoming.
+- **A phone latency policy.** `backend/phone.py` streams first audio at the
+  first *sentence*, which is what makes a call viable at all, but
+  `route_latency_budget` is 8.0s — fine watching the orb think, fatal holding a
+  phone. Deliberately unresolved: every turn logs its real first-audio latency
+  to `/doctor`, and the budget gets set from that distribution after a dozen
+  real calls. Whatever it lands on breaks "local always works" for this one
+  surface, or accepts an audible stall; that is a decision to make with numbers.
+- **Echo cancellation on calls.** If far-end audio leaks back inbound she can
+  barge in on herself. Belongs in Asterisk, which has the channel context;
+  `phone.py` only mitigates it by requiring sustained speech to interrupt.
+- **The hardware half of item 35.** Dialplan, `chan_quectel` and a SIM in a USB
+  LTE modem, plus the outbound leg so the scheduler can have her ring you.
+  The AudioSocket leg is now verified against a real Asterisk (`docker compose
+  --profile phone`, a softphone, extension 100), which is what turned up the
+  2000ms no-activity hangup that `Call.transmit` now answers with keepalive
+  silence. Still unverified: whether the far end hears the pacing cleanly, and
+  everything past the trunk.
+- Third-party skills. Still deliberately absent, for the supply-chain reasons
+  in the security thread below — MCP servers are the sanctioned way to add
+  capability now, and they run out-of-process behind an approval prompt.

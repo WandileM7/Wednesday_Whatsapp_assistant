@@ -1,0 +1,19 @@
+# SearXNG config for Wednesday's web_search tool.
+#
+# Two deviations from stock matter: `json` in search.formats (off by default,
+# and without it the API returns HTML the tool can't parse) and limiter: false
+# (the bot-detection limiter would rate-limit our own backend).
+use_default_settings: true
+
+server:
+  # Only reachable on the compose network; override via SEARXNG_SECRET if you
+  # expose the instance beyond localhost.
+  secret_key: "wednesday-searxng-change-me"
+  limiter: false
+  image_proxy: false
+
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json

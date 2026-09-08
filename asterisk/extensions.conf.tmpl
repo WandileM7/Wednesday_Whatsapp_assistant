@@ -1,0 +1,49 @@
+; Dial 100 and you are talking to Wednesday.
+;
+; AudioSocket() blocks for the life of the call: Asterisk streams the channel's
+; audio to the TCP server and plays back whatever it writes. The first argument
+; is the call identifier that arrives as the first frame — backend/phone.py logs
+; it, so a log line here and a log line there can be matched up.
+;
+; It must be a real UUID. The obvious ${CHANNEL(uniqueid)} is not one — it looks
+; like "1787339799.1", and app_audiosocket rejects it outright:
+;
+;     ERROR app_audiosocket.c: Failed to parse UUID '1787339799.1'
+;     Spawn extension (wednesday, 100, 4) exited non-zero
+;
+; which hangs up the call with nothing arriving at the socket at all. ${UUID()}
+; comes from func_uuid.so and is the supported way to get one.
+
+[wednesday]
+exten => 100,1,NoOp(call to Wednesday from ${CALLERID(num)})
+ same =>     n,Answer()
+ ; Asterisk needs a moment after Answer() before media flows cleanly. Without
+ ; it the first frames of her greeting land before the channel is up, and the
+ ; caller hears her start mid-word.
+ same =>     n,Wait(0.3)
+ same =>     n,Set(CALLUUID=${UUID()})
+ same =>     n,AudioSocket(${CALLUUID},@WEDNESDAY_ADDR@)
+ same =>     n,Hangup()
+
+; Inbound from Telnyx: whoever calls the number gets Wednesday. The DID arrives
+; as ${EXTEN}, which we ignore — there is one number and one assistant.
+[from-telnyx]
+exten => _X.,1,NoOp(inbound call from ${CALLERID(num)} to ${EXTEN})
+ same =>     n,Goto(wednesday,100,1)
+exten => s,1,Goto(wednesday,100,1)
+
+; Wednesday rings you. Originate into the trunk and hand the answered call to
+; extension 100, which is the same AudioSocket leg an inbound call gets:
+;
+;   docker compose --profile phone exec asterisk asterisk -rx \
+;     "channel originate PJSIP/+27XXXXXXXXX@telnyx extension 100@wednesday"
+;
+; That is the whole outbound story — the scheduler calling this is item 13 on
+; the roadmap, not new telephony.
+
+[wednesday]
+; Anything else: say so out loud rather than failing silently, which on a test
+; rig is indistinguishable from the socket being down.
+exten => _X.,1,Answer()
+ same =>    n,Playback(invalid)
+ same =>    n,Hangup()

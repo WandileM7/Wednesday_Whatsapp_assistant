@@ -10,8 +10,20 @@ __pycache__/
 
 # Local runtime state
 wednesday.db
+wednesday-vectors.db
 test_wednesday.db
+test_wednesday-vectors.db
+# SQLite WAL sidecars — transient, and they leak recent rows if committed
+*.db-shm
+*.db-wal
 .claude/
+
+# WSL alternate data streams on files copied in from Windows
+*:Zone.Identifier
+*:sec.endpointdlp
+
+# MCP server list — can hold API tokens in `headers`
+mcp.json
 
 # Personal user-model doc (auto-included in the system prompt when present)
 okf/user.md

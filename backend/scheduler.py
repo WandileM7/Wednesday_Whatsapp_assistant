@@ -16,6 +16,17 @@ _TICK_SECONDS = 15
 _NOTHING = "NOTHING"
 _pings_today: tuple[_dt.date, int] = (_dt.date.min, 0)
 
+# The daily briefing is a *user-created* recurring job (set_daily_briefing), not
+# an ambient behaviour: nothing creates one on boot, so it stays off until asked
+# for — unlike the curator, and deliberately unlike the heartbeat.
+_BRIEFING_PROMPT = (
+    "Deliver the user's daily briefing. Follow your morning-briefing skill: "
+    "today's calendar, any genuinely important unread email, reminders due "
+    "today, and the weather where they live. A few spoken sentences, in "
+    "character. They are not at the keyboard, so don't ask questions and don't "
+    "offer to do anything — just tell them how the day looks."
+)
+
 _HEARTBEAT_PROMPT = (
     "Silent periodic check-in — the user did not send a message. Using your "
     "tools, check for anything urgent: unread important email, calendar events "
@@ -62,6 +73,20 @@ async def tick(now: _dt.datetime | None = None) -> list[int]:
             from . import skills
             report = skills.curator_report()
             ok = await deliver(job.user_key, report) if report else True
+        elif job.kind == "briefing":
+            # A real agent turn, so it can be slow on CPU — same trade-off the
+            # heartbeat already makes, and it holds up the tick loop the same way.
+            from . import agent, markers
+            text = markers.strip(await agent.reply(job.user_key, _BRIEFING_PROMPT)).strip()
+            ok = await deliver(job.user_key, text) if text else True
+        elif job.kind == "hygiene":
+            # Silent by design: a daily "I found nothing" message is noise, and
+            # what it does find is already in the log stream and the HUD.
+            from . import hygiene
+            found = await hygiene.sweep_all()
+            total = sum(len(v) for v in found.values())
+            if total: log.info("hygiene: dropped %d poisoned message(s)", total)
+            ok = True
         else:
             ok = await deliver(job.user_key, f"⏰ Reminder: {job.text}")
         next_due = (job.due_at + _dt.timedelta(minutes=job.recur_minutes)
@@ -83,6 +108,21 @@ async def ensure_curator() -> None:
                      recur_minutes=7 * 24 * 60, kind="curator")
 
 
+async def ensure_hygiene() -> None:
+    """One daily history sweep; created on first boot.
+
+    Daily rather than weekly because a poisoned message is contagious — it
+    becomes the pattern the next reply copies, so a week of it is a week of
+    compounding, not a week of one bad line.
+    """
+    if any(j.kind == "hygiene" for j in await db.pending_jobs(settings.default_user)):
+        return
+    now = _dt.datetime.now()
+    due = (now + _dt.timedelta(days=1)).replace(hour=4, minute=30, second=0, microsecond=0)
+    await db.add_job(settings.default_user, "daily history sweep", due,
+                     recur_minutes=24 * 60, kind="hygiene")
+
+
 async def _heartbeat() -> None:
     global _pings_today
     now = _dt.datetime.now()
@@ -99,6 +139,7 @@ async def _heartbeat() -> None:
 async def run() -> None:
     """Forever-loop started at app startup."""
     await ensure_curator()
+    await ensure_hygiene()
     last_beat = _dt.datetime.now()
     log.info("scheduler running (heartbeat: %s)",
              f"every {settings.heartbeat_minutes}m" if settings.heartbeat_minutes else "off")

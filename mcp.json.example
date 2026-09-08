@@ -1,0 +1,21 @@
+{
+  "//": "Copy to mcp.json to give Wednesday tools from MCP servers. Same shape as Claude Desktop's config, so entries paste straight across. Stdio servers are launched as subprocesses; url servers are reached over streamable HTTP. Every MCP tool asks for approval before it runs (MCP_REQUIRE_APPROVAL=false to trust them all).",
+
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/wandile/personal"],
+      "disabled": true
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest", "--headless"],
+      "disabled": true
+    },
+    "home-assistant": {
+      "url": "http://homeassistant.local:8123/mcp_server/sse",
+      "headers": {"Authorization": "Bearer YOUR_LONG_LIVED_TOKEN"},
+      "disabled": true
+    }
+  }
+}
