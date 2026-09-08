@@ -86,13 +86,23 @@ class Settings(BaseSettings):
     enable_browser_use: bool = False
     browser_model: str = ""
     browser_timeout: float = 180.0
-    # Model for background utility calls (summaries, fact extraction). Set this
-    # to a *different* (smaller) model than ollama_model: sharing one model
-    # makes each background call evict the interactive prompt's KV cache, so
-    # the next reply re-evaluates the whole ~2.2k-token prefix from scratch.
-    # A distinct utility model runs on its own Ollama runner and avoids that.
-    # Empty = reuse ollama_model (simpler, but pays the re-eval cost).
-    ollama_model_utility: str = ""
+    # Model for background utility calls (summaries, fact extraction). A
+    # *different*, smaller model than ollama_model: sharing one model makes each
+    # background call evict the interactive prompt's KV cache, so the next reply
+    # re-evaluates the whole ~2.2k-token prefix from scratch. A distinct utility
+    # model runs on its own Ollama runner and avoids that.
+    #
+    # Populated rather than empty, because empty is not a neutral default — it
+    # is the single most expensive misconfiguration in the project. E2E_REPORT
+    # §3.4 measured it as ~170s of re-evaluation on *every* interactive turn,
+    # the highest-impact finding in the report, and fixed it by setting this in
+    # .env. The code default stayed empty, so the bug was still one `cp`-less
+    # install away — and silent, since the only symptom is being slow.
+    #
+    # The failure mode if this model is not pulled is much kinder: background
+    # calls 404, extraction and summaries log and skip, and replies are
+    # unaffected. The README's first-run block pulls it.
+    ollama_model_utility: str = "llama3.2:3b"
     # Tools that pause and ask before running (comma-separated)
     approval_required_tools: str = ("gmail_send,calendar_create_event,"
                                     "calendar_update_event,calendar_delete_event,"
@@ -144,6 +154,32 @@ class Settings(BaseSettings):
     wyoming_uri: str = "tcp://0.0.0.0:10700"
     wyoming_language: str = "en"
     wyoming_user: str = ""               # empty = share default_user's brain
+    # Phone calls, via Asterisk's AudioSocket. Asterisk owns SIP, RTP, NAT and
+    # the modem; this is a plain TCP socket carrying 8kHz PCM, so the backend
+    # never learns telephony. Unauthenticated like Wyoming — LAN only.
+    enable_phone: bool = False
+    phone_host: str = "0.0.0.0"
+    phone_port: int = 8090
+    phone_user: str = ""                 # empty = share default_user's brain
+    # Turn-taking. Silence this long ends the caller's turn; the endpointer only
+    # has to be roughly right because faster-whisper re-trims the edges with its
+    # own VAD (voice.transcribe passes vad_filter=True).
+    phone_silence_seconds: float = 0.8
+    # Frames under this RMS count as silence. 8kHz telephony carries real line
+    # noise, so zero would never trigger; this is calibrated against the first
+    # 300ms of the call and this value is only the floor.
+    phone_noise_floor: int = 500
+    # Barge-in: the caller talking over her stops playback mid-sentence. Off
+    # makes her uninterruptible, which on a phone call is unbearable.
+    phone_barge_in: bool = True
+    # Hard cap on one caller turn, so a hot mic or a held line can't stream
+    # into RAM forever.
+    phone_max_utterance_seconds: int = 30
+    # Spoken the moment the call connects. Something has to land in the first
+    # second or the caller says "hello?" into silence and both of them talk at
+    # once. Fixed text rather than a generated turn: it has to be instant, and
+    # a model asked to greet someone invents a reason for the call.
+    phone_greeting: str = "Wednesday."
     # Hosted OpenAI-compatible chat backend (Groq, Cerebras, OpenRouter, vLLM…).
     # Set base_url + api_key to make replies fast; leave unset and everything
     # stays local on Ollama. Local is always the fallback — see backend/llm.py.
@@ -158,6 +194,25 @@ class Settings(BaseSettings):
     # without needing the push.
     llm_temperature: float = 0.85
     llm_timeout: float = 120.0
+    # Send a turn hosted only when the local box would be slow at it, instead of
+    # sending every turn hosted the moment a key is set. Strictly narrows what
+    # leaves the machine — "thanks" and "night" stay on Ollama — and stops a
+    # rate-limited tier being spent on messages an 8B model answers instantly.
+    #
+    # Off by default even though it only ever routes *less* traffic out, because
+    # it changes which backend answers and the two do not sound the same: hosted
+    # has no min_p, so the local trick of "hot with a floor" isn't available and
+    # llm_temperature has to sit nearer the middle. Her voice shifting between
+    # messages is a worse failure than a slow reply, so this is a decision to
+    # make deliberately, not a default to inherit.
+    #
+    # The estimate is logged either way (backend/turncost.py) — leave this off,
+    # watch a day of "would route hosted" lines, then decide.
+    route_backend: bool = False
+    # Seconds. A turn estimated to take longer than this locally goes hosted;
+    # coming back to local needs half of it, which is the hysteresis that stops
+    # her flipping backend every other message. Raise it to keep more on-box.
+    route_latency_budget: float = 8.0
     # Cap how many tool schemas are offered per request; 0 = all of them.
     # The full registry is ~3.6k tokens on every call, which exhausts a
     # rate-limited hosted tier in one turn (Groq free is 12k tokens/min) and
@@ -170,8 +225,27 @@ class Settings(BaseSettings):
     # Matches the README and .env.example. A capable tool-caller is needed:
     # the fixed prompt (persona + tool schemas) is ~2.2k tokens, so a small
     # model both reasons poorly and crowds its own context window.
-    ollama_model: str = "llama3.1:8b"
+    #
+    # qwen2.5:7b rather than llama3.1:8b, and the reason is everything above and
+    # around it: the sampling floor was measured on qwen2.5:7b (see min_p), the
+    # fabrication patterns in guard.py were written against qwen2.5 output, and
+    # evals/ reports its numbers on the same family. Defaulting to llama3.1:8b
+    # shipped a model and a sampling profile that had never been validated
+    # together — the knobs said one thing and the model another. Either is a
+    # fine assistant; only one of them is the one this repo is tuned for.
+    ollama_model: str = "qwen2.5:7b"
     whisper_model: str = "base"          # faster-whisper size: tiny/base/small/medium
+    # Groq hosted Whisper. Same relationship as Fish has to Piper: used when the
+    # key is set, and faster-whisper still runs on every failure, so a dead
+    # network costs latency and never the transcript.
+    #
+    # It exists for one surface. On the orb a slow transcript is a slow answer;
+    # on a *call* it is the caller listening to nothing, and STT sits in front
+    # of the model, so its latency is paid before the first token even starts.
+    # Groq's free tier is 28,800 audio seconds a day, which is eight hours of
+    # talking, so calls do not realistically leave it.
+    groq_api_key: str = ""
+    groq_stt_model: str = "whisper-large-v3-turbo"
     piper_voice: str = "en_GB-alba-medium"
     # Fish Audio hosted TTS — used when a key is set, otherwise Piper (local, free)
     fish_api_key: str = ""
