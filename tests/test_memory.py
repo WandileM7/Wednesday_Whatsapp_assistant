@@ -10,7 +10,36 @@ def test_parse_facts_accepts_object_array_and_garbage():
     assert _parse_facts('{"facts": ["User likes tea", " ", 42]}') == ["User likes tea"]
     assert _parse_facts('["a fact here"]') == ["a fact here"]
     assert _parse_facts("not json at all") == []
-    assert _parse_facts('{"facts": "not a list"}') == []
+
+
+def test_parse_facts_recovers_the_shapes_a_small_model_actually_returns():
+    """format:json buys valid JSON, not correct JSON. Each of these used to
+    parse to nothing and lose the whole extraction without a word in the log.
+
+    Being generous here is safe because it is not the trust boundary: both
+    callers put every candidate through _grounded, so the worst a wrong guess
+    can do is offer up a string that then gets rejected.
+    """
+    # A lone fact, not wrapped in a list.
+    assert _parse_facts('{"facts": "Allergic to shellfish"}') == ["Allergic to shellfish"]
+    # The list under a synonym the prompt never asked for.
+    assert _parse_facts('{"memories": ["Drinks rooibos"]}') == ["Drinks rooibos"]
+    # Elements wrapped one per object.
+    assert _parse_facts('{"facts": [{"fact": "Has a dog called Rex"}]}') == \
+        ["Has a dog called Rex"]
+    # A list that came back keyed.
+    assert _parse_facts('{"facts": {"0": "Works at MTN", "1": "Lives in Cape Town"}}') == \
+        ["Works at MTN", "Lives in Cape Town"]
+    # A single unrecognised key holding the payload.
+    assert _parse_facts('{"output": ["Prefers tea"]}') == ["Prefers tea"]
+
+
+def test_parse_facts_does_not_raid_a_structured_reply_for_any_list_it_finds():
+    """One unknown key is a rename; several fields is a different reply shape,
+    and guessing which one holds the facts is how commentary becomes memory."""
+    assert _parse_facts('{"reasoning": ["step one"], "confidence": "high"}') == []
+    assert _parse_facts('{"facts": 42}') == []
+    assert _parse_facts("[]") == []
 
 
 def test_norm_deduplicates_variants():

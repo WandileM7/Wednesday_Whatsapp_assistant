@@ -166,3 +166,67 @@ def differs_from_turn(index: int):
 
 def _words(text: str) -> set[str]:
     return set(re.findall(r"[a-z0-9']+", (text or "").lower()))
+
+
+# ---- background passes ------------------------------------------------------
+#
+# These grade a case whose `action` exercised something other than a reply — so
+# far only memory consolidation, whose "output" is the fact store afterwards,
+# one fact per line. contains_any / not_contains work unchanged on that text;
+# what follows is the part that needs the structured result in ctx.
+
+
+def contains_all(*phrases: str):
+    """Every phrase must survive. contains_any is an OR and would pass on one.
+
+    The distinction matters for consolidation, where the interesting failure is
+    losing a fact that had nothing to do with the merge.
+    """
+    def check(reply: str, ctx) -> Result:
+        low = reply.lower()
+        missing = [p for p in phrases if p.lower() not in low]
+        return Result(not missing, f"keeps {'/'.join(phrases)[:40]}",
+                      f"lost {missing}" if missing else "")
+    return check
+
+
+def applied():
+    """The pass actually rewrote the store.
+
+    Worth its own check because consolidate() refuses a rewrite it cannot
+    verify, and a refusal is *safe* but useless. Without this, a model that
+    never produces an applicable merge would score a clean sheet on every other
+    check — the store it left untouched still contains every fact it was asked
+    to keep. This is the grader that can tell "correct" from "did nothing".
+    """
+    def check(reply: str, ctx) -> Result:
+        removed = ctx.get("removed")
+        return Result(bool(removed), "consolidation applied",
+                      "declined — guards rejected the rewrite" if removed == 0
+                      else "no consolidation ran")
+    return check
+
+
+def exactly_one_of(*phrases: str):
+    """Exactly one of these wordings survives — which is what a merge means.
+
+    Neither existing grader says this. contains_any passes with both still
+    present, and that is precisely the bug; not_contains on either would fail
+    the correct answer, since a merge is entitled to keep whichever of the two
+    wordings it judged clearest.
+    """
+    def check(reply: str, ctx) -> Result:
+        low = reply.lower()
+        hit = [p for p in phrases if p.lower() in low]
+        return Result(len(hit) == 1, f"one of {'/'.join(phrases)[:40]}",
+                      f"kept {len(hit)} of them: {hit}" if len(hit) != 1 else "")
+    return check
+
+
+def store_size_at_most(n: int):
+    """It merged rather than merely restating the list back."""
+    def check(reply: str, ctx) -> Result:
+        facts = ctx.get("facts") or []
+        return Result(len(facts) <= n, f"≤{n} facts left",
+                      f"{len(facts)} facts" if len(facts) > n else "")
+    return check

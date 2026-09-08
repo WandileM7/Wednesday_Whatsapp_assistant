@@ -35,6 +35,12 @@ from backend.tools import REGISTRY              # noqa: E402
 
 from .cases import Case, select                 # noqa: E402
 
+# The configured models, captured before any --model override rewrites them, so
+# each case can be reset to configuration and then have only the one knob it
+# names pointed at the model under test.
+_BASELINE = {"ollama_model": settings.ollama_model,
+             "ollama_model_utility": settings.ollama_model_utility}
+
 GREEN, RED, DIM, YELLOW, BOLD, OFF = (
     "\033[32m", "\033[31m", "\033[2m", "\033[33m", "\033[1m", "\033[0m")
 
@@ -57,12 +63,19 @@ def _install_tool_stubs(recorder: list[str]) -> None:
         spec["fn"] = stub
 
 
-async def _run_case(case: Case, user: str) -> tuple[str, list[str]]:
+async def _run_case(case: Case, user: str) -> tuple[str, list[str], list[str], dict]:
     await agent.reset(user)
     if case.memories:
         await db.add_memories(user, case.memories)
     tools: list[str] = []
     _install_tool_stubs(tools)
+
+    # A background pass rather than a conversation: memory consolidation, which
+    # has no reply to grade. The action hands back the text the graders read
+    # (the fact store afterwards) plus whatever structured result they need.
+    if case.action:
+        text, extra = await case.action(user)
+        return text, tools, [text], extra
 
     # Every reply, not just the last: some properties are only visible across
     # turns — answering the same question twice with the same sentence is the
@@ -73,28 +86,43 @@ async def _run_case(case: Case, user: str) -> tuple[str, list[str]]:
         # and it carries the deterministic injection backstop. Driving the stream
         # directly measured something no user ever reaches.
         replies.append(markers.strip(await agent.reply(user, turn, surface=case.surface)).strip())
-    return (replies[-1] if replies else ""), tools, replies
+    return (replies[-1] if replies else ""), tools, replies, {}
 
 
 async def _attempt(case: Case, user: str) -> tuple[bool, list, str, str | None, float]:
     t0 = time.monotonic()
     try:
-        reply, tools, replies = await _run_case(case, user)
+        reply, tools, replies, extra = await _run_case(case, user)
         err = None
     except Exception as exc:                           # a crash is a failure, not a stop
-        reply, tools, replies, err = "", [], [], f"{type(exc).__name__}: {exc}"
+        reply, tools, replies, extra, err = "", [], [], {}, f"{type(exc).__name__}: {exc}"
     secs = time.monotonic() - t0
-    results = [] if err else [chk(reply, {"tools": tools, "case": case, "replies": replies})
+    results = [] if err else [chk(reply, {"tools": tools, "case": case,
+                                          "replies": replies, **extra})
                               for chk in case.checks]
     ok = bool(results) and all(r.ok for r in results)
     return ok, results, reply, err, secs
 
 
-async def _run_model(model: str, cases: list[Case], verbose: bool, repeat: int) -> dict:
-    settings.ollama_model = model
-    print(f"\n{BOLD}model: {model}{OFF}  ({len(cases)} cases × {repeat})")
+async def _run_model(model: str | None, cases: list[Case], verbose: bool,
+                     repeat: int) -> dict:
+    """Score every case. `model` of None means "use the configured models".
+
+    That distinction matters now that a case can name which knob it exercises:
+    with no override, a conversational case runs on OLLAMA_MODEL and a
+    consolidation case on OLLAMA_MODEL_UTILITY, which is what production does.
+    Overriding with the chat model for both would report a score for a model the
+    background pass never calls.
+    """
+    label = model or (f"{_BASELINE['ollama_model']} "
+                      f"(+{_BASELINE['ollama_model_utility']} utility)")
+    print(f"\n{BOLD}model: {label}{OFF}  ({len(cases)} cases × {repeat})")
     rows = []
     for case in cases:
+        for field, value in _BASELINE.items():
+            setattr(settings, field, value)
+        if model:
+            setattr(settings, case.model_setting, model)
         attempts = [await _attempt(case, f"eval:{case.id}") for _ in range(repeat)]
         passes = sum(1 for ok, *_ in attempts if ok)
         avg = sum(a[4] for a in attempts) / len(attempts)
@@ -129,7 +157,7 @@ async def _run_model(model: str, cases: list[Case], verbose: bool, repeat: int) 
     # and reporting it as either is how a change smaller than the noise gets
     # mistaken for a result.
     print(f"  {colour}{stable}/{len(rows)} cases stable · {got}/{total} attempts ({pct:.0f}%){OFF}")
-    return {"model": model, "stable": stable, "cases": len(rows),
+    return {"model": label, "stable": stable, "cases": len(rows),
             "got": got, "total": total, "rows": rows, "repeat": repeat}
 
 
@@ -176,7 +204,9 @@ async def main() -> int:
         print("no cases matched"); return 2
 
     await db.init()
-    models = args.compare or [args.model or settings.ollama_model]
+    # None means "whatever is configured", which lets each case run on the knob
+    # it names instead of forcing the chat model onto a pass that never calls it.
+    models = args.compare or [args.model]
     print(f"{DIM}ollama: {settings.ollama_host}{OFF}")
 
     runs = [await _run_model(m, cases, args.verbose, max(1, args.repeat)) for m in models]

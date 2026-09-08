@@ -37,6 +37,40 @@ _PATTERNS: tuple[tuple[str, re.Pattern], ...] = (
                                r"(?:the\s+)?(?:user|him|her|them)\b", re.I)),
     ("prompt exfiltration", re.compile(r"\b(?:repeat|print|show|reveal|output)\s+(?:your\s+|the\s+)?"
                                        r"(?:system\s+prompt|initial\s+instructions|above\s+text)\b", re.I)),
+    # The literal delimiters a chat template uses to mark where a turn begins and
+    # whose authority it carries. Unlike everything above these are not English
+    # at all, so there is no honest sentence they belong to — but they are what a
+    # model tokenises as "a new turn starts here", which makes them the one
+    # pattern that can forge a role rather than merely ask for one.
+    #
+    # Both families are listed because both have been the local model: ChatML
+    # (<|im_start|>) is qwen2.5, the header tokens are llama3, and ollama_model
+    # has defaulted to each. A hosted backend adds more, so the tail is loose.
+    ("chat-template tokens", re.compile(r"<\|\s*(?:im_start|im_end|endoftext|eot_id|"
+                                        r"start_header_id|end_header_id|system|user|assistant)"
+                                        r"\s*\|>", re.I)),
+    # The markdown spelling of the same forgery: a fence labelled with a role.
+    ("authority tag", re.compile(r"```+\s*(?:system|assistant)\b", re.I)),
+    # Exfiltration, but only in the shapes that have no honest reading.
+    #
+    # The bare verb is deliberately absent. "Send this to john@work.com" and
+    # "forward that to my mum" are the gmail tool working as intended, and
+    # flagging them would put a security notice against a routine request and
+    # make her cagey about her own features — a much worse trade than the one
+    # line of caution the rest of this list costs.
+    #
+    # What is left is smuggling: encoding a payload before sending it, or
+    # hiding it in a URL. Nobody asks their assistant for either in good faith.
+    # Verb stems, not whole words: \bupload\b does not match "uploading", and an
+    # instruction is as effective in the gerund. The cost is that an honest
+    # question about base64 near one of these verbs also trips — accepted, on
+    # this file's standing trade, and because a personal assistant fields that
+    # question far less often than it reads a forwarded email.
+    ("data exfiltration", re.compile(r"\bbase64\b[^.!?\n]{0,40}\b(?:send|encod|includ|append|post|upload|transmit|exfiltrat)\w*"
+                                     r"|\b(?:send|encod|includ|append|post|upload|transmit|exfiltrat)\w*[^.!?\n]{0,40}\bbase64\b",
+                                     re.I)),
+    ("data exfiltration", re.compile(r"\b(?:append|add|include|encode|embed|put)\b[^.!?\n]{0,50}"
+                                     r"\b(?:in|into|to)\s+the\s+(?:url|link|query\s*string|image\s+src)\b", re.I)),
 )
 
 

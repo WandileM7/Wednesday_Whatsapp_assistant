@@ -83,6 +83,42 @@ async def _db() -> sqlite3.Connection:
     return _conn
 
 
+async def close() -> None:
+    """Checkpoint the WAL and close the index connection.
+
+    Nothing used to close it, and a WAL sidecar does not tidy itself. SQLite's
+    automatic checkpoint is *passive*: it copies committed pages back into the
+    database and then leaves the -wal file sitting at its high-water mark, to be
+    reused rather than shrunk. Only a TRUNCATE checkpoint — or the last
+    connection closing cleanly — actually reclaims it.
+
+    So with no clean shutdown the file survives every run and only ever ratchets
+    upward. Observed here at 6.9 MB against a 3.2 MB database, with a modified
+    time older than the process that was using it: recovered on open, never
+    truncated, growing. Both costs are small and permanent — a longer open while
+    it is replayed, and a bigger working set for every read.
+
+    Safe to call when the index was never opened, and safe to call twice: the
+    next _db() simply reopens. Failures are logged and swallowed, because this
+    runs on the shutdown path where raising would mask whatever else is closing.
+    """
+    global _conn
+    conn, _conn = _conn, None
+    if conn is None:
+        return
+
+    def _shut() -> None:
+        try:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        finally:
+            conn.close()
+
+    try:
+        await asyncio.to_thread(_shut)
+    except Exception:  # noqa: BLE001 — shutdown must not fail on its way out
+        log.warning("memory index did not close cleanly", exc_info=True)
+
+
 def _ensure_vec_table(conn: sqlite3.Connection, dim: int) -> None:
     """Create (or recreate, if the model's width changed) the vec0 table."""
     global _dim
@@ -239,6 +275,44 @@ def _match_expr(query: str) -> str:
     terms = [t for t in re.findall(r"[A-Za-z0-9']+", query.lower())
              if len(t) > 1 and t.replace("'", "") not in STOPWORDS]
     return " OR ".join(f'"{t}"' for t in terms)
+
+
+async def vectors(user: str, ids: list[int]) -> dict[int, list[float]]:
+    """Stored embeddings for these memory ids, for comparing facts to each other.
+
+    `search` compares the *query* against the store; consolidation needs the
+    store against itself, which nothing else asked for. Rows with no embedding
+    yet are simply absent from the result — a caller has to cope with a partial
+    answer anyway, since indexing is a background job and embeddings arrive
+    late.
+
+    Read-only and does no embedding of its own on purpose: consolidation runs on
+    a slow box, and a pass that silently triggered thirty model calls to fill in
+    what the indexer had not got to yet would cost more than it saves.
+    """
+    if not settings.enable_memory_embeddings or not ids:
+        return {}
+    conn = await _db()
+
+    def _read() -> dict[int, list[float]]:
+        out: dict[int, list[float]] = {}
+        # Chunked so a large store cannot build a statement past SQLITE_MAX_VARS.
+        for start in range(0, len(ids), 400):
+            chunk = ids[start:start + 400]
+            marks = ",".join("?" * len(chunk))
+            for mid, blob in conn.execute(
+                    f"SELECT id, embedding FROM mem WHERE user_key = ? "
+                    f"AND embedding IS NOT NULL AND id IN ({marks})",
+                    (user, *chunk)).fetchall():
+                out[mid] = _unpack(blob)
+        return out
+
+    return await asyncio.to_thread(_read)
+
+
+def similarity(a: list[float], b: list[float]) -> float:
+    """Cosine similarity between two stored vectors. Public for consolidation."""
+    return _cosine(a, b)
 
 
 def _cosine(a: list[float], b: list[float]) -> float:

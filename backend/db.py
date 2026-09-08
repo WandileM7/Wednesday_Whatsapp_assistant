@@ -218,6 +218,24 @@ async def add_memories(user_key: str, facts: list[str]) -> list[int]:
         await s.commit()          # expire_on_commit=False, so .id survives
     return [r.id for r in rows]
 
+async def replace_memories(user_key: str, old_ids: list[int], facts: list[str]) -> list[int]:
+    """Swap a set of memories for a rewritten set, in one transaction.
+
+    Consolidation rewrites the store, and doing that as add-then-delete across
+    two commits has one unacceptable ordering: a crash between them, with the
+    delete already committed, loses memory permanently. One transaction removes
+    the question. Returns the new rows' ids for the index sync.
+    """
+    rows = [Memory(user_key=user_key, content=f) for f in facts]
+    async with SessionLocal() as s:
+        s.add_all(rows)
+        await s.flush()               # ids assigned, nothing committed yet
+        if old_ids:
+            await s.execute(delete(Memory).where(Memory.user_key == user_key,
+                                                 Memory.id.in_(old_ids)))
+        await s.commit()
+    return [r.id for r in rows]
+
 async def all_memories(user_key: str, limit: int = 500) -> list[tuple[int, str]]:
     """(id, content) pairs, newest first."""
     async with SessionLocal() as s:
