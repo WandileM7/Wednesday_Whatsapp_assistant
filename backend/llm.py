@@ -25,6 +25,7 @@ from typing import AsyncIterator
 
 import httpx
 
+from . import turncost
 from .config import settings
 
 log = logging.getLogger(__name__)
@@ -40,6 +41,9 @@ def active_model() -> str:
 
 
 def describe() -> str:
+    if hosted() and settings.route_backend:
+        return (f"hosted:{active_model()} over ollama:{settings.ollama_model}, "
+                f"routed at {settings.route_latency_budget:g}s")
     return f"{'hosted' if hosted() else 'ollama'}:{active_model()}"
 
 
@@ -191,6 +195,7 @@ async def _stream_ollama(messages, tools, transport) -> AsyncIterator[dict]:
                            "repeat_last_n": settings.repeat_last_n,
                            "num_ctx": settings.num_ctx}}
     content, tool_calls = [], []
+    final: dict = {}
     async with httpx.AsyncClient(timeout=httpx.Timeout(300, connect=30),
                                  transport=transport) as client:
         async with client.stream("POST", f"{settings.ollama_host}/api/chat", json=payload) as r:
@@ -198,21 +203,45 @@ async def _stream_ollama(messages, tools, transport) -> AsyncIterator[dict]:
             async for line in r.aiter_lines():
                 if not line.strip():
                     continue
-                msg = json.loads(line).get("message", {})
+                chunk = json.loads(line)
+                # The done chunk carries prompt_eval_count / eval_count and their
+                # durations — the only honest read on this box's throughput, and
+                # on how much of the prefix the cache actually served. Keep it.
+                if chunk.get("done"):
+                    final = chunk
+                msg = chunk.get("message", {})
                 if msg.get("tool_calls"):
                     tool_calls.extend(msg["tool_calls"])
                 if msg.get("content"):
                     content.append(msg["content"])
                     yield {"type": "delta", "text": msg["content"]}
+    if final:
+        turncost.observe(turncost.prompt_tokens(messages, tools), final)
     yield {"type": "round_end",
            "message": {"role": "assistant", "content": "".join(content),
                        "tool_calls": tool_calls}}
 
 
-async def stream_chat(messages, tools, *, transport=None) -> AsyncIterator[dict]:
+async def stream_chat(messages, tools, *, transport=None, channel="") -> AsyncIterator[dict]:
     """Stream one model turn as {"type": "delta"} events then a final
-    {"type": "round_end", "message": ...}, from whichever backend is active."""
+    {"type": "round_end", "message": ...}, from whichever backend is active.
+
+    With a hosted backend configured, ROUTE_BACKEND decides *per turn* whether
+    this one is worth spending it on — see backend/turncost.py. The estimate is
+    computed and logged either way, so the routing can be watched for a while
+    before it is trusted with the decision.
+    """
     if hosted():
+        user_text = next((m.get("content") or "" for m in reversed(messages)
+                          if m.get("role") == "user"), "")
+        est = turncost.estimate(messages, tools, user_text)
+        local = not turncost.prefer_hosted(channel, est)
+        log.info("%s %s: %s", "routing" if settings.route_backend else "would route",
+                 "local" if local else "hosted", est)
+        if local and settings.route_backend:
+            async for event in _stream_ollama(messages, tools, transport):
+                yield event
+            return
         emitted = False
         try:
             async for event in _stream_openai(messages, tools, transport):

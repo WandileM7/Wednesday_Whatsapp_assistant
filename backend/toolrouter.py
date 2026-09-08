@@ -145,6 +145,17 @@ def _recent_groups(convo: list[dict]) -> set[str]:
     return out
 
 
+def groups(user_text: str) -> set[str]:
+    """Intent groups this text implicates.
+
+    Public because turncost needs to ask "will this turn call a tool" — a tool
+    call means a second model round over a bigger prompt, which is most of what
+    makes a turn expensive. It asks here rather than keeping a second copy of
+    the patterns, which would drift the moment either side gained a group.
+    """
+    return {g for g, (_, pattern) in _GROUPS.items() if pattern.search(user_text or "")}
+
+
 def select(user_text: str, convo: list[dict] | None = None) -> set[str]:
     """Tool names to offer this turn."""
     registered = set(REGISTRY)
@@ -152,7 +163,7 @@ def select(user_text: str, convo: list[dict] | None = None) -> set[str]:
     # along with core rather than being routed away by omission.
     allowed = (CORE | (registered - _grouped())) & registered
 
-    active = {g for g, (_, pattern) in _GROUPS.items() if pattern.search(user_text or "")}
+    active = groups(user_text)
     active |= _recent_groups(convo or [])
     for group in active:
         allowed |= _GROUPS[group][0] & registered
