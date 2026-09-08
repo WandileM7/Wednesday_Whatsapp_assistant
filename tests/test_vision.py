@@ -254,9 +254,25 @@ def test_model_defaults(monkeypatch):
     monkeypatch.setattr(settings, "vision_model", "")
     monkeypatch.setattr(settings, "llm_api_key", "")
     monkeypatch.setattr(settings, "llm_base_url", "")
-    assert vision.model() == "llava:7b"
+    # moondream, not llava:7b: the local fallback has to be a model the install
+    # instructions actually tell you to pull, or an empty VISION_MODEL means
+    # "model not found" on the first photo. See vision.model().
+    assert vision.model() == "moondream"
     monkeypatch.setattr(settings, "vision_model", "qwen2.5vl:7b")
     assert vision.model() == "qwen2.5vl:7b"
+
+
+def test_the_local_vision_fallback_is_a_model_the_docs_tell_you_to_pull(monkeypatch):
+    """Pinned against the three places that name it, so a change to any one of
+    them has to be a deliberate change to all of them."""
+    import pathlib
+    monkeypatch.setattr(settings, "vision_model", "")
+    monkeypatch.setattr(settings, "llm_api_key", "")
+    monkeypatch.setattr(settings, "llm_base_url", "")
+    fallback = vision.model()
+    for doc in ("README.md", ".env.example"):
+        text = pathlib.Path(doc).read_text(encoding="utf-8")
+        assert fallback in text, f"{doc} never mentions {fallback}"
 
 
 # ---- the look tool ----------------------------------------------------------

@@ -137,6 +137,7 @@ are all in-tree now:
 | 32 | **Wake word** (roadmap item 23) — openWakeWord's three-model pipeline running on onnxruntime-web, gating the VAD that was already there | `frontend/src/lib/wakeWord.js` |
 | 33 | **Browser control** — `browse_web` drives headless Chromium with the local model for pages `fetch_page` can't read | `backend/tools/browser.py` |
 | 34 | **Home Assistant** (extends item 18) — a Wyoming server exposing STT, conversation and TTS, so HA voice satellites share Wednesday's memory and tools | `backend/wyoming_server.py` |
+| 35 | **Phone calls** (extends item 18 again) — an Asterisk AudioSocket server: 8kHz PCM over TCP, server-side endpointing, 20ms-paced playback and barge-in. Asterisk owns SIP and the modem, so the backend never learns telephony | `backend/phone.py` |
 
 Everything new is off or degrading-by-default: a missing model, package or
 server costs a log line and a fallback, never a broken assistant.
@@ -145,6 +146,23 @@ server costs a log line and a fallback, never a broken assistant.
 
 - Telegram and Signal channel adapters (item 18's remaining half). Home
   Assistant arrived first, via Wyoming.
+- **A phone latency policy.** `backend/phone.py` streams first audio at the
+  first *sentence*, which is what makes a call viable at all, but
+  `route_latency_budget` is 8.0s — fine watching the orb think, fatal holding a
+  phone. Deliberately unresolved: every turn logs its real first-audio latency
+  to `/doctor`, and the budget gets set from that distribution after a dozen
+  real calls. Whatever it lands on breaks "local always works" for this one
+  surface, or accepts an audible stall; that is a decision to make with numbers.
+- **Echo cancellation on calls.** If far-end audio leaks back inbound she can
+  barge in on herself. Belongs in Asterisk, which has the channel context;
+  `phone.py` only mitigates it by requiring sustained speech to interrupt.
+- **The hardware half of item 35.** Dialplan, `chan_quectel` and a SIM in a USB
+  LTE modem, plus the outbound leg so the scheduler can have her ring you.
+  The AudioSocket leg is now verified against a real Asterisk (`docker compose
+  --profile phone`, a softphone, extension 100), which is what turned up the
+  2000ms no-activity hangup that `Call.transmit` now answers with keepalive
+  silence. Still unverified: whether the far end hears the pacing cleanly, and
+  everything past the trunk.
 - Third-party skills. Still deliberately absent, for the supply-chain reasons
   in the security thread below — MCP servers are the sanctioned way to add
   capability now, and they run out-of-process behind an approval prompt.

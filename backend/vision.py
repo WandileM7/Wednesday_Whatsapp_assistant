@@ -72,11 +72,20 @@ def clear_frame(user: str) -> None:
 
 def model() -> str:
     """The vision model to use. Explicit setting wins; otherwise the hosted
-    chat model (most are multimodal) or a local VLM."""
+    chat model (most are multimodal) or a local VLM.
+
+    The local fallback is moondream because that is the one the documentation
+    tells you to install — the README's stack table, the architecture diagram,
+    the quick-start `ollama pull`, and .env.example all name it. This used to
+    fall back to llava:7b instead, which nothing anywhere asks you to pull, so
+    anyone who did not copy .env.example got "model not found" on their first
+    photo. A default that disagrees with the install instructions is a bug even
+    when both models would work.
+    """
     if settings.vision_model:
         return settings.vision_model
     from . import llm
-    return settings.llm_model if llm.hosted() else "llava:7b"
+    return settings.llm_model if llm.hosted() else "moondream"
 
 
 async def _ask(image_b64: str, prompt: str, *, transport=None) -> str | None:
